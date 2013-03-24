@@ -24,8 +24,9 @@ def print_episode(term, series_dao, episode,
         color = term.bold_blue
 
     print color(
-        u"{0}{1:02} {2}".format(
-            indent, episode['episode_number'], episode['episode_name']))
+        u"{0}{1:02} {2} (air date: {3})".format(
+            indent, episode['episode_number'], episode['episode_name'],
+            episode['first_aired']))
 
     if short_version:
         return

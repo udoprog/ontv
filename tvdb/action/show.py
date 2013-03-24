@@ -1,20 +1,10 @@
+from ..utils import local_series_finder
+from ..utils import with_series
 from ..format import print_series
-from ..utils import find_series
 
 
-def action(ns):
-    series_id = find_series(ns.term, ns.series.find_series, ns.series_id)
-
-    if series_id is None:
-        print ns.term.bold_red(u"no such series: {0}".format(ns.series_id))
-        return 0
-
-    series = ns.series.get(series_id)
-
-    if series is None:
-        print ns.term.bold_red(u"no such series (id): {0}".format(series_id))
-        return 0
-
+@with_series(local_series_finder)
+def action(ns, series):
     print_series(
         ns.term, series,
         active_season=ns.season_number,

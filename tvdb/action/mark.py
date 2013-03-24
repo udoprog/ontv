@@ -1,20 +1,10 @@
 from ..utils import group_episodes
-from ..utils import find_series
+from ..utils import local_series_finder
+from ..utils import with_series
 
 
-def action(ns):
-    series_id = find_series(ns.term, ns.series.find_series, ns.series_id)
-
-    if series_id is None:
-        print ns.term.bold_red(u"no such series: {0}".format(ns.series_id))
-        return 1
-
-    series = ns.series.get(series_id)
-
-    if series is None:
-        print ns.term.bold_red(u"no such series (id): {0}".format(series_id))
-        return 0
-
+@with_series(local_series_finder)
+def action(ns, series):
     episodes = ns.series.get_episodes(series)
 
     seasons = group_episodes(episodes)

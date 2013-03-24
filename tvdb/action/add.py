@@ -1,20 +1,9 @@
-from ..utils import find_series
+from ..utils import api_series_finder
+from ..utils import with_series
 
 
-def action(ns):
-    if ns.language is None:
-        print ns.term.bold_red("language must be configured")
-        return 1
-
-    series_id = find_series(ns.term, ns.api.getseries, ns.series_id)
-
-    if series_id is None:
-        print ns.term.bold_red(
-            u"could not add: {0}".format(ns.series_id))
-        return 1
-
-    series = ns.api.series(series_id, ns.language)
-
+@with_series(api_series_finder)
+def action(ns, series):
     if ns.series.has_series(series):
         print ns.term.bold_red(
             "already exists: {0}".format(
