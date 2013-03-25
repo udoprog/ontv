@@ -1,17 +1,6 @@
 from distutils.core import setup
 
-VERSION = '0.3.0'
-
-
-def read_requirements():
-    with open("requirements.txt") as f:
-        for line in f:
-            line = line.strip()
-
-            if not line:
-                continue
-
-            yield line
+VERSION = '0.3.2'
 
 
 setup(
@@ -38,5 +27,9 @@ setup(
         'ontv.action'
     ],
     scripts=['bin/ontv'],
-    requires=list(read_requirements()),
+    requires=[
+        'PyYAML',
+        'blessings',
+        'requests',
+    ]
 )
