@@ -27,17 +27,18 @@ class FilesystemDriver(object):
     SPACE = " "
     DELIM = "\n"
 
-    def __init__(self, path):
+    def __init__(self, path, driver_open=open):
         self._path = path
         self._compact_path = os.path.join(
             os.path.dirname(path), u".{0}.compact".format(
                 os.path.basename(path)))
+        self._driver_open = driver_open
 
     def _format_entry(self, op, ident, block):
         return self.SPACE.join((op, ident, block)) + self.DELIM
 
     def open(self):
-        self._fd = open(self._path, 'a+')
+        self._fd = self._driver_open(self._path, 'a+')
 
     def close(self):
         if not self._fd:
@@ -50,13 +51,13 @@ class FilesystemDriver(object):
         if self._fd:
             self._fd.close()
 
-        self._fd = open(self._path, 'a+')
+        self._fd = self._driver_open(self._path, 'a+')
 
     def compact(self, entries):
         if not self._fd:
             raise Exception("file not open")
 
-        with open(self._compact_path, 'w') as fd:
+        with self._driver_open(self._compact_path, 'w') as fd:
             for op, ident, block in entries:
                 fd.write(self._format_entry(op, ident, block))
 
@@ -92,12 +93,12 @@ class DictStorage(object):
     REMOVE = "-"
     CLEAR = "X"
 
-    def __init__(self, path, driver, block_format):
+    def __init__(self, path, driver, block):
         self._path = path
         self._fd = None
         self._log = list()
-        self._driver = driver(path)
-        self._block = block_format()
+        self._driver = driver
+        self._block = block
 
     def open(self):
         self._driver.open()
@@ -259,10 +260,14 @@ def open_database(
     path,
     compaction_limit=1000,
     impl=DictDB,
+    driver_open=open,
     driver=FilesystemDriver,
     block_format=JsonBlockFormat
 ):
-    storage = DictStorage(path, driver, block_format)
+    driver_instance = driver(path, driver_open=driver_open)
+    block = block_format()
+
+    storage = DictStorage(path, driver_instance, block)
 
     cache, statistics = storage.open()
 
