@@ -1,6 +1,6 @@
 from distutils.core import setup
 
-VERSION = '0.5.3'
+VERSION = '0.5.4'
 
 
 setup(
@@ -28,9 +28,9 @@ setup(
     ],
     scripts=['bin/ontv'],
     install_requires=[
-        'PyYAML',
-        'blessings',
-        'requests',
-        'python-dateutil',
+        'PyYAML>=3.10',
+        'blessings>=1.5',
+        'requests>=1.1.0',
+        'python-dateutil>=2.1',
     ]
 )

@@ -21,10 +21,9 @@ from .dao import SeriesDAO
 from .utils import write_yaml
 from .utils import read_yaml
 
-from .database import SetDB
 from .database import open_database
 
-__version__ = "0.5.3"
+__version__ = "0.5.4"
 
 log = logging.getLogger(__name__)
 
