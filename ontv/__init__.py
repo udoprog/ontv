@@ -24,7 +24,7 @@ from .utils import read_yaml
 from .database import SetDB
 from .database import open_database
 
-__version__ = "0.3.3"
+__version__ = "0.4.0"
 
 log = logging.getLogger(__name__)
 
@@ -224,7 +224,7 @@ def main(args):
         open_database(ns.db_path),
         open_database(ns.series_db_path),
         open_database(ns.episodes_db_path),
-        open_database(ns.watched_db_path, impl=SetDB),
+        open_database(ns.watched_db_path),
     )
 
     with databases as (db, series_db, episodes_db, watched_db):

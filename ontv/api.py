@@ -25,6 +25,8 @@ def text_list(element_type, separator="|"):
         results = list()
 
         for item in c.text.split(separator):
+            item = item.strip()
+
             if not item:
                 continue
 

@@ -1,6 +1,7 @@
 import datetime
 
-from ..utils import sorted_episodes
+from ..utils import find_next_episode
+from ..utils import numeric_ranges
 from ..format import short_episode
 from ..format import format_airdate
 
@@ -12,7 +13,7 @@ def episode_key(now):
         if episode is None or airdate is None:
             return 0
 
-        return abs((now - airdate).days)
+        return -((now - airdate).days)
 
     return __episode_key
 
@@ -26,6 +27,8 @@ def action(ns):
     next_episodes = list()
     all_seen = list()
 
+    print ns.term.cyan(u"Next episodes to watch and their air date:")
+
     for series in ns.series.list_series():
         episodes = ns.series.get_episodes(series)
 
@@ -34,33 +37,30 @@ def action(ns):
                 series['series_name']))
             continue
 
-        next_episode = None
-        next_airdate = None
+        result = find_next_episode(
+            episodes, ns.series.is_episode_watched,
+            ignored_seasons=ns.ignored_seasons)
 
-        for episode in sorted_episodes(episodes):
-            if episode['season_number'] in ns.ignored_seasons:
-                continue
-
-            if ns.series.is_episode_watched(episode):
-                continue
-
-            next_episode = episode
-            next_airdate = datetime.datetime.strptime(
-                episode['first_aired'], "%Y-%m-%d")
-            break
-
-        if next_episode is None:
+        if result is None:
             all_seen.append(series)
             continue
 
+        next_episode, next_airdate = result
         next_episodes.append((series, next_episode, next_airdate))
 
     next_episodes = sorted(next_episodes, key=episode_sort_key)
 
     for series, episode, airdate in next_episodes:
-        print ns.term.bold_green(u"{0} {1}".format(
-            series['series_name'], short_episode(episode)))
-        print ns.term.cyan("  Air date: {0}".format(
+        delta_days = abs((now - airdate).days)
+
+        color = ns.term.bold_white
+
+        if delta_days > ns.relevant_days:
+            color = ns.term.white
+
+        print color(u"{2} - {0} {1}".format(
+            series['series_name'],
+            short_episode(episode),
             format_airdate(episode['first_aired'], now=now)))
 
     for series in all_seen:
@@ -76,5 +76,15 @@ def setup(parser):
         '--ignored-seasons', '-i',
         help="Specify a list of seasons to ignore, defaults to '0'",
         default=set([0]),
-        type=lambda s: set(map(int, s.split(','))))
+        type=numeric_ranges,
+    )
+
+    parser.add_argument(
+        '--relevant-days',
+        help=("Specify how many days ago are relevant, these will show up in "
+              "a different color, default: 30"),
+        default=30,
+        type=int,
+    )
+
     parser.set_defaults(action=action)

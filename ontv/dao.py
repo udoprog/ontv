@@ -1,3 +1,8 @@
+import datetime
+
+from .utils import format_datetime
+
+
 class SeriesDAO(object):
     def __init__(self, db, series_db, episodes_db, watched):
         self._db = db
@@ -7,7 +12,7 @@ class SeriesDAO(object):
 
     def add(self, series):
         self._db.list_append("series", series['id'])
-        self._series_db.put(str(series['id']), series)
+        self._series_db[str(series['id'])] = series
 
     def remove(self, series):
         self._db.list_remove("series", series['id'])
@@ -60,7 +65,9 @@ class SeriesDAO(object):
         return str(episode['id']) in self._watched
 
     def set_episode_watched(self, episode, watched=True):
+        now = datetime.datetime.now()
+
         if watched:
-            self._watched.add(str(episode['id']))
+            self._watched[str(episode['id'])] = format_datetime(now)
         else:
-            self._watched.remove(str(episode['id']))
+            del self._watched[str(episode['id'])]

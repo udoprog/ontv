@@ -1,5 +1,6 @@
 from ..utils import local_series_finder
 from ..utils import with_series
+from ..utils import numeric_ranges
 from ..format import print_series
 
 
@@ -7,8 +8,8 @@ from ..format import print_series
 def action(ns, series):
     print_series(
         ns.term, series,
-        active_season=ns.season_number,
-        active_episode=ns.episode_number,
+        focused=ns.seasons,
+        focused_episodes=ns.episodes,
         series_dao=ns.series)
 
     return 0
@@ -22,19 +23,19 @@ def setup(parser):
     )
 
     parser.add_argument(
-        "season_number",
+        "seasons",
         nargs="?",
         metavar="[season]",
-        type=int,
+        type=numeric_ranges,
         help="Filter out the specified season.",
         default=None,
     )
 
     parser.add_argument(
-        "episode_number",
+        "episodes",
         nargs="?",
         metavar="[season]",
-        type=int,
+        type=numeric_ranges,
         help="Filter out the specified episode.",
         default=None,
     )

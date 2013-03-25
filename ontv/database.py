@@ -211,12 +211,12 @@ class DictDB(dict):
     def list_append(self, ident, data):
         array = list(self.get(ident, []))
         array.append(data)
-        self.__setitem__(self, ident, array)
+        self.__setitem__(ident, array)
 
     def list_remove(self, ident, data):
         array = self.get(ident, [])
         array.remove(data)
-        self.__setitem__(self, ident, array)
+        self.__setitem__(ident, array)
 
     def compact(self):
         self._storage.compact(self.items())

@@ -1,5 +1,8 @@
 import yaml
 import functools
+import datetime
+
+DATETIME_FORMAT = "%Y-%m-%d"
 
 
 def write_yaml(fp, document):
@@ -12,6 +15,14 @@ def write_yaml(fp, document):
 
 def read_yaml(fp):
     return yaml.load(fp)
+
+
+def format_datetime(d):
+    return d.strftime(DATETIME_FORMAT)
+
+
+def parse_datetime(s):
+    return datetime.datetime.strptime(s, DATETIME_FORMAT)
 
 
 def pick_one(alternatives, title="Pick one: ", indent="  "):
@@ -143,3 +154,52 @@ def series_finder(fetch_series, get_series, query_id):
         raise Exception(u"no such series (id): {0}".format(result_id))
 
     return series
+
+
+def numeric_ranges(s):
+    """
+    Parse numeric ranges separated by comma.
+
+    A numeric range can either be a single number, or a range separated by a
+    dash.
+
+    Overlaps are ignored since we are storing the result in a set.
+
+    Example: 1,2,10-15,22 -> set([1,2,10,11,12,13,14,15,22])
+    """
+    numbers = set()
+
+    parts = s.split(',')
+
+    for p in parts:
+        if '-' in p:
+            left, right = p.split('-')
+            numbers.update(range(int(left), int(right) + 1))
+        else:
+            numbers.add(int(p))
+
+    return numbers
+
+
+def find_next_episode(episodes, is_watched, ignored_seasons=set([0])):
+    """
+    Find the next episode that is not watched.
+
+    :episodes: A list of all the episodes.
+    :is_watched: A function returning true if the episode has been watched.
+    :ignored_seasons: Seasons to ignore when checking if watched or not.
+
+    Returns None if none can be found.
+    """
+
+    for episode in sorted_episodes(episodes):
+        if episode['season_number'] in ignored_seasons:
+            continue
+
+        if is_watched(episode):
+            continue
+
+        airdate = parse_datetime(episode['first_aired'])
+        return episode, airdate
+
+    return None
