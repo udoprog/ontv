@@ -24,7 +24,7 @@ from .utils import read_yaml
 from .database import SetDB
 from .database import open_database
 
-__version__ = "0.5.2"
+__version__ = "0.5.3"
 
 log = logging.getLogger(__name__)
 
