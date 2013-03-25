@@ -1,8 +1,8 @@
-from ..utils import with_series
+from ..utils import with_resource
 from ..utils import local_series_finder
 
 
-@with_series(local_series_finder)
+@with_resource(local_series_finder)
 def action(ns, series):
     ns.series.remove(series)
     print ns.term.green("removed: {0}".format(series['series_name']))
@@ -11,7 +11,7 @@ def action(ns, series):
 
 def setup(parser):
     parser.add_argument(
-        "series_id",
+        "series_query",
         metavar="<id|name>",
         help="The id of the series to remove",
     )

@@ -16,7 +16,7 @@ class SeriesDAO(object):
 
     def remove(self, series):
         self._db.list_remove("series", series['id'])
-        self._series_db.remove(str(series['id']))
+        del self._series_db[str(series['id'])]
 
     def has_series(self, series):
         return str(series['id']) in self._db.get("series", [])
@@ -60,6 +60,17 @@ class SeriesDAO(object):
 
     def get_episodes(self, series):
         return self._episodes_db.get(str(series['id']))
+
+    def get_season_episodes(self, series, season_number):
+        results = list()
+
+        for episode in self._episodes_db.get(str(series['id'])):
+            if episode['season_number'] != season_number:
+                continue
+
+            results.append(episode)
+
+        return results
 
     def is_episode_watched(self, episode):
         return str(episode['id']) in self._watched

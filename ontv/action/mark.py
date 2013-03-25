@@ -1,44 +1,15 @@
-from ..utils import local_series_finder
-from ..utils import with_series
 from ..utils import numeric_ranges
-from ..utils import find_next_episode
+from ..utils import with_resource
+from ..utils import local_series_finder
+from ..utils import local_episodes_finder
 
 
-def find_episodes(ns, episodes):
-    if ns.next:
-        result = find_next_episode(
-            episodes, ns.series.is_episode_watched,
-            ignored_seasons=ns.ignored_seasons)
-
-        if result is None:
-            print ns.term.bold_red(u"no episode is next")
-            return
-
-        next_episode, next_airdate = result
-        yield next_episode
-        return
-
-    for episode in episodes:
-        if ns.seasons is not None:
-            if episode['season_number'] not in ns.seasons:
-                continue
-
-        if ns.episodes is not None:
-            if episode['episode_number'] not in ns.episodes:
-                continue
-
-        yield episode
-
-    return
-
-
-@with_series(local_series_finder)
-def action(ns, series):
-    episodes = ns.series.get_episodes(series)
-
+@with_resource(local_series_finder)
+@with_resource(local_episodes_finder)
+def action(ns, series, episodes):
     changed = 0
 
-    for episode in find_episodes(ns, episodes):
+    for episode in episodes:
         is_watched = ns.series.is_episode_watched(episode)
 
         name = u"{0[series_name]} Season {1:02}, Episode {2:02}".format(
@@ -70,9 +41,9 @@ def action(ns, series):
 
 def setup(parser):
     parser.add_argument(
-        "series_id",
+        "series_query",
         metavar="<name|id>",
-        help="The id of the series.",
+        help="The id or name of the series.",
     )
 
     parser.add_argument(

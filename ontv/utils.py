@@ -100,45 +100,6 @@ def sorted_episodes(episodes):
     return sorted(episodes, key=_episode_key)
 
 
-def with_series(finder):
-    def __with_series(func):
-        @functools.wraps(func)
-        def __inner(ns):
-            try:
-                series = finder(ns, ns.series_id)
-            except Exception as e:
-                print ns.term.bold_red(str(e))
-                return 1
-
-            return func(ns, series)
-
-        return __inner
-
-    return __with_series
-
-
-def local_series_finder(ns, query_id):
-    """
-    Find a series by id from the local database.
-
-    :query_id The id of the series to find.
-    """
-    return series_finder(ns.series.find_series, ns.series.get, query_id)
-
-
-def api_series_finder(ns, query_id):
-    """
-    Find a series by querying the remote database through the api.
-    """
-    if ns.language is None:
-        raise Exception("langauge must be configured")
-
-    def get_series(series_id):
-        return ns.api.series(series_id, ns.language)
-
-    return series_finder(ns.api.getseries, get_series, query_id)
-
-
 def series_finder(fetch_series, get_series, query_id):
     """
     Find series from the local database.
@@ -217,3 +178,85 @@ def has_aired_filter(now):
         return now >= parse_datetime(e['first_aired'])
 
     return __has_aired
+
+
+# the following functions require a namespace since separating them is not
+# worth the effort right now.
+
+
+def local_series_finder(ns):
+    """
+    Find a series by id from the local database.
+
+    :query_id The id of the series to find.
+    """
+    return series_finder(ns.series.find_series, ns.series.get, ns.series_query)
+
+
+def local_episodes_finder(ns, series):
+    """
+    Find local episodes.
+
+    Expectes series to be provided as an argument.
+    """
+    episodes = ns.series.get_episodes(series)
+    return list(find_episodes(ns, episodes))
+
+
+def api_series_finder(ns):
+    """
+    Find a series by querying the remote database through the api.
+    """
+    if ns.language is None:
+        raise Exception("langauge must be configured")
+
+    def get_series(series_id):
+        return ns.api.series(series_id, ns.language)
+
+    return series_finder(ns.api.getseries, get_series, ns.series_query)
+
+
+def with_resource(finder):
+    def __with_resource(func):
+        @functools.wraps(func)
+        def __inner(ns, *args, **kw):
+            try:
+                resource = finder(ns, *args)
+            except Exception as e:
+                print ns.term.bold_red(str(e))
+                return 1
+
+            args = list(args) + [resource]
+            return func(ns, *args, **kw)
+
+        return __inner
+
+    return __with_resource
+
+
+def find_episodes(ns, episodes):
+    if ns.next:
+        result = find_next_episode(
+            episodes, ns.series.is_episode_watched,
+            ignored_seasons=ns.ignored_seasons)
+
+        if result is None:
+            print ns.term.bold_red(u"no episode is next")
+            return
+
+        next_episode, next_airdate = result
+        yield next_episode
+        return
+
+    for episode in episodes:
+        if ns.seasons is not None:
+            if episode['season_number'] not in ns.seasons:
+                continue
+
+        if ns.episodes is not None:
+            if episode['episode_number'] not in ns.episodes:
+                continue
+
+        yield episode
+
+    return

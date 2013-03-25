@@ -2,7 +2,6 @@ import textwrap
 import datetime
 from dateutil import relativedelta
 
-from .utils import group_episodes
 from .utils import has_aired_filter
 
 
@@ -80,8 +79,11 @@ def print_title(term, title):
     print term.bold_cyan(title)
 
 
-def print_episode(term, series_dao, episode,
-                  indent="", short_version=True):
+def print_episode(
+    term, series_dao, episode,
+    short_version=True,
+    indent="",
+):
     color = term.white
 
     if series_dao.is_episode_watched(episode):
@@ -118,8 +120,11 @@ def print_episode(term, series_dao, episode,
 
 
 def print_season(
-        term, series_dao, season, episodes,
-        short_version=True, focused=set(), indent=""):
+        term, series_dao,
+        series,
+        season_number,
+        episodes=None,
+        indent=""):
 
     now = datetime.datetime.now()
 
@@ -127,8 +132,10 @@ def print_season(
 
     episodes_legend = format_episodes_count_legend(term)
 
+    all_episodes = series_dao.get_season_episodes(series, season_number)
+
     episodes_count, stats = format_episodes_count(
-        term, series_dao, has_aired, episodes)
+        term, series_dao, has_aired, all_episodes)
 
     color = term.white
 
@@ -142,19 +149,16 @@ def print_season(
         color = term.bold_red
 
     print u"{0}{c}Season {1}{t.normal} ({2}): {3}".format(
-        indent, season, episodes_legend, episodes_count,
+        indent, season_number, episodes_legend, episodes_count,
         c=color, t=term)
 
-    if short_version:
+    if not episodes:
         return
 
     for episode in episodes:
-        if focused and episode['episode_number'] not in focused:
-            continue
-
         print_episode(
             term, series_dao, episode,
-            short_version=(not bool(focused)),
+            short_version=False,
             indent=indent + "  ")
 
 
@@ -176,9 +180,7 @@ def format_compact_list(items, item_format=u"{0}"):
 
 def print_series(
     term, series,
-    short_version=False,
-    focused=set(),
-    focused_episodes=set(),
+    seasons=None,
     series_dao=None,
     indent=u"",
 ):
@@ -194,7 +196,7 @@ def print_series(
         if series['overview']:
             print_wrapped(series['overview'], indent="  ")
 
-    if short_version:
+    if not seasons:
         return
 
     if 'actors' in series:
@@ -204,17 +206,13 @@ def print_series(
 
     print term.cyan(u"Seasons")
 
-    episodes = series_dao.get_episodes(series)
-    seasons = group_episodes(episodes)
-
     for season_number, season_episodes in sorted(seasons.items()):
-        if focused and season_number not in focused:
-            continue
+        if len(seasons) != 1:
+            season_episodes = None
 
         print_season(
-            term, series_dao, season_number, season_episodes,
-            short_version=(not bool(focused)),
-            focused=focused_episodes,
+            term, series_dao, series, season_number,
+            episodes=season_episodes,
             indent="  ")
 
 

@@ -1,8 +1,8 @@
 from ..utils import api_series_finder
-from ..utils import with_series
+from ..utils import with_resource
 
 
-@with_series(api_series_finder)
+@with_resource(api_series_finder)
 def action(ns, series):
     if ns.series.has_series(series):
         print ns.term.bold_red(
@@ -18,7 +18,7 @@ def action(ns, series):
 
 def setup(parser):
     parser.add_argument(
-        "series_id",
+        "series_query",
         metavar="<id|name>",
         help="The id of the series to add",
     )

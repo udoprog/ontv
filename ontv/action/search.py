@@ -19,7 +19,7 @@ def action(ns):
         series = series[:ns.limit]
 
     for s in series:
-        print_series(ns.term, s, short_version=True)
+        print_series(ns.term, s)
 
 
 def setup(parser):
