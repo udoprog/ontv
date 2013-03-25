@@ -1,6 +1,6 @@
 from distutils.core import setup
 
-VERSION = '0.2.0'
+VERSION = '0.3.0'
 
 
 def read_requirements():
@@ -15,23 +15,28 @@ def read_requirements():
 
 
 setup(
-    name='tvdb',
+    name='ontv',
     version=VERSION,
-    description="Your personal tv series manager",
+    description="Your personal TV series manager",
     long_description="""
-    tvdb is a tool that helps you keep track of what you are looking at right
-    now.
+    ontv is a utility that helps you keep track of what you are looking at
+    right now.
 
-    It is based of data from thetvdb.com which requires an account to access.
+    It is based of data from thetvdb.com which requires an account and an api
+    key to access, but contains information about most existing tv shows and
+    their air date.
+
+    My source of focus was to fast create a usable application that tracks the
+    tv shows I am currently watching.
     """,
     author='John-John Tedro',
     author_email='johnjohn.tedro@gmail.com',
-    url='http://github.com/udoprog/tvdb',
+    url='http://github.com/udoprog/ontv',
     license='GPLv3',
     packages=[
-        'tvdb',
-        'tvdb.action'
+        'ontv',
+        'ontv.action'
     ],
-    scripts=['bin/tvdb'],
+    scripts=['bin/ontv'],
     requires=list(read_requirements()),
 )

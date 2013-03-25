@@ -6,8 +6,8 @@ import os
 if __name__ == "__main__":
     root = os.path.dirname(os.path.dirname(__file__))
 
-    if os.path.isfile(os.path.join(root, "tvdb", "__init__.py")):
+    if os.path.isfile(os.path.join(root, "ontv", "__init__.py")):
         sys.path.insert(0, root)
 
-    from tvdb import tvdb_main
-    sys.exit(tvdb_main(sys.argv[1:]))
+    from ontv import main
+    sys.exit(main(sys.argv[1:]))

@@ -24,7 +24,7 @@ from .database import SetDatabase
 
 from .database import open_database
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ def setup_parser(parser):
     parser.add_argument(
         '--libdir', '-d',
         metavar="<directory>",
-        help="Library directory, defaults to $HOME/.tvdb.",
+        help="Library directory, defaults to $HOME/.ontv.",
         default=None,
     )
 
@@ -133,7 +133,7 @@ def setup_ns(ns):
         if not home:
             raise Exception("missing environment variable: HOME")
 
-        ns.libdir = os.path.join(home, '.tvdb')
+        ns.libdir = os.path.join(home, '.ontv')
 
     ns.mirrors_path = os.path.join(ns.libdir, 'mirrors.yaml')
     ns.languages_path = os.path.join(ns.libdir, 'languages.yaml')
@@ -203,8 +203,8 @@ def setup_ns(ns):
                     ", ".join(ns.abbrev_languages)))
 
 
-def tvdb_main(args):
-    parser = argparse.ArgumentParser(version="tvdb " + __version__)
+def main(args):
+    parser = argparse.ArgumentParser(version="ontv " + __version__)
 
     setup_parser(parser)
 
