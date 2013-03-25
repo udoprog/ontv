@@ -14,14 +14,14 @@ from .action.list import setup as list_setup
 from .action.show import setup as show_setup
 from .action.mark import setup as mark_setup
 from .action.next import setup as next_setup
+from .action.compact import setup as compact_setup
 
 from .dao import SeriesDAO
 
 from .utils import write_yaml
 from .utils import read_yaml
 
-from .database import SetDatabase
-
+from .database import SetDB
 from .database import open_database
 
 __version__ = "0.3.2"
@@ -125,6 +125,12 @@ def setup_parser(parser):
     )
     next_setup(next_parser)
 
+    compact_parser = subparsers.add_parser(
+        "compact",
+        help="Make the local database smaller.",
+    )
+    compact_setup(compact_parser)
+
 
 def setup_ns(ns):
     home = os.environ.get("HOME")
@@ -218,9 +224,16 @@ def main(args):
         open_database(ns.db_path),
         open_database(ns.series_db_path),
         open_database(ns.episodes_db_path),
-        open_database(ns.watched_db_path, database=SetDatabase),
+        open_database(ns.watched_db_path, impl=SetDB),
     )
 
     with databases as (db, series_db, episodes_db, watched_db):
+        ns.databases = {
+            "db": db,
+            "series": series_db,
+            "episodes": episodes_db,
+            "watched": watched_db,
+        }
+
         ns.series = SeriesDAO(db, series_db, episodes_db, watched_db)
         return ns.action(ns)

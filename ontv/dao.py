@@ -48,7 +48,7 @@ class SeriesDAO(object):
         return result
 
     def set_episodes(self, series, episodes):
-        self._episodes_db.put(str(series['id']), episodes)
+        self._episodes_db[str(series['id'])] = episodes
 
     def get(self, series_id):
         return self._series_db.get(str(series_id))

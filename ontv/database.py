@@ -1,22 +1,10 @@
 import json
 import contextlib
+import os
 
 
-class FilesystemDriver(object):
-    SPACE = " "
-    DELIM = "\n"
-    PUT = "+"
-    REMOVE = "-"
-
-    def __init__(self, path):
-        self._path = path
-        self._fd = None
-        self._log = list()
-
-    def open(self):
-        self._fd = open(self._path, 'a+')
-
-    def _load_block(self, v):
+class JsonBlockFormat(object):
+    def load(self, v):
         if v == "":
             return None
 
@@ -25,7 +13,7 @@ class FilesystemDriver(object):
         except:
             return None
 
-    def _dump_block(self, v):
+    def dump(self, v):
         if v is None:
             return ""
 
@@ -34,142 +22,262 @@ class FilesystemDriver(object):
         except:
             return ""
 
-    def read_dict(self):
+
+class FilesystemDriver(object):
+    SPACE = " "
+    DELIM = "\n"
+
+    def __init__(self, path):
+        self._path = path
+        self._compact_path = os.path.join(
+            os.path.dirname(path), u".{0}.compact".format(
+                os.path.basename(path)))
+
+    def _format_entry(self, op, ident, block):
+        return self.SPACE.join((op, ident, block)) + self.DELIM
+
+    def open(self):
+        self._fd = open(self._path, 'a+')
+
+    def close(self):
+        if not self._fd:
+            raise Exception("file not open")
+
+        self._fd.close()
+        self._fd = None
+
+    def reopen(self):
+        if self._fd:
+            self._fd.close()
+
+        self._fd = open(self._path, 'a+')
+
+    def compact(self, entries):
+        if not self._fd:
+            raise Exception("file not open")
+
+        with open(self._compact_path, 'w') as fd:
+            for op, ident, block in entries:
+                fd.write(self._format_entry(op, ident, block))
+
+        os.rename(self._compact_path, self._path)
+        self.reopen()
+
+    def append(self, op, ident, block):
+        self._fd.write(self._format_entry(op, ident, block))
+
+    def yieldentries(self):
         if not self._fd:
             raise Exception("file not open")
 
         self._fd.seek(0)
 
-        data = dict()
-
-        for i, line in enumerate(self._fd):
+        for line in self._fd:
             op, ident, block = line.split(self.SPACE, 2)
+            yield op, ident, block
 
-            if op == self.REMOVE:
-                data.pop(ident, None)
-                continue
-
-            if op == self.PUT:
-                data[ident] = block
-                continue
-
-            raise Exception("unknown operation '{0}'".format(op))
-
-        return dict((k, self._load_block(v)) for k, v in data.items())
-
-    def _close(self, flush=True):
-        if not self._fd:
-            return
-
-        self._fd.close()
-        self._fd = None
-
-    def commit(self):
-        self._flush_log()
-        self._close()
-
-    def rollback(self):
-        self._close()
-
-    def _flush_log(self):
-        for op, ident, block in self._log:
-            block = self._dump_block(block)
-            self._fd.write(self.SPACE.join((op, ident, block)) + self.DELIM)
-
-        self._log = list()
-
-    def _validate_identifier(self, ident):
+    def valid_id(self, ident):
         if self.SPACE in ident:
             raise Exception("identifier may not contain a space")
 
         if self.DELIM in ident:
             raise Exception("identifier may not contain a newline")
 
-    def put(self, ident, block):
-        self._validate_identifier(ident)
+    def db_size(self):
+        return self._fd.size()
+
+
+class DictStorage(object):
+    PUT = "+"
+    REMOVE = "-"
+    CLEAR = "X"
+
+    def __init__(self, path, driver, block_format):
+        self._path = path
+        self._fd = None
+        self._log = list()
+        self._driver = driver(path)
+        self._block = block_format()
+
+    def open(self):
+        self._driver.open()
+        self._fd = open(self._path, 'a+')
+        return self._read_cache(self._driver.yieldentries())
+
+    def _read_cache(self, entries):
+        if not self._fd:
+            raise Exception("file not open")
+
+        data = dict()
+
+        # generate statistics to decide if we should autocompact the database.
+        clears = 0
+        removes = 0
+
+        for op, ident, block in entries:
+            if op == self.REMOVE:
+                data.pop(ident, None)
+                removes += 1
+                continue
+
+            if op == self.PUT:
+                data[ident] = block
+                continue
+
+            if op == self.CLEAR:
+                data.clear()
+                clears += 1
+                continue
+
+            raise Exception("unknown operation '{0}'".format(op))
+
+        statistics = {
+            "clears": clears,
+            "removes": removes,
+            "nops": removes + clears,
+        }
+
+        return (dict((k, self._block.load(v)) for k, v in data.items()),
+                statistics)
+
+    def _append_log(self, log):
+        for op, ident, block in log:
+            block = self._block.dump(block)
+            self._driver.append(op, ident, block)
+
+    def commit(self):
+        self._append_log(self._log)
+        self._log = list()
+
+    def close(self):
+        self._driver.close()
+
+    def valid_id(self, ident):
+        return self._driver.valid_id(ident)
+
+    def setitem(self, ident, block):
         self._log.append((self.PUT, ident, block))
 
-    def remove(self, ident):
-        self._validate_identifier(ident)
+    def delitem(self, ident):
         self._log.append((self.REMOVE, ident, None))
 
+    def clear(self, ident):
+        self._log.append((self.CLEAR, "", None))
 
-class Database(object):
-    def __init__(self, driver):
-        self._driver = driver
-        self._cache = self._driver.read_dict()
+    def compact(self, items):
+        generator = ((self.PUT, ident, self._block.dump(block))
+                     for ident, block in items)
+        self._driver.compact(generator)
 
-    def __contains__(self, ident):
-        return ident in self._cache
+    def db_size(self):
+        return self._driver.db_size()
 
-    def get(self, ident, default=None):
-        return self._cache.get(ident, default)
 
-    def put(self, ident, data):
-        self._cache[ident] = data
-        self._driver.put(ident, data)
+class DictDB(dict):
+    def __init__(self, storage, cache):
+        self._storage = storage
+        dict.__init__(self, cache)
 
-    def remove(self, ident):
-        try:
-            del self._cache[ident]
-            self._driver.remove(ident)
-        except KeyError:
-            pass
+    def __setitem__(self, ident, data):
+        self._storage.valid_id(ident)
+        dict.__setitem__(self, ident, data)
+        self._storage.setitem(ident, data)
 
-    def keys(self):
-        return self._cache.keys()
+    def __delitem__(self, ident):
+        self._storage.valid_id(ident)
+        dict.__delitem__(self, ident)
+        self._storage.delitem(ident)
 
-    def values(self):
-        return self._cache.values()
+    def pop(self, ident, *args, **kw):
+        self._storage.valid_id(ident)
+        value = dict.pop(self, ident, *args, **kw)
+        self._storage.delitem(ident)
+        return value
+
+    def clear(self):
+        dict.clear(self)
+        self._storage.clear()
+
+    def setdefault(self, **args):
+        raise NotImplementedError("setdefault")
+
+    def update(self, **args):
+        raise NotImplementedError("update")
+
+    def popitem(self, **args):
+        raise NotImplementedError("popitem")
 
     def list_append(self, ident, data):
         array = list(self.get(ident, []))
         array.append(data)
-        self.put(ident, array)
+        self.__setitem__(self, ident, array)
 
     def list_remove(self, ident, data):
         array = self.get(ident, [])
         array.remove(data)
-        self.put(ident, array)
+        self.__setitem__(self, ident, array)
+
+    def compact(self):
+        self._storage.compact(self.items())
+
+    def db_size(self):
+        return self._storage.db_size()
 
 
-class SetDatabase(object):
-    def __init__(self, driver):
-        self._driver = driver
-        self._cache = set(self._driver.read_dict().keys())
-
-    def __contains__(self, ident):
-        return ident in self._cache
+class SetDB(set):
+    def __init__(self, storage, cache):
+        self._storage = storage
+        set.__init__(self, cache.keys())
 
     def add(self, ident):
-        if ident in self._cache:
+        if ident in self:
             return
 
-        self._cache.add(ident)
-        self._driver.put(ident, None)
+        self._storage.valid_id(ident)
+        set.add(self, ident)
+        self._storage.setitem(ident, None)
 
     def remove(self, ident):
-        try:
-            self._cache.remove(ident)
-            self._driver.remove(ident)
-        except KeyError:
-            pass
+        self._storage.valid_id(ident)
+        set.remove(self, ident)
+        self._storage.delitem(ident)
 
-    def keys(self):
-        return list(self._cache)
+    def pop(self):
+        ident = set.pop(self)
+        self._storage.delitem(ident)
+        return ident
+
+    def compact(self):
+        self._storage.compact((v, None) for v in self)
+
+    def db_size(self):
+        return self._storage.db_size()
 
 
 @contextlib.contextmanager
-def open_database(path, database=Database):
-    driver = FilesystemDriver(path)
-    driver.open()
+def open_database(
+    path,
+    compaction_limit=1000,
+    impl=DictDB,
+    driver=FilesystemDriver,
+    block_format=JsonBlockFormat
+):
+    storage = DictStorage(path, driver, block_format)
 
-    db = database(driver)
+    cache, statistics = storage.open()
+
+    db = impl(storage, cache)
+
+    # nops means non-operations, basically operations that does not contribute
+    # to the final structure of the data.
+    #
+    # if we hit a limit here, we should cleanup, otherwise it's a waste of
+    # space.
+    if statistics['nops'] > compaction_limit:
+        db.compact()
 
     try:
         yield db
-    except:
-        driver.rollback()
-        raise
-
-    driver.commit()
+        storage.commit()
+    finally:
+        storage.close()
