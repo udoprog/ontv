@@ -86,15 +86,26 @@ def print_episode(term, series_dao, episode,
     if series_dao.is_episode_watched(episode):
         color = term.bold_blue
 
-    print color(
-        u"{0}{1:02} {2}".format(
-            indent, episode['episode_number'], episode['episode_name']))
-
-    print term.cyan(u"{0}Air date {1}".format(
-        indent + "  ", format_airdate(episode['first_aired'])))
+    if short_version:
+        print color(
+            u"{0}{1:02} '{2}' {3} ({4})".format(
+                indent, episode['episode_number'],
+                episode['episode_name'],
+                format_airdate(episode['first_aired']),
+                episode['first_aired']))
+    else:
+        print color(
+            u"{0}{1:02} {2}".format(
+                indent, episode['episode_number'],
+                episode['episode_name']))
 
     if short_version:
         return
+
+    print term.cyan(u"{0}Air date: {1} ({2})".format(
+        indent + "  ",
+        format_airdate(episode['first_aired']),
+        episode['first_aired']))
 
     if episode['overview']:
         print_wrapped(episode['overview'], indent=indent + u"  ")
@@ -160,8 +171,9 @@ def print_series(
         series['series_name'], series['series_id']))
 
     if 'first_aired' in series:
-        print term.cyan(u"Air date {0}".format(
-            format_airdate(series['first_aired'])))
+        print term.cyan(u"Air date: {0} ({1})".format(
+            format_airdate(series['first_aired']),
+            series['first_aired']))
 
     if 'overview' in series:
         if series['overview']:
