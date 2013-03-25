@@ -7,6 +7,9 @@ def print_configuration_help(ns):
 
 
 def action(ns):
+    print ns.term.bold_magenta(u"Synchronizing local database")
+    print u""
+
     if not ns.api:
         print ns.term.bold_red("API not configured")
         print_configuration_help(ns)

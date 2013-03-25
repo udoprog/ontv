@@ -6,6 +6,9 @@ from ..format import print_series
 
 @with_series(local_series_finder)
 def action(ns, series):
+    print ns.term.bold_magenta(u"Details about series")
+    print u""
+
     print_series(
         ns.term, series,
         focused=ns.seasons,

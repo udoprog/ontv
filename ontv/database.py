@@ -99,11 +99,16 @@ class DictStorage(object):
         self._log = list()
         self._driver = driver
         self._block = block
+        self._statistics = dict()
 
     def open(self):
         self._driver.open()
         self._fd = open(self._path, 'a+')
-        return self._read_cache(self._driver.yieldentries())
+        cache = self._read_cache(self._driver.yieldentries())
+        return cache, self._statistics
+
+    def statistics(self):
+        return self._statistics
 
     def _read_cache(self, entries):
         if not self._fd:
@@ -132,14 +137,13 @@ class DictStorage(object):
 
             raise Exception("unknown operation '{0}'".format(op))
 
-        statistics = {
+        self._statistics = {
             "clears": clears,
             "removes": removes,
             "nops": removes + clears,
         }
 
-        return (dict((k, self._block.load(v)) for k, v in data.items()),
-                statistics)
+        return (dict((k, self._block.load(v)) for k, v in data.items()))
 
     def _append_log(self, log):
         for op, ident, block in log:
@@ -169,6 +173,16 @@ class DictStorage(object):
         generator = ((self.PUT, ident, self._block.dump(block))
                      for ident, block in items)
         self._driver.compact(generator)
+
+        statistics = self._statistics
+
+        self._statistics = {
+            'clears': 0,
+            'removes': 0,
+            'nops': 0,
+        }
+
+        return statistics
 
     def db_size(self):
         return self._driver.db_size()
@@ -219,7 +233,7 @@ class DictDB(dict):
         self.__setitem__(ident, array)
 
     def compact(self):
-        self._storage.compact(self.items())
+        return self._storage.compact(self.items())
 
     def db_size(self):
         return self._storage.db_size()
@@ -249,7 +263,7 @@ class SetDB(set):
         return ident
 
     def compact(self):
-        self._storage.compact((v, None) for v in self)
+        return self._storage.compact((v, None) for v in self)
 
     def db_size(self):
         return self._storage.db_size()

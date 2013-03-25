@@ -19,6 +19,9 @@ def episode_key(now):
 
 
 def action(ns):
+    print ns.term.bold_magenta(u"Next episodes to watch out for")
+    print u""
+
     # prevent excessive time fetching.
     now = datetime.datetime.now()
 
@@ -26,8 +29,6 @@ def action(ns):
 
     next_episodes = list()
     all_seen = list()
-
-    print ns.term.cyan(u"Next episodes to watch and their air date:")
 
     for series in ns.series.list_series():
         episodes = ns.series.get_episodes(series)

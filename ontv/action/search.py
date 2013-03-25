@@ -2,6 +2,9 @@ from ..format import print_series
 
 
 def action(ns):
+    print ns.term.bold_magenta(u"Results from searching online database")
+    print u""
+
     if not ns.synced:
         print ns.term.bold_red("Application not synced")
         return 1

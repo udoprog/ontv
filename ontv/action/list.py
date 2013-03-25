@@ -16,7 +16,8 @@ def has_aired_filter(now):
 
 
 def action(ns):
-    print ns.term.bold_magenta("Series you are currently watching")
+    print ns.term.bold_magenta(u"Series you are currently watching")
+    print u""
 
     now = datetime.datetime.now()
 
