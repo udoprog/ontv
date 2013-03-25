@@ -140,10 +140,10 @@ class FilesystemDriver(object):
 
         with open(self._path, 'a') as fd:
             if fd.tell() == 0:
-                self._write_header(fd)
+                self._block.write_header(fd)
 
             for op, key, value in log:
-                fd.write(self._format_entry(op, key, value))
+                self._block.write_entry(fd, op, key, value)
 
     def createyielder(self):
         fd = self._driver_open(self._path, 'r')
