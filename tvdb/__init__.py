@@ -24,7 +24,7 @@ from .database import SetDatabase
 
 from .database import open_database
 
-__version__ = "0.0.1"
+__version__ = "0.2.0"
 
 log = logging.getLogger(__name__)
 
