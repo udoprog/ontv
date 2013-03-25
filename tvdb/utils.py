@@ -78,6 +78,17 @@ def group_episodes(episodes):
     return seasons
 
 
+def _episode_key(episode):
+    """
+    Returns key used to sort episodes based on season and episode number.
+    """
+    return (episode['season_number'], episode['episode_number'])
+
+
+def sorted_episodes(episodes):
+    return sorted(episodes, key=_episode_key)
+
+
 def with_series(finder):
     def __with_series(func):
         @functools.wraps(func)

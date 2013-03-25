@@ -1,6 +1,65 @@
 import textwrap
+import datetime
+import math
 
 from .utils import group_episodes
+
+
+def short_episode(episode):
+    return u"S{0:02}E{1:02}".format(
+        episode['season_number'], episode['episode_number'])
+
+
+def readable_timedelta(now, then, next_date, suffix="", prefix=""):
+    delta = now - then
+
+    if delta.days == 0:
+        return "today"
+
+    if delta.days == 1:
+        return next_date
+
+    years = abs(delta.days) / 365
+    months = abs(now.month - then.month)
+    days = abs(now.day - then.day)
+
+    date = list()
+
+    if years != 0:
+        if years == 1:
+            date.append("1 year")
+        else:
+            date.append("{0} years".format(years))
+
+    if months != 0:
+        if months == 1:
+            date.append("1 month")
+        else:
+            date.append("{0} months".format(months))
+
+    if days == 1:
+        date.append("1 day")
+    else:
+        date.append("{0} days".format(days))
+
+    return prefix + ", ".join(date) + suffix
+
+
+def format_airdate(aired, now=None):
+    if now is None:
+        now = datetime.datetime.now()
+
+    try:
+        then = datetime.datetime.strptime(aired, "%Y-%m-%d")
+    except:
+        return "<invalid %Y-%m-%d>"
+
+    if then <= now:
+        return readable_timedelta(
+            now, then, "yesterday", suffix=" ago")
+
+    return readable_timedelta(
+        now, then, "tomorrow", prefix="in ")
 
 
 def print_wrapped(term, text, indent=""):

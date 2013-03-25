@@ -13,6 +13,8 @@ from .action.remove import setup as remove_setup
 from .action.list import setup as list_setup
 from .action.show import setup as show_setup
 from .action.mark import setup as mark_setup
+from .action.next import setup as next_setup
+
 from .dao import SeriesDAO
 
 from .utils import write_yaml
@@ -116,6 +118,12 @@ def setup_parser(parser):
         help="Mark an episode as watched.",
     )
     mark_setup(mark_parser)
+
+    next_parser = subparsers.add_parser(
+        "next",
+        help="Show the next episode to watch.",
+    )
+    next_setup(next_parser)
 
 
 def setup_ns(ns):
