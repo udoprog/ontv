@@ -3,6 +3,7 @@ import datetime
 from dateutil import relativedelta
 
 from .utils import group_episodes
+from .utils import has_aired_filter
 
 
 def short_episode(episode):
@@ -120,15 +121,29 @@ def print_season(
         term, series_dao, season, episodes,
         short_version=True, focused=set(), indent=""):
 
-    all_watched = all(
-        map(series_dao.is_episode_watched, episodes))
+    now = datetime.datetime.now()
+
+    has_aired = has_aired_filter(now)
+
+    episodes_legend = format_episodes_count_legend(term)
+
+    episodes_count, stats = format_episodes_count(
+        term, series_dao, has_aired, episodes)
 
     color = term.white
 
-    if all_watched:
-        color = term.bold_blue
+    seen, aired, all = stats
 
-    print color(u"{0}Season {1}".format(indent, season))
+    if seen == aired or seen == all:
+        color = term.bold_green
+    elif seen > 0:
+        color = term.bold_yellow
+    else:
+        color = term.bold_red
+
+    print u"{0}{c}Season {1}{t.normal} ({2}): {3}".format(
+        indent, season, episodes_legend, episodes_count,
+        c=color, t=term)
 
     if short_version:
         return
@@ -201,3 +216,30 @@ def print_series(
             short_version=(not bool(focused)),
             focused=focused_episodes,
             indent="  ")
+
+
+def format_episodes_count_legend(term):
+    return (
+        u"{t.green}{0}{t.normal}/"
+        u"{t.yellow}{1}{t.normal}/"
+        u"{t.red}{2}{t.normal}"
+    ).format(
+        "seen", "aired", "all",
+        t=term)
+
+
+def format_episodes_count(term, series_dao, has_aired, episodes):
+    seen_episodes = len(filter(
+        series_dao.is_episode_watched, episodes))
+
+    aired_episodes = len(filter(has_aired, episodes))
+
+    all_episodes = len(episodes)
+
+    stats = (seen_episodes, aired_episodes, all_episodes)
+
+    return (
+        u"{t.green}{0}{t.normal}/"
+        u"{t.yellow}{1}{t.normal}/"
+        u"{t.red}{2}{t.normal}"
+    ).format(*stats, t=term), stats

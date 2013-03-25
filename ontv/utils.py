@@ -203,3 +203,17 @@ def find_next_episode(episodes, is_watched, ignored_seasons=set([0])):
         return episode, airdate
 
     return None
+
+
+def has_aired_filter(now):
+    """
+    Utility function to create an episode filter for if an episode has been
+    aired.
+    """
+
+    def __has_aired(e):
+        if not e['first_aired']:
+            return False
+        return now >= parse_datetime(e['first_aired'])
+
+    return __has_aired
