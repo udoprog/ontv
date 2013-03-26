@@ -1,6 +1,12 @@
 import contextlib
 import json
 import os
+import collections
+
+
+DictStorageStats = collections.namedtuple(
+    "DictStorageStats",
+    ['clears', 'deletions', 'noops'])
 
 
 class Block(object):
@@ -175,30 +181,29 @@ class DictStorage(object):
     # clear the entire data set.
     CLEAR = "X"
 
-    def __init__(self, path, driver):
-        self._path = path
-        self._log = list()
+    def __init__(self, driver):
         self._driver = driver
-        self._statistics = dict()
+        self._log = list()
+        self._stats = None
 
-    def open(self):
-        cache = self._read_cache(self._driver.createyielder())
-        return cache, self._statistics
+    def read(self):
+        self._stats, data = self._read_cache(self._driver.createyielder())
+        return data
 
-    def statistics(self):
-        return self._statistics
+    def stats(self):
+        return self._stats
 
     def _read_cache(self, yielder):
         data = dict()
 
         # generate statistics to decide if we should autocompact the database.
         clears = 0
-        removes = 0
+        deletions = 0
 
         for op, key, value in yielder.readblocks():
             if op == self.DELETION:
-                data.pop(key, None)
-                removes += 1
+                del data[key]
+                deletions += 1
                 continue
 
             if op == self.CLEAR:
@@ -212,13 +217,14 @@ class DictStorage(object):
 
             raise Exception("unknown operation '{0}'".format(op))
 
-        self._statistics = {
-            "clears": clears,
-            "removes": removes,
-            "nops": removes + clears,
-        }
+        data = dict(yielder.load_item(i) for i in data.items())
 
-        return dict(yielder.load_item(i) for i in data.items())
+        stats = DictStorageStats(
+            clears=clears,
+            deletions=deletions,
+            noops=deletions + clears)
+
+        return stats, data
 
     def commit(self):
         self._driver.appendlog(self._log)
@@ -238,15 +244,12 @@ class DictStorage(object):
 
         self._driver.compact(generator)
 
-        statistics = self._statistics
+        stats = self._stats
 
-        self._statistics = {
-            'clears': 0,
-            'removes': 0,
-            'nops': 0,
-        }
+        self._stats = DictStorageStats(
+            clears=0, deletions=0, noops=0)
 
-        return statistics
+        return stats
 
     def db_size(self):
         return self._driver.db_size()
@@ -340,18 +343,20 @@ def open_database(
 ):
     driver_instance = driver(path, driver_open=driver_open)
 
-    storage = DictStorage(path, driver_instance)
+    storage = DictStorage(driver_instance)
 
-    cache, statistics = storage.open()
+    cache = storage.read()
+
+    stats = storage.stats()
 
     db = impl(storage, cache)
 
-    # nops means non-operations, basically operations that does not contribute
+    # noops means non-operations, basically operations that does not contribute
     # to the final structure of the data.
     #
     # if we hit a limit here, we should cleanup, otherwise it's a waste of
     # space.
-    if statistics['nops'] > compaction_limit:
+    if stats.noops > compaction_limit:
         db.compact()
 
     yield db

@@ -4,9 +4,9 @@ def action(ns):
 
     for name, db in ns.databases.items():
         print ns.term.cyan(u"Compacting database: {0}".format(name))
-        statistics = db.compact()
-        print ns.term.cyan(u"  pruned {0[nops]} NO-OP entries".format(
-            statistics))
+        stats = db.compact()
+        print ns.term.cyan(u"  pruned {0.noops} non-operation entries".format(
+            stats))
 
     return 0
 
