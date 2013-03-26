@@ -281,10 +281,12 @@ class DictDB(dict):
         raise NotImplementedError("update")
 
     def popitem(self, **args):
-        raise NotImplementedError("popitem")
+        key, value = dict.popitem(self)
+        self._storage.delitem(key)
+        return key, value
 
     def list_append(self, key, data):
-        array = list(self.get(key, []))
+        array = self.get(key, [])
         array.append(data)
         self.__setitem__(key, array)
 
