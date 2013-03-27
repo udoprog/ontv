@@ -71,9 +71,6 @@ class StandardHeader(object):
 
         return dict(s.split("=", 1) for s in s.split(" "))
 
-    def write_header(self, fd):
-        fd.write(self.dump_header(self.header()))
-
 
 class V1Block(JSONValueBlock, StandardHeader, Block):
     SPACE = " "
@@ -84,7 +81,7 @@ class V1Block(JSONValueBlock, StandardHeader, Block):
         self._encoding = encoding
 
     def header(self):
-        return "version={0}".format(self.VERSION) + self.DELIM
+        return {'version': self.VERSION}
 
     def load_item(self, i):
         key, value = i
@@ -103,6 +100,9 @@ class V1Block(JSONValueBlock, StandardHeader, Block):
         key = b[:key_length].decode(self._encoding)
         value = b[key_length + 1:-1].decode(self._encoding)
         return op, key, value
+
+    def write_header(self, fd):
+        fd.write(self.dump_header(self.header()) + self.DELIM)
 
 
 class BlockYielder(object):
