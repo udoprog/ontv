@@ -22,11 +22,14 @@ class Block(object):
     def dump_key(self, key):
         return key
 
+    def dump_header(self, fd):
+        raise NotImplementedError("dump_header")
+
+    def load_header(self, fd):
+        raise NotImplementedError("load_header")
+
     def write_header(self, fd):
         raise NotImplementedError("write_header")
-
-    def read_header(self, fd):
-        raise NotImplementedError("read_header")
 
     def load_item(self, i):
         raise NotImplementedError("load_item")
@@ -34,8 +37,8 @@ class Block(object):
     def write_entry(self, fd, op, key, value):
         raise NotImplementedError("write_entry")
 
-    def parse_entry(self, line):
-        raise NotImplementedError("parse_entry")
+    def load_entry(self, line):
+        raise NotImplementedError("load_entry")
 
 
 class JSONValueBlock(object):
@@ -59,13 +62,17 @@ class JSONValueBlock(object):
 
 
 class StandardHeader(object):
-    def write_header(self, fd):
-        fd.write("version={0}".format(self.VERSION) + self.DELIM)
+    def dump_header(self, d):
+        return " ".join("=".join(i) for i in d.items())
 
-    def read_header(self, fd):
-        v = fd.readline()
-        v = v.strip()
-        return dict(s.split("=", 1) for s in v.split(" "))
+    def load_header(self, s):
+        if not s:
+            return None
+
+        return dict(s.split("=", 1) for s in s.split(" "))
+
+    def write_header(self, fd):
+        fd.write(self.dump_header(self.header()))
 
 
 class V1Block(JSONValueBlock, StandardHeader, Block):
@@ -75,6 +82,9 @@ class V1Block(JSONValueBlock, StandardHeader, Block):
 
     def __init__(self, encoding='utf-8'):
         self._encoding = encoding
+
+    def header(self):
+        return "version={0}".format(self.VERSION) + self.DELIM
 
     def load_item(self, i):
         key, value = i
@@ -87,7 +97,7 @@ class V1Block(JSONValueBlock, StandardHeader, Block):
         entry = self.SPACE.join((op, key_length, key, value)) + self.DELIM
         fd.write(entry)
 
-    def parse_entry(self, line):
+    def load_entry(self, line):
         op, key_length, b = line.split(self.SPACE, 2)
         key_length = int(key_length)
         key = b[:key_length].decode(self._encoding)
@@ -106,7 +116,7 @@ class BlockYielder(object):
 
         try:
             for line in self._fd:
-                op, key, value = self._block.parse_entry(line)
+                op, key, value = self._block.load_entry(line)
                 key = self._block.load_key(key)
                 yield op, key, value
         finally:
@@ -121,6 +131,8 @@ class FilesystemDriver(object):
     block_formats = {
         V1Block.VERSION: V1Block,
     }
+
+    default_version = V1Block.VERSION
 
     def __init__(self, path, driver_open=open, encoding='utf-8'):
         self._path = path
@@ -152,9 +164,14 @@ class FilesystemDriver(object):
                 self._block.write_entry(fd, op, key, value)
 
     def createyielder(self):
-        fd = self._driver_open(self._path, 'r')
+        fd = self._driver_open(self._path, 'a+')
 
-        header = self._block.read_header(fd)
+        header_line = fd.readline()
+
+        if header_line:
+            header = self._block.load_header(header_line.strip())
+        else:
+            header = dict(version=self.default_version)
 
         # setup temporary block format for reading.
         # this is useful for migrating old database formats behind the scenes.

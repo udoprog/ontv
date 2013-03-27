@@ -121,6 +121,9 @@ class TheTVDBApi(object):
 
         return etree.XML(r.content)
 
+    def is_authenticated(self):
+        return self.api_url is not None
+
     def _assert_api_key(self):
         if self.api_url is None:
             raise Exception("No API key specified")

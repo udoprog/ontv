@@ -19,7 +19,7 @@ def episode_key(now):
 
 
 def action(ns):
-    print ns.term.bold_magenta(u"Next episodes to watch out for")
+    print ns.t.bold_magenta(u"Next episodes to watch out for")
     print u""
 
     # prevent excessive time fetching.
@@ -34,7 +34,7 @@ def action(ns):
         episodes = ns.series.get_episodes(series)
 
         if episodes is None:
-            print ns.term.bold_red(u"episodes not synced: {0}".format(
+            print ns.t.bold_red(u"episodes not synced: {0}".format(
                 series['series_name']))
             continue
 
@@ -54,10 +54,10 @@ def action(ns):
     for series, episode, airdate in next_episodes:
         delta_days = abs((now - airdate).days)
 
-        color = ns.term.bold_white
+        color = ns.t.bold_white
 
         if delta_days > ns.relevant_days:
-            color = ns.term.white
+            color = ns.t.white
 
         print color(u"{2} - {0} {1}".format(
             series['series_name'],
@@ -65,7 +65,7 @@ def action(ns):
             format_airdate(episode['first_aired'], now=now)))
 
     for series in all_seen:
-        print ns.term.green(u"{0}: all seen".format(
+        print ns.t.green(u"{0}: all seen".format(
             series['series_name']))
         continue
 

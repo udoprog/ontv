@@ -9,13 +9,13 @@ from ..format import print_series
 @with_resource(local_series_finder)
 @with_resource(local_episodes_finder)
 def action(ns, series, episodes):
-    print ns.term.bold_magenta(u"Details about series")
+    print ns.t.bold_magenta(u"Details about series")
     print u""
 
     seasons = group_episodes(episodes)
 
     print_series(
-        ns.term, series,
+        ns.t, series,
         seasons=seasons,
         series_dao=ns.series)
 

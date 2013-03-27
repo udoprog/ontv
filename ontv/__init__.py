@@ -154,11 +154,10 @@ def setup_ns(ns):
 
     for directory in directories:
         if not os.path.isdir(directory):
-            log.info("creating {0}".format(directory))
+            log.info("Creating directory {0}".format(directory))
             os.mkdir(directory)
 
-    ns.term = blessings.Terminal()
-    ns.synced = True
+    ns.t = blessings.Terminal()
 
     if os.path.isfile(ns.config_path):
         log.debug("Loading configuration from {0}".format(ns.config_path))
@@ -168,6 +167,7 @@ def setup_ns(ns):
                 setattr(ns, key, value)
     else:
         log.info("Creating default configuration {0}".format(ns.config_path))
+
         with open(ns.config_path, 'w') as fp:
             write_yaml(fp, TEMPLATE_CONFIGURATION)
 
@@ -178,19 +178,19 @@ def setup_ns(ns):
             ns.mirrors = read_yaml(fp)
     else:
         ns.mirrors = []
-        ns.synced = False
 
     if os.path.isfile(ns.languages_path):
         log.debug("Loading mirrors from {0}".format(ns.languages_path))
 
         with open(ns.languages_path) as fp:
             ns.languages = read_yaml(fp)
-
-        ns.abbrev_languages = [l['abbreviation'] for l in ns.languages]
     else:
         ns.languages = []
+
+    if ns.languages:
+        ns.abbrev_languages = [l['abbreviation'] for l in ns.languages]
+    else:
         ns.abbrev_languages = []
-        ns.synced = False
 
     if ns.mirrors:
         ns.base_url = random.choice(ns.mirrors)['mirrorpath']
@@ -198,14 +198,15 @@ def setup_ns(ns):
     else:
         ns.base_url = None
 
-    if ns.api_key:
-        ns.api = TheTVDBApi(ns.api_key, base_url=ns.base_url)
+    ns.api = TheTVDBApi(ns.api_key, base_url=ns.base_url)
 
-    if ns.language:
+    if ns.abbrev_languages and ns.language:
         if ns.language not in ns.abbrev_languages:
             raise Exception(
                 "Language not valid, must be one of {0}".format(
                     ", ".join(ns.abbrev_languages)))
+    else:
+        ns.language = None
 
 
 def main(args):

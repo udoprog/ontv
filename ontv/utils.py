@@ -223,7 +223,7 @@ def with_resource(finder):
             try:
                 resource = finder(ns, *args)
             except Exception as e:
-                print ns.term.bold_red(str(e))
+                print ns.t.bold_red(str(e))
                 return 1
 
             args = list(args) + [resource]
@@ -241,7 +241,7 @@ def find_episodes(ns, episodes):
             ignored_seasons=ns.ignored_seasons)
 
         if result is None:
-            print ns.term.bold_red(u"no episode is next")
+            print ns.t.bold_red(u"no episode is next")
             return
 
         next_episode, next_airdate = result
