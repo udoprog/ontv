@@ -4,6 +4,12 @@ _Description_: ontv helps you keep track of what you are watching on tv right
 now.
 Episode information is fetched from the public database thetvdb.com.
 
+## Installation
+
+Install using pip.
+
+  pip install ontv
+
 ## Project Setup
 
 1. Install dependencies listed in requirements.txt
