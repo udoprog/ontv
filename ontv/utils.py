@@ -200,6 +200,11 @@ def local_episodes_finder(ns, series):
     Expectes series to be provided as an argument.
     """
     episodes = ns.series.get_episodes(series)
+
+    if episodes is None:
+        raise Exception("No episodes synced for series: {0}".format(
+            series['series_name']))
+
     return list(find_episodes(ns, episodes))
 
 
