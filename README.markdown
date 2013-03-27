@@ -11,10 +11,16 @@ Episode information is fetched from the public database thetvdb.com.
 
 ## Workflow
 
+First you need to register on thetvdb.com and get an api key, follow the
+instructions [http://thetvdb.com/?tab=register](on thetvdb.com)
+
 1. Add the series you are interested in, use __ontv search__ to find them, and
   __ontv add SERIES__ to cache their information locally.
 2. Synchronize all information about the tv series you are tracking using
   __ontv sync__.
 3. Mark which episodes you have already seen using
-  __ontv mark SERIES SEASON [EPISODE]__, whole seasons can be marked.
+  __ontv mark SERIES ([SEASON [EPISODE]]|--next)__, whole seasons can be marked.
 4. Finally, find out what to see next, and when using __ontv next__.
+
+__ontv list__ gives you a comprehensive view of what you are watching right
+now.
