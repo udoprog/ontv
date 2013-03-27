@@ -142,6 +142,21 @@ def numeric_ranges(s):
     return numbers
 
 
+def numeric_range(s):
+    if '-' not in s:
+        raise Exception(
+            ("not a valid range, expected '<begin>-<end>' but "
+             "was '{0}'").format(s))
+
+    begin, end = s.split("-", 1)
+
+    try:
+        return int(begin), int(end)
+    except:
+        raise Exception(
+            "range does not contain numeric values '{0}'".format(s))
+
+
 def find_next_episode(episodes, is_watched, ignored_seasons=set([0])):
     """
     Find the next episode that is not watched.

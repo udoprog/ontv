@@ -66,6 +66,13 @@ def format_airdate(aired, now=None):
         now, then, "tomorrow", prefix="in ")
 
 
+def format_days(days):
+    if days == 1:
+        return "1 day"
+
+    return "{0} days".format(days)
+
+
 def print_wrapped(text, indent=""):
     wrapper = textwrap.TextWrapper()
     wrapper.initial_indent = indent
