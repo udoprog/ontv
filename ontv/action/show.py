@@ -17,6 +17,7 @@ def action(ns, series, episodes):
     print_series(
         ns.t, series,
         seasons=seasons,
+        ignored_seasons=ns.ignored_seasons,
         series_dao=ns.series)
 
     return 0
@@ -32,7 +33,7 @@ def setup(parser):
     parser.add_argument(
         "seasons",
         nargs="?",
-        metavar="[season]",
+        metavar="ranges",
         type=numeric_ranges,
         help="Filter out the specified season.",
         default=None,
@@ -41,10 +42,19 @@ def setup(parser):
     parser.add_argument(
         "episodes",
         nargs="?",
-        metavar="[season]",
+        metavar="ranges",
         type=numeric_ranges,
         help="Filter out the specified episode.",
         default=None,
+    )
+
+    parser.add_argument(
+        '--ignored-seasons',
+        '-i',
+        metavar="<ranges>",
+        help="Specify a list of seasons to ignore, defaults to '0'",
+        default=set([0]),
+        type=numeric_ranges,
     )
 
     parser.add_argument(
@@ -53,13 +63,6 @@ def setup(parser):
         help="Mark the next episode not watched.",
         action='store_const',
         const=True,
-    )
-
-    parser.add_argument(
-        '--ignored-seasons', '-i',
-        help="Specify a list of seasons to ignore, defaults to '0'",
-        default=set([0]),
-        type=numeric_ranges,
     )
 
     parser.set_defaults(action=action)

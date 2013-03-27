@@ -181,6 +181,7 @@ def format_compact_list(items, item_format=u"{0}"):
 def print_series(
     term, series,
     seasons=None,
+    ignored_seasons=set(),
     series_dao=None,
     indent=u"",
 ):
@@ -207,6 +208,9 @@ def print_series(
     print term.cyan(u"Seasons")
 
     for season_number, season_episodes in sorted(seasons.items()):
+        if season_number in ignored_seasons:
+            continue
+
         if len(seasons) != 1:
             season_episodes = None
 
