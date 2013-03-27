@@ -5,8 +5,8 @@ def action(ns):
     print ns.t.bold_magenta(u"Results from searching online database")
     print u""
 
-    if not ns.synced:
-        print ns.t.bold_red("Application not synced")
+    if not ns.api.is_authenticated():
+        print ns.t.bold_red(u"Not authenticated")
         return 1
 
     series = ns.api.getseries(ns.query)
