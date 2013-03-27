@@ -73,7 +73,9 @@ def setup(parser):
     )
 
     parser.add_argument(
-        '--ignored-seasons', '-i',
+        '--ignored-seasons',
+        '-i',
+        metavar="<ranges>",
         help="Specify a list of seasons to ignore, defaults to '0'",
         default=set([0]),
         type=numeric_ranges,
