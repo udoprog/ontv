@@ -175,6 +175,9 @@ def find_next_episode(episodes, is_watched, ignored_seasons=set([0])):
         if is_watched(episode):
             continue
 
+        if not episode['first_aired']:
+            continue
+
         airdate = parse_datetime(episode['first_aired'])
         return episode, airdate
 
