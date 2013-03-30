@@ -46,10 +46,15 @@ def readable_timedelta(now, then, next_day, suffix="", prefix=""):
     return prefix + ", ".join(date) + suffix
 
 
-def format_airdate(aired, now=None):
-    if now is None:
-        now = datetime.datetime.now()
+def floor_datetime(dt):
+    return datetime.datetime(
+        year=dt.year,
+        month=dt.month,
+        day=dt.day,
+    )
 
+
+def format_airdate(aired, now=None):
     if aired is None:
         return "n/a"
 
@@ -57,6 +62,11 @@ def format_airdate(aired, now=None):
         then = datetime.datetime.strptime(aired, "%Y-%m-%d")
     except:
         return "<invalid %Y-%m-%d>"
+
+    if now is None:
+        now = datetime.datetime.now()
+
+    now = floor_datetime(now)
 
     if then <= now:
         return readable_timedelta(
