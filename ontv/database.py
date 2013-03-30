@@ -2,6 +2,7 @@ import contextlib
 import json
 import os
 import collections
+import base64
 
 
 DictStorageStats = collections.namedtuple(
@@ -72,10 +73,10 @@ class StandardHeader(object):
         return dict(s.split("=", 1) for s in s.split(" "))
 
 
-class V1Block(JSONValueBlock, StandardHeader, Block):
+class BaseBlock(JSONValueBlock, StandardHeader, Block):
     SPACE = " "
     DELIM = "\n"
-    VERSION = '1.0'
+    VERSION = None
 
     def __init__(self, encoding='utf-8'):
         self._encoding = encoding
@@ -86,6 +87,13 @@ class V1Block(JSONValueBlock, StandardHeader, Block):
     def load_item(self, i):
         key, value = i
         return (self.load_key(key), self.load_value(value))
+
+    def write_header(self, fd):
+        fd.write(self.dump_header(self.header()) + self.DELIM)
+
+
+class V1Block(BaseBlock):
+    VERSION = '1.0'
 
     def write_entry(self, fd, op, key, value):
         key = self.dump_key(key).encode(self._encoding)
@@ -101,8 +109,25 @@ class V1Block(JSONValueBlock, StandardHeader, Block):
         value = b[key_length + 1:-1].decode(self._encoding)
         return op, key, value
 
-    def write_header(self, fd):
-        fd.write(self.dump_header(self.header()) + self.DELIM)
+
+class V2Block(BaseBlock):
+    VERSION = '2.0'
+
+    def load_key(self, key):
+        return base64.b64decode(key).decode(self._encoding)
+
+    def dump_key(self, key):
+        return base64.b64encode(key.encode(self._encoding))
+
+    def write_entry(self, fd, op, key, value):
+        key = self.dump_key(key)
+        value = self.dump_value(value)
+        entry = self.SPACE.join((op, key, value)) + self.DELIM
+        fd.write(entry)
+
+    def load_entry(self, line):
+        op, key, value = line.split(self.SPACE, 2)
+        return op, key, value
 
 
 class BlockYielder(object):
@@ -117,7 +142,6 @@ class BlockYielder(object):
         try:
             for line in self._fd:
                 op, key, value = self._block.load_entry(line)
-                key = self._block.load_key(key)
                 yield op, key, value
         finally:
             self._fd.close()
@@ -130,9 +154,10 @@ class BlockYielder(object):
 class FilesystemDriver(object):
     block_formats = {
         V1Block.VERSION: V1Block,
+        V2Block.VERSION: V2Block,
     }
 
-    default_version = V1Block.VERSION
+    default_block = V2Block
 
     def __init__(self, path, driver_open=open, encoding='utf-8'):
         self._path = path
@@ -141,7 +166,7 @@ class FilesystemDriver(object):
                 os.path.basename(path)))
         self._driver_open = driver_open
         self._encoding = encoding
-        self._block = V1Block(encoding=self._encoding)
+        self._block = self.default_block(encoding=self._encoding)
 
     def compact(self, entries):
         with self._driver_open(self._compact_path, 'w') as fd:
@@ -171,7 +196,7 @@ class FilesystemDriver(object):
         if header_line:
             header = self._block.load_header(header_line.strip())
         else:
-            header = dict(version=self.default_version)
+            header = dict(version=self.default_block.VERSION)
 
         # setup temporary block format for reading.
         # this is useful for migrating old database formats behind the scenes.
