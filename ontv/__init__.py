@@ -23,7 +23,7 @@ from .utils import read_yaml
 
 from .database import open_database
 
-__version__ = "0.6.6"
+__version__ = "0.7.0"
 
 log = logging.getLogger(__name__)
 
