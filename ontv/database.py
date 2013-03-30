@@ -2,12 +2,31 @@ import contextlib
 import json
 import os
 import collections
-import base64
 
 
 DictStorageStats = collections.namedtuple(
     "DictStorageStats",
     ['clears', 'deletions', 'noops'])
+
+
+def json_load(v):
+    if v == "":
+        return None
+
+    try:
+        return json.loads(v)
+    except:
+        return None
+
+
+def json_dump(v):
+    if v is None:
+        return ""
+
+    try:
+        return json.dumps(v)
+    except:
+        return ""
 
 
 class Block(object):
@@ -42,26 +61,6 @@ class Block(object):
         raise NotImplementedError("load_entry")
 
 
-class JSONValueBlock(object):
-    def load_value(self, v):
-        if v == "":
-            return None
-
-        try:
-            return json.loads(v)
-        except:
-            return None
-
-    def dump_value(self, v):
-        if v is None:
-            return ""
-
-        try:
-            return json.dumps(v)
-        except:
-            return ""
-
-
 class StandardHeader(object):
     def dump_header(self, d):
         return " ".join("=".join(i) for i in d.items())
@@ -73,7 +72,7 @@ class StandardHeader(object):
         return dict(s.split("=", 1) for s in s.split(" "))
 
 
-class BaseBlock(JSONValueBlock, StandardHeader, Block):
+class BaseBlock(StandardHeader, Block):
     SPACE = " "
     DELIM = "\n"
     VERSION = None
@@ -95,6 +94,9 @@ class BaseBlock(JSONValueBlock, StandardHeader, Block):
 class V1Block(BaseBlock):
     VERSION = '1.0'
 
+    load_value = staticmethod(json_load)
+    dump_value = staticmethod(json_dump)
+
     def write_entry(self, fd, op, key, value):
         key = self.dump_key(key).encode(self._encoding)
         value = self.dump_value(value).encode(self._encoding)
@@ -113,11 +115,11 @@ class V1Block(BaseBlock):
 class V2Block(BaseBlock):
     VERSION = '2.0'
 
-    def load_key(self, key):
-        return base64.b64decode(key).decode(self._encoding)
+    load_key = staticmethod(json_load)
+    dump_key = staticmethod(json_dump)
 
-    def dump_key(self, key):
-        return base64.b64encode(key.encode(self._encoding))
+    load_value = staticmethod(json_load)
+    dump_value = staticmethod(json_dump)
 
     def write_entry(self, fd, op, key, value):
         key = self.dump_key(key)
