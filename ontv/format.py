@@ -10,6 +10,49 @@ def short_episode(episode):
         episode['season_number'], episode['episode_number'])
 
 
+def _build_readable_date(years, months, days):
+    show_days = True
+    show_weeks = True
+    show_months = True
+
+    if years > 1:
+        show_days = False
+        show_weeks = False
+        yield "{0} years".format(years)
+
+        if years >= 10:
+            show_months = False
+
+    if years == 1:
+        show_days = False
+        show_weeks = False
+        yield "1 year"
+
+    if show_months:
+        if months > 1:
+            show_days = False
+            yield "{0} months".format(months)
+
+        if months == 1:
+            yield "1 month"
+
+    if show_weeks:
+        if days > 14:
+            yield "{0} weeks".format(days / 7)
+            return
+
+        if days > 7:
+            yield "1 week"
+            days -= 7
+
+    if show_days:
+        if days > 1:
+            yield "{0} days".format(days)
+            return
+
+        yield "1 day"
+
+
 def readable_timedelta(now, then, next_day, suffix="", prefix=""):
     delta = relativedelta.relativedelta(now, then)
 
@@ -23,27 +66,8 @@ def readable_timedelta(now, then, next_day, suffix="", prefix=""):
     if years == 0 and months == 0 and days == 1:
         return next_day
 
-    date = list()
-
-    if years != 0:
-        if years == 1:
-            date.append("1 year")
-        else:
-            date.append("{0} years".format(years))
-
-    if years < 2 and months != 0:
-        if months == 1:
-            date.append("1 month")
-        else:
-            date.append("{0} months".format(months))
-
-    if months == 0:
-        if days == 1:
-            date.append("1 day")
-        else:
-            date.append("{0} days".format(days))
-
-    return prefix + ", ".join(date) + suffix
+    g = _build_readable_date(years, months, days)
+    return prefix + ", ".join(g) + suffix
 
 
 def floor_datetime(dt):
