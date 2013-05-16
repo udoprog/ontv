@@ -35,6 +35,28 @@ TEMPLATE_CONFIGURATION = {
 }
 
 
+class ColorScheme(object):
+    def __init__(self, term, colors=dict()):
+        self.__dict__['_term'] = term
+        self.__dict__['_colors'] = dict(colors)
+
+    def __setattr__(self, key, name):
+        self._colors[key] = name
+
+    def __getattr__(self, key):
+        name = self._colors.get(key)
+
+        if not name:
+            raise KeyError("Color not defined for '{0}'".format(key))
+
+        color = getattr(self._term, name, None)
+
+        if not color:
+            raise KeyError("Missing color '{0}'".format(name))
+
+        return color
+
+
 def setup_parser(parser):
     parser.add_argument(
         '--libdir', '-d',
@@ -207,6 +229,14 @@ def setup_ns(ns):
                     ", ".join(ns.abbrev_languages)))
     else:
         ns.language = None
+
+    ns.C = ColorScheme(ns.t)
+    ns.C.range_before = 'green'
+    ns.C.range_inside = 'yellow'
+    ns.C.range_outside = 'red'
+    ns.C.all_seen = 'magenta'
+    ns.C.warning = 'red'
+    ns.C.warning = 'bold_magenta'
 
 
 def main(args):

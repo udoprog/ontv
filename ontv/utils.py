@@ -208,6 +208,10 @@ def local_series_finder(ns):
 
     :query_id The id of the series to find.
     """
+
+    if ns.series_query is None:
+        return None
+
     return series_finder(ns.series.find_series, ns.series.get, ns.series_query)
 
 

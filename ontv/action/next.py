@@ -3,6 +3,9 @@ import datetime
 from ..utils import find_next_episode
 from ..utils import numeric_ranges
 from ..utils import numeric_range
+from ..utils import with_resource
+from ..utils import local_series_finder
+
 from ..format import short_episode
 from ..format import format_airdate
 from ..format import format_days
@@ -20,11 +23,34 @@ def episode_key(now):
     return __episode_key
 
 
-def action(ns):
-    before_color = ns.t.green
-    inside_color = ns.t.yellow
-    outside_color = ns.t.red
-    all_seen_color = ns.t.magenta
+def filter_episodes(ns, next_episodes, specific, now):
+    before, after = ns.range
+
+    for s, episode, airdate in next_episodes:
+        delta_days = abs((now - airdate).days)
+
+        if after is not None and delta_days > after:
+            if specific or ns.all:
+                color = ns.C.range_outside
+            else:
+                continue
+        elif before is None or delta_days < before:
+            color = ns.C.range_before
+        else:
+            color = ns.C.range_inside
+
+        yield color, episode
+
+
+@with_resource(local_series_finder)
+def action(ns, series):
+    specific = False
+
+    if series is None:
+        series = ns.series.list_series()
+    else:
+        specific = True
+        series = [series]
 
     before, after = ns.range
 
@@ -36,29 +62,29 @@ def action(ns):
     next_episodes = list()
     all_seen = list()
 
-    print ns.t.bold_magenta(u"Next episodes to watch out for")
+    print ns.C.title(u"Next episodes to watch out for")
 
-    if not ns.all:
-        print u"Airing within {0} and within {1}".format(
-            before_color(format_days(before)),
-            inside_color(format_days(after)))
-    else:
+    if specific or ns.all:
         print (u"Airing within {0}, within {1}, "
                "outside {2} and {3}").format(
-                   before_color(format_days(before)),
-                   inside_color(format_days(after)),
-                   outside_color(format_days(after)),
-                   all_seen_color("never")
+                   ns.C.range_before(format_days(before)),
+                   ns.C.range_inside(format_days(after)),
+                   ns.C.range_outside(format_days(after)),
+                   ns.C.all_seen("never")
                )
+    else:
+        print u"Airing within {0} and within {1}".format(
+            ns.C.range_before(format_days(before)),
+            ns.C.range_inside(format_days(after)))
 
     print u""
 
-    for series in ns.series.list_series():
-        episodes = ns.series.get_episodes(series)
+    for s in series:
+        episodes = ns.series.get_episodes(s)
 
         if episodes is None:
-            print ns.t.bold_red(u"episodes not synced: {0}".format(
-                series['series_name']))
+            print ns.C.warning(u"episodes not synced: {0}".format(
+                s['series_name']))
             continue
 
         result = find_next_episode(
@@ -66,42 +92,36 @@ def action(ns):
             ignored_seasons=ns.ignore)
 
         if result is None:
-            all_seen.append(series)
+            all_seen.append(s)
             continue
 
         next_episode, next_airdate = result
-        next_episodes.append((series, next_episode, next_airdate))
+        next_episodes.append((s, next_episode, next_airdate))
 
     next_episodes = sorted(next_episodes, key=episode_sort_key)
 
-    for series, episode, airdate in next_episodes:
-        delta_days = abs((now - airdate).days)
-
-        if after is not None and delta_days > after:
-            if not ns.all:
-                continue
-            else:
-                color = outside_color
-        elif before is None or delta_days < before:
-            color = before_color
-        else:
-            color = inside_color
-
+    for color, episode in filter_episodes(ns, next_episodes, specific, now):
         print color(u"{2} - {0} {1}".format(
-            series['series_name'],
+            s['series_name'],
             short_episode(episode),
             format_airdate(episode['first_aired'], now=now)))
 
-    if ns.all:
-        for series in all_seen:
-            print all_seen_color(u"never - {0}".format(
-                series['series_name']))
-            continue
+    if specific or ns.all:
+        for s in all_seen:
+            print ns.C.all_seen(u"never - {0[series_name]}".format(s))
 
     return 0
 
 
 def setup(parser):
+    parser.add_argument(
+        "series_query",
+        metavar="<name|id>",
+        nargs='?',
+        default=None,
+        help="The id or name of the series.",
+    )
+
     parser.add_argument(
         '--ignore',
         '-i',
