@@ -39,7 +39,7 @@ def filter_episodes(ns, next_episodes, specific, now):
         else:
             color = ns.C.range_inside
 
-        yield color, episode
+        yield color, s, episode
 
 
 @with_resource(local_series_finder)
@@ -99,12 +99,14 @@ def action(ns, series):
         next_episodes.append((s, next_episode, next_airdate))
 
     next_episodes = sorted(next_episodes, key=episode_sort_key)
+    next_episodes = filter_episodes(ns, next_episodes, specific, now)
 
-    for color, episode in filter_episodes(ns, next_episodes, specific, now):
-        print color(u"{2} - {0} {1}".format(
-            s['series_name'],
+    for color, series, episode in next_episodes:
+        print color(u"{0} - {1[series_name]} {2}".format(
+            format_airdate(episode['first_aired'], now=now),
+            series,
             short_episode(episode),
-            format_airdate(episode['first_aired'], now=now)))
+        ))
 
     if specific or ns.all:
         for s in all_seen:
