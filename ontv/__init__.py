@@ -236,7 +236,7 @@ def setup_ns(ns):
     ns.C.range_outside = 'red'
     ns.C.all_seen = 'magenta'
     ns.C.warning = 'red'
-    ns.C.warning = 'bold_magenta'
+    ns.C.title = 'bold_magenta'
 
 
 def main(args):
