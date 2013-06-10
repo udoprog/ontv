@@ -73,7 +73,7 @@ class TheTVDBApi(object):
         "Overview": ("overview", text_value(unicode)),
         "Rating": ("rating", text_value(float)),
         "Runtime": ("runtime", text_value(int)),
-        "SeriesID": ("series_id", text_value(int)),
+        "SeriesID": ("series_id", text_value(str)),
         "SeriesName": ("series_name", text_value(unicode)),
         "Status": ("status", text_value(unicode)),
         "added": ("added", text_value(unicode)),
@@ -91,7 +91,7 @@ class TheTVDBApi(object):
         "GuestStars": ("guest_stars", text_list(unicode)),
         "Writer": ("writer", text_list(unicode)),
         "seasonid": ("season_id", text_value(int)),
-        "seriesid": ("series_id", text_value(int)),
+        "seriesid": ("series_id", text_value(str)),
         "lastupdated": ("lastupdated", text_value(int)),
     }
 

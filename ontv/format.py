@@ -107,12 +107,13 @@ def format_days(days):
     return "{0} days".format(days)
 
 
-def print_wrapped(text, indent=""):
+def print_wrapped(text, indent=u""):
     wrapper = textwrap.TextWrapper()
     wrapper.initial_indent = indent
     wrapper.subsequent_indent = indent
 
     for line in wrapper.wrap(text):
+        print type(line), repr(line)
         print line
 
 
@@ -123,7 +124,7 @@ def print_title(term, title):
 def print_episode(
     term, series_dao, episode,
     short_version=True,
-    indent="",
+    indent=u"",
 ):
     color = term.white
 
@@ -147,7 +148,7 @@ def print_episode(
         return
 
     print term.cyan(u"{0}Air date: {1} ({2})".format(
-        indent + "  ",
+        indent + u"  ",
         format_airdate(episode['first_aired']),
         episode['first_aired']))
 
@@ -165,7 +166,7 @@ def print_season(
         series,
         season_number,
         episodes=None,
-        indent=""):
+        indent=u""):
 
     now = datetime.datetime.now()
 
@@ -200,10 +201,10 @@ def print_season(
         print_episode(
             term, series_dao, episode,
             short_version=False,
-            indent=indent + "  ")
+            indent=indent + u"  ")
 
 
-def print_list(items, item_format=u"- {0}", indent=""):
+def print_list(items, item_format=u"- {0}", indent=u""):
     if items is None:
         print u"{0}(empty)".format(indent)
         return
@@ -236,7 +237,7 @@ def print_series(
 
     if 'overview' in series:
         if series['overview']:
-            print_wrapped(series['overview'], indent="  ")
+            print_wrapped(series['overview'], indent=u"  ")
 
     if not seasons:
         return
@@ -258,7 +259,7 @@ def print_series(
         print_season(
             term, series_dao, series, season_number,
             episodes=season_episodes,
-            indent="  ")
+            indent=u"  ")
 
 
 def format_episodes_count_legend(term):
