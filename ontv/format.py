@@ -113,7 +113,6 @@ def print_wrapped(text, indent=u""):
     wrapper.subsequent_indent = indent
 
     for line in wrapper.wrap(text):
-        print type(line), repr(line)
         print line
 
 
