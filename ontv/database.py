@@ -338,8 +338,7 @@ class DictDB(dict):
         self.__setitem__(key, array)
 
     def list_remove(self, key, data):
-        array = self.get(key, [])
-        array.remove(data)
+        array = filter(lambda v: v != data, self.get(key, []))
         self.__setitem__(key, array)
 
     def compact(self):
