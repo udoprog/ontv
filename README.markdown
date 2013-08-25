@@ -1,12 +1,10 @@
 # onTV by udoprog
 
-_Description_: ontv helps you keep track of what you are watching on tv right
+ontv helps you keep track of what you are watching on tv right
 now.
 Episode information is fetched from the public database thetvdb.com.
 
 ## Installation
-
-Install using pip.
 
   pip install ontv
 
@@ -20,10 +18,10 @@ Install using pip.
 First you need to register on thetvdb.com and get an api key, follow the
 instructions [http://thetvdb.com/?tab=register](on thetvdb.com)
 
-1. Add the series you are interested in, use __ontv search__ to find them, and
+1. Synchronize all information about the tv series you are tracking using
+  __ontv sync__. _This is required the first time you use ontv._
+2. Add the series you are interested in, use __ontv search__ to find them, and
   __ontv add SERIES__ to cache their information locally.
-2. Synchronize all information about the tv series you are tracking using
-  __ontv sync__.
 3. Mark which episodes you have already seen using
   __ontv mark SERIES ([SEASON [EPISODE]]|--next)__, whole seasons can be marked.
 4. Finally, find out what to see next, and when using __ontv next__.
