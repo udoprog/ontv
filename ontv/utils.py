@@ -69,7 +69,7 @@ def find_series_external(fetch_series, series_id):
 
     return pick_one(
         alternatives,
-        title="Pick a seires (ctrl-d to abort): ")
+        title="Pick a series (ctrl-d to abort): ")
 
 
 def find_series(fetch_series, series_id):

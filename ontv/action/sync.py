@@ -1,7 +1,10 @@
 from ..utils import write_yaml
+from ..utils import with_resource
+from ..utils import local_series_finder
 
 
-def action(ns):
+@with_resource(local_series_finder)
+def action(ns, series):
     print ns.t.bold_magenta(u"Synchronizing local database")
     print u""
 
@@ -29,17 +32,31 @@ def action(ns):
         with open(ns.mirrors_path, 'w') as fp:
             write_yaml(fp, ns.api.mirrors())
 
-    for series in ns.series.list_series():
+    if not series:
+        series = ns.series.list_series()
+    else:
+        series = [series]
+
+    for s in series:
         print ns.t.bold_cyan(
-            u"syncing: {0}".format(series['series_name']))
+            u"Syncing: {0}".format(s['series_name'])
+        )
 
-        series, episodes = ns.api.series_all(
-            series['id'], ns.language)
+        s, episodes = ns.api.series_all(
+            s['id'], ns.language)
 
-        ns.series.set_episodes(series, episodes)
+        ns.series.set_episodes(s, episodes)
 
     return 0
 
 
 def setup(parser):
+    parser.add_argument(
+        "series_query",
+        metavar="<name|id>",
+        nargs='?',
+        default=None,
+        help="The id or name of the series to sync.",
+    )
+
     parser.set_defaults(action=action)
