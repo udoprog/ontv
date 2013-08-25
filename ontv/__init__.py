@@ -6,7 +6,7 @@ import random
 import contextlib
 
 from .api import TheTVDBApi
-from .action.sync import setup as sync_setup
+from .action.sync import setup as sync_setup, action as sync_action
 from .action.search import setup as search_setup
 from .action.add import setup as add_setup
 from .action.remove import setup as remove_setup
@@ -230,6 +230,8 @@ def setup_ns(ns):
     else:
         ns.language = None
 
+    ns.is_synced = bool(ns.abbrev_languages)
+
     ns.C = ColorScheme(ns.t)
     ns.C.range_before = 'green'
     ns.C.range_inside = 'yellow'
@@ -266,4 +268,9 @@ def main(args):
         }
 
         ns.series = SeriesDAO(db, series_db, episodes_db, watched_db)
+
+        if not ns.is_synced and ns.action != sync_action:
+            print ns.t.bold_red("Your first action should be 'sync'")
+            return 1
+
         return ns.action(ns)

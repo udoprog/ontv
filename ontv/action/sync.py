@@ -7,10 +7,15 @@ def action(ns):
 
     if not ns.api.is_authenticated():
         print ns.t.bold_red(
-            "Cannot fully synchronize, api is not authenticated with a key")
-        print ns.t.bold_red(
-            "Set a value to the 'api_key' option in {0}".format(
-                ns.config_path))
+            "Cannot fully synchronize, api is not authenticated with a key!")
+        print (
+            ns.t.red("Set a value to the 'api_key' option in ") +
+            ns.t.bold_red(ns.config_path)
+        )
+        print (
+            ns.t.red("If you don't have an API key, register yourself at ") +
+            ns.t.bold_red("http://thetvdb.com/?tab=register")
+        )
         return 0
 
     if not ns.languages:

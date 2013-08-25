@@ -235,7 +235,7 @@ def api_series_finder(ns):
     Find a series by querying the remote database through the api.
     """
     if ns.language is None:
-        raise Exception("langauge must be configured")
+        raise Exception("language must be configured")
 
     def get_series(series_id):
         return ns.api.series(series_id, ns.language)
