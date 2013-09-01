@@ -12,23 +12,27 @@ def action(ns, series, episodes):
     for episode in episodes:
         is_watched = ns.series.is_episode_watched(episode)
 
-        name = u"{0[series_name]} Season {1:02}, Episode {2:02}".format(
-            series, episode['season_number'], episode['episode_number'])
+        name = u'{0[series_name]} S{1:02}E{2:02}: {3}'.format(
+            series,
+            episode['season_number'],
+            episode['episode_number'],
+            episode['episode_name']
+        )
 
         if is_watched and not ns.unmark:
-            print ns.t.bold_red(u"already marked: {0}".format(name))
+            print ns.t.bold_red(u"Already watched: {0}".format(name))
             continue
 
         if not is_watched and ns.unmark:
-            print ns.t.bold_red(u"not marked: {0}".format(name))
+            print ns.t.bold_red(u"Not watched: {0}".format(name))
             continue
 
         ns.series.set_episode_watched(episode, (not ns.unmark))
 
         if not ns.unmark:
-            print ns.t.bold_green(u"marked: {0}".format(name))
+            print ns.t.bold_green(u"Marked: {0}".format(name))
         else:
-            print ns.t.bold_green(u"unmarked: {0}".format(name))
+            print ns.t.bold_green(u"Unmarked: {0}".format(name))
 
         changed += 1
 
