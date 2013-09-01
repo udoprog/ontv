@@ -51,7 +51,7 @@ class ColorScheme(object):
 
         color = getattr(self._term, name, None)
 
-        if not color:
+        if color is None:
             raise KeyError("Missing color '{0}'".format(name))
 
         return color
