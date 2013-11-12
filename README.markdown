@@ -1,4 +1,4 @@
-# onTV by udoprog
+# onT
 
 ontv helps you keep track of what you are watching on tv right
 now.
