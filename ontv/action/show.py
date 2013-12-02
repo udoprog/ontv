@@ -60,7 +60,15 @@ def setup(parser):
     parser.add_argument(
         "--next",
         default=False,
-        help="Mark the next episode not watched.",
+        help="Show the next episode not watched.",
+        action='store_const',
+        const=True,
+    )
+
+    parser.add_argument(
+        "--last",
+        default=False,
+        help="Show the last episode watched.",
         action='store_const',
         const=True,
     )

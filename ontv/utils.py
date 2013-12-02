@@ -184,6 +184,39 @@ def find_next_episode(episodes, is_watched, ignored_seasons=set([0])):
     return None
 
 
+def find_last_episode(episodes, is_watched, ignored_seasons=set([0])):
+    """
+    Find the last episode that has been watched.
+
+    :episodes: A list of all the episodes.
+    :is_watched: A function returning true if the episode has been watched.
+    :ignored_seasons: Seasons to ignore when checking if watched or not.
+
+    Returns None if none can be found.
+    """
+
+    stored = None
+
+    for episode in sorted_episodes(episodes):
+        if episode['season_number'] in ignored_seasons:
+            continue
+
+        if is_watched(episode):
+            stored = episode
+            continue
+
+        if not episode['first_aired']:
+            continue
+
+        break
+
+    if stored is None:
+        return None
+
+    airdate = parse_datetime(stored['first_aired'])
+    return stored, airdate
+
+
 def has_aired_filter(now):
     """
     Utility function to create an episode filter for if an episode has been
@@ -262,17 +295,28 @@ def with_resource(finder):
 
 
 def find_episodes(ns, episodes):
-    if ns.next:
-        result = find_next_episode(
+    """
+    Find all episodes using the method deduced from the namespace.
+    """
+    special_find = None
+
+    if hasattr(ns, 'last') and ns.last:
+        special_find = find_last_episode
+
+    if hasattr(ns, 'next') and ns.next:
+        special_find = find_next_episode
+
+    if special_find is not None:
+        result = special_find(
             episodes, ns.series.is_episode_watched,
             ignored_seasons=ns.ignored_seasons)
 
         if result is None:
-            print ns.t.bold_red(u"no episode is next")
+            print ns.t.bold_red(u"no episode is current")
             return
 
-        next_episode, next_airdate = result
-        yield next_episode
+        episode, _ = result
+        yield episode
         return
 
     for episode in episodes:

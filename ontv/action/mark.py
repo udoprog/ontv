@@ -77,6 +77,14 @@ def setup(parser):
     )
 
     parser.add_argument(
+        "--last",
+        default=False,
+        help="Mark or unmark the last episode watched.",
+        action='store_const',
+        const=True,
+    )
+
+    parser.add_argument(
         '--ignored-seasons',
         '-i',
         metavar="<ranges>",
