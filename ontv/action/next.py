@@ -113,7 +113,7 @@ def action(ns, series):
             ns.C.series_title(series['series_name']),
             short_episode(episode))
 
-    if specific or ns.all:
+    if all_seen and (specific or ns.all):
         print color(ns.C.all_seen(u"never (all seen)"))
 
         for s in all_seen:
