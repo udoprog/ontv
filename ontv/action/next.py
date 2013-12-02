@@ -70,8 +70,7 @@ def action(ns, series):
                    ns.C.range_before(format_days(before)),
                    ns.C.range_inside(format_days(after)),
                    ns.C.range_outside(format_days(after)),
-                   ns.C.all_seen("never")
-               )
+                   ns.C.all_seen("never"))
     else:
         print u"Airing within {0} and within {1}".format(
             ns.C.range_before(format_days(before)),
@@ -101,16 +100,25 @@ def action(ns, series):
     next_episodes = sorted(next_episodes, key=episode_sort_key)
     next_episodes = filter_episodes(ns, next_episodes, specific, now)
 
+    group = None
+
     for color, series, episode in next_episodes:
-        print color(u"{0} - {1[series_name]} {2}".format(
-            format_airdate(episode['first_aired'], now=now),
-            series,
-            short_episode(episode),
-        ))
+        aired = episode['first_aired']
+
+        if group != aired:
+            print color(u"{0}".format(format_airdate(aired, now=now)))
+            group = aired
+
+        print u"  {0} {1}".format(
+            ns.C.series_title(series['series_name']),
+            short_episode(episode))
 
     if specific or ns.all:
+        print color(ns.C.all_seen(u"never (all seen)"))
+
         for s in all_seen:
-            print ns.C.all_seen(u"never - {0[series_name]}".format(s))
+            print u"  {0}".format(
+                ns.C.series_title(s['series_name']))
 
     return 0
 

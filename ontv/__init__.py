@@ -239,6 +239,7 @@ def setup_ns(ns):
     ns.C.all_seen = 'magenta'
     ns.C.warning = 'red'
     ns.C.title = 'bold_magenta'
+    ns.C.series_title = 'bold'
 
 
 def main(args):

@@ -6,8 +6,10 @@ from .utils import has_aired_filter
 
 
 def short_episode(episode):
-    return u"S{0:02}E{1:02}".format(
-        episode['season_number'], episode['episode_number'])
+    return u"S{0:02}E{1:02} '{2}'".format(
+        episode['season_number'],
+        episode['episode_number'],
+        episode['episode_name'])
 
 
 def _build_readable_date(years, months, days):
