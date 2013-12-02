@@ -6,7 +6,7 @@ from ..utils import with_resource
 def action(ns, series):
     if ns.series.has_series(series):
         print ns.t.bold_red(
-            "already exists: {0}".format(
+            "Already exists: {0}".format(
                 series['series_name']))
         return 0
 

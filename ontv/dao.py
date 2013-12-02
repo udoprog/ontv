@@ -19,7 +19,7 @@ class SeriesDAO(object):
         del self._series_db[str(series['id'])]
 
     def has_series(self, series):
-        return str(series['id']) in self._db.get("series", [])
+        return series['id'] in self._db.get("series", [])
 
     def list_series(self):
         result = list()
