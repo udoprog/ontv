@@ -136,7 +136,7 @@ def setup_parser(parser):
 
     mark_parser = subparsers.add_parser(
         "mark",
-        help="Mark an episode as watched.",
+        help="Mark or unmark an episode as watched.",
     )
     mark_setup(mark_parser)
 
