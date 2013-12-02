@@ -1,6 +1,6 @@
 from distutils.core import setup
 
-VERSION = '0.7.12'
+VERSION = '0.8.0'
 
 
 setup(
