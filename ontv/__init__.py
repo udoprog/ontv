@@ -25,9 +25,8 @@ from .utils import write_yaml
 from .utils import read_yaml
 
 from .database import open_database
-from .database import SetDB
 
-__version__ = "0.9.2"
+__version__ = "0.10.0"
 
 # current scheme version.
 SCHEME_VERSION = 2
