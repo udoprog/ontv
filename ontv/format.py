@@ -229,7 +229,7 @@ def print_series(
     indent=u"",
 ):
     print_title(term, u"{0} (id: {1})".format(
-        series['series_name'], series['series_id']))
+        series['series_name'], series['id']))
 
     if 'first_aired' in series:
         print term.cyan(u"Air date: {0} ({1})".format(
