@@ -1,25 +1,25 @@
-from ..format import print_series
+from ..format import format_series
 
 
 def action(ns):
-    print ns.t.bold_magenta(u"Results from searching online database")
-    print u""
+    ns.out(ns.t.bold_magenta(u"Results from searching online database"))
+    ns.out(u"")
 
     if not ns.api.is_authenticated():
-        print ns.t.bold_red(u"Not authenticated")
+        ns.out(ns.t.bold_red(u"Not authenticated"))
         return 1
 
     series = ns.api.getseries(ns.query)
 
     if not series:
-        print ns.t.bold_red("No series matching '{0}'".format(ns.query))
+        ns.out(ns.t.bold_red("No series matching '{0}'".format(ns.query)))
         return 1
 
     if ns.limit:
         series = series[:ns.limit]
 
     for s in series:
-        print_series(ns.t, s)
+        format_series(ns.out, ns.t, s)
 
 
 def setup(parser):

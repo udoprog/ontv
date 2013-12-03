@@ -20,24 +20,24 @@ def action(ns, series, episodes):
         )
 
         if is_watched and not ns.unmark:
-            print ns.t.bold_red(u"Already watched: {0}".format(name))
+            ns.out(ns.t.bold_red(u"Already watched: {0}".format(name)))
             continue
 
         if not is_watched and ns.unmark:
-            print ns.t.bold_red(u"Not watched: {0}".format(name))
+            ns.out(ns.t.bold_red(u"Not watched: {0}".format(name)))
             continue
 
         ns.series.set_episode_watched(episode, (not ns.unmark))
 
         if not ns.unmark:
-            print ns.t.bold_green(u"Marked: {0}".format(name))
+            ns.out(ns.t.bold_green(u"Marked: {0}".format(name)))
         else:
-            print ns.t.bold_green(u"Unmarked: {0}".format(name))
+            ns.out(ns.t.bold_green(u"Unmarked: {0}".format(name)))
 
         changed += 1
 
     if changed == 0:
-        print ns.t.bold_red(u"did not change any episodes")
+        ns.out(ns.t.bold_red(u"did not change any episodes"))
         return 1
 
     return 0

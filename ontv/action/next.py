@@ -62,28 +62,28 @@ def action(ns, series):
     next_episodes = list()
     all_seen = list()
 
-    print ns.C.title(u"Next episodes to watch out for")
+    ns.out(ns.C.title(u"Next episodes to watch out for"))
 
     if specific or ns.all:
-        print (u"Airing within {0}, within {1}, "
-               "outside {2} and {3}").format(
-                   ns.C.range_before(format_days(before)),
-                   ns.C.range_inside(format_days(after)),
-                   ns.C.range_outside(format_days(after)),
-                   ns.C.all_seen("never"))
+        ns.out((u"Airing within {0}, within {1}, "
+                "outside {2} and {3}").format(
+                    ns.C.range_before(format_days(before)),
+                    ns.C.range_inside(format_days(after)),
+                    ns.C.range_outside(format_days(after)),
+                    ns.C.all_seen("never")))
     else:
-        print u"Airing within {0} and within {1}".format(
+        ns.out(u"Airing within {0} and within {1}".format(
             ns.C.range_before(format_days(before)),
-            ns.C.range_inside(format_days(after)))
+            ns.C.range_inside(format_days(after))))
 
-    print u""
+    ns.out(u"")
 
     for s in series:
         episodes = ns.series.get_episodes(s)
 
         if episodes is None:
-            print ns.C.warning(u"episodes not synced: {0}".format(
-                s['series_name']))
+            ns.out(ns.C.warning(u"episodes not synced: {0}".format(
+                s['series_name'])))
             continue
 
         result = find_next_episode(
@@ -106,19 +106,19 @@ def action(ns, series):
         aired = episode['first_aired']
 
         if group != aired:
-            print color(u"{0}".format(format_airdate(aired, now=now)))
+            ns.out(color(u"{0}".format(format_airdate(aired, now=now))))
             group = aired
 
-        print u"  {0} {1}".format(
+        ns.out(u"  {0} {1}".format(
             ns.C.series_title(series['series_name']),
-            short_episode(episode))
+            short_episode(episode)))
 
     if all_seen and (specific or ns.all):
-        print color(ns.C.all_seen(u"never (all seen)"))
+        ns.out(color(ns.C.all_seen(u"never (all seen)")))
 
         for s in all_seen:
-            print u"  {0}".format(
-                ns.C.series_title(s['series_name']))
+            ns.out(u"  {0}".format(
+                ns.C.series_title(s['series_name'])))
 
     return 0
 

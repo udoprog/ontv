@@ -10,8 +10,8 @@ def series_name_key(s):
 
 
 def action(ns):
-    print ns.t.bold_magenta(u"Series you are currently watching")
-    print u""
+    ns.out(ns.t.bold_magenta(u"Series you are currently watching"))
+    ns.out(u"")
 
     now = datetime.datetime.now()
 
@@ -33,15 +33,15 @@ def action(ns):
                 episodes_count, _ = format_episodes_count(
                     ns.t, series_dao, has_aired, episodes)
 
-            print ns.t.bold_cyan(
-                u"{0[series_name]} (id: {0[id]})".format(series))
+            ns.out(ns.t.bold_cyan(
+                u"{0[series_name]} (id: {0[id]})".format(series)))
 
             if episodes_count:
-                print ns.t.cyan(
+                ns.out(ns.t.cyan(
                     u"  Episodes ({0}): {1}".format(
-                        episodes_legend, episodes_count))
+                        episodes_legend, episodes_count)))
     else:
-        print ns.t.bold_red("You are not watching any series")
+        ns.out(ns.t.bold_red("You are not watching any series"))
 
     return 0
 

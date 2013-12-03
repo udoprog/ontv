@@ -1,12 +1,13 @@
 def action(ns):
-    print ns.t.bold_magenta(u"Compacting local databases")
-    print u""
+    ns.out(ns.t.bold_magenta(u"Compacting local databases"))
+    ns.out(u"")
 
     for name, db in ns.databases.items():
-        print ns.t.cyan(u"Compacting database: {0}".format(name))
+        ns.out(ns.t.cyan(
+            u"Compacting database: {0}".format(name)))
         stats = db.compact()
-        print ns.t.cyan(u"  pruned {0.noops} non-operation entries".format(
-            stats))
+        ns.out(ns.t.cyan(
+            u"  pruned {0.noops} non-operation entries".format(stats)))
 
     return 0
 

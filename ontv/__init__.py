@@ -6,6 +6,7 @@ import random
 import contextlib
 import shutil
 import datetime
+import sys
 
 from .api import TheTVDBApi
 from .action.sync import setup as sync_setup, action as sync_action
@@ -316,13 +317,25 @@ def migration_check(ns):
 
     if migrations:
         path = backup_libdir(ns)
-        print ns.C.warning("Backed up library directory to: {}".format(path))
+        ns.out(ns.C.warning("Backed up library directory to: {}".format(path)))
 
         for key, migration in migrations:
-            print ns.C.title("Migrating database version {0}".format(key))
+            ns.out(ns.C.title("Migrating database version {0}".format(key)))
             migration(ns)
 
         db['scheme-version'] = SCHEME_VERSION
+
+
+class Printer(object):
+    def __init__(self, stream, encoding='utf-8'):
+        self._stream = stream
+        self._encoding = encoding
+
+    def __call__(self, string):
+        if not isinstance(string, unicode):
+            raise Exception("Only unicode objects should be used")
+
+        self._stream.write(string.encode(self._encoding) + '\n')
 
 
 def main(args):
@@ -331,6 +344,8 @@ def main(args):
     setup_parser(parser)
 
     ns = parser.parse_args(args)
+
+    ns.out = Printer(sys.stdout)
 
     logging.basicConfig(format=LOGGING_FORMAT, level=ns.loglevel)
 
@@ -356,7 +371,7 @@ def main(args):
         ns.series = SeriesDAO(series, episodes, watched)
 
         if not ns.is_synced and ns.action != sync_action:
-            print ns.t.bold_red("Your first action should be 'sync'")
+            ns.out(ns.t.bold_red("Your first action should be 'sync'"))
             return 1
 
         return ns.action(ns)

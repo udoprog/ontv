@@ -109,21 +109,17 @@ def format_days(days):
     return "{0} days".format(days)
 
 
-def print_wrapped(text, indent=u""):
+def format_wrapped(out, text, indent=u""):
     wrapper = textwrap.TextWrapper()
     wrapper.initial_indent = indent
     wrapper.subsequent_indent = indent
 
     for line in wrapper.wrap(text):
-        print line
+        out(line)
 
 
-def print_title(term, title):
-    print term.bold_cyan(title)
-
-
-def print_episode(
-    term, series_dao, episode,
+def format_episode(
+    out, term, series_dao, episode,
     short_version=True,
     indent=u"",
 ):
@@ -133,42 +129,42 @@ def print_episode(
         color = term.bold_blue
 
     if short_version:
-        print color(
+        out(color(
             u"{0}{1:02} '{2}' {3} ({4})".format(
                 indent, episode['episode_number'],
                 episode['episode_name'],
                 format_airdate(episode['first_aired']),
-                episode['first_aired']))
+                episode['first_aired'])))
     else:
-        print color(
+        out(color(
             u"{0}{1:02} {2}".format(
                 indent, episode['episode_number'],
-                episode['episode_name']))
+                episode['episode_name'])))
 
     if short_version:
         return
 
-    print term.cyan(u"{0}Air date: {1} ({2})".format(
+    out(term.cyan(u"{0}Air date: {1} ({2})".format(
         indent + u"  ",
         format_airdate(episode['first_aired']),
-        episode['first_aired']))
+        episode['first_aired'])))
 
     if episode['overview']:
-        print_wrapped(episode['overview'], indent=indent + u"  ")
+        format_wrapped(out, episode['overview'], indent=indent + u"  ")
 
     if 'guest_stars' in episode:
-        print term.cyan(u"{0}Guest stars:".format(indent + u"  "))
-        print_wrapped(format_compact_list(episode['guest_stars']),
-                      indent=indent + u"    ")
+        out(term.cyan(u"{0}Guest stars:".format(indent + u"  ")))
+        format_wrapped(out, format_compact_list(episode['guest_stars']),
+                       indent=indent + u"    ")
 
 
-def print_season(
-        term, series_dao,
-        series,
-        season_number,
-        episodes=None,
-        indent=u""):
-
+def format_season(
+    out, term, series_dao,
+    series,
+    season_number,
+    episodes=None,
+    indent=u""
+):
     now = datetime.datetime.now()
 
     has_aired = has_aired_filter(now)
@@ -191,27 +187,17 @@ def print_season(
     else:
         color = term.bold_red
 
-    print u"{0}{c}Season {1}{t.normal} ({2}): {3}".format(
+    out(u"{0}{c}Season {1}{t.normal} ({2}): {3}".format(
         indent, season_number, episodes_legend, episodes_count,
-        c=color, t=term)
+        c=color, t=term))
 
     if not episodes:
         return
 
     for episode in episodes:
-        print_episode(
-            term, series_dao, episode,
-            short_version=False,
-            indent=indent + u"  ")
-
-
-def print_list(items, item_format=u"- {0}", indent=u""):
-    if items is None:
-        print u"{0}(empty)".format(indent)
-        return
-
-    for item in items:
-        print u"{0}{1}".format(indent, item_format.format(item))
+        format_episode(out, term, series_dao, episode,
+                       short_version=False,
+                       indent=indent + u"  ")
 
 
 def format_compact_list(items, item_format=u"{0}"):
@@ -221,34 +207,34 @@ def format_compact_list(items, item_format=u"{0}"):
     return u", ".join(map(item_format.format, items))
 
 
-def print_series(
-    term, series,
+def format_series(
+    out, term, series,
     seasons=None,
     ignored_seasons=set(),
     series_dao=None,
     indent=u"",
 ):
-    print_title(term, u"{0} (id: {1})".format(
-        series['series_name'], series['id']))
+    out(term.bold_cyan(u"{0} (id: {1})".format(
+        series['series_name'], series['id'])))
 
     if 'first_aired' in series:
-        print term.cyan(u"Air date: {0} ({1})".format(
+        out(term.cyan(u"Air date: {0} ({1})".format(
             format_airdate(series['first_aired']),
-            series['first_aired']))
+            series['first_aired'])))
 
     if 'overview' in series:
         if series['overview']:
-            print_wrapped(series['overview'], indent=u"  ")
+            format_wrapped(out, series['overview'], indent=u"  ")
 
     if not seasons:
         return
 
     if 'actors' in series:
-        print term.cyan(u"{0}Actors:".format(indent))
-        print_wrapped(format_compact_list(series['actors']),
-                      indent=indent + u"  ")
+        out(term.cyan(u"{0}Actors:".format(indent)))
+        format_wrapped(out, format_compact_list(series['actors']),
+                       indent=indent + u"  ")
 
-    print term.cyan(u"Seasons")
+    out(term.cyan(u"Seasons"))
 
     for season_number, season_episodes in sorted(seasons.items()):
         if season_number in ignored_seasons:
@@ -257,8 +243,8 @@ def print_series(
         if len(seasons) != 1:
             season_episodes = None
 
-        print_season(
-            term, series_dao, series, season_number,
+        format_season(
+            out, term, series_dao, series, season_number,
             episodes=season_episodes,
             indent=u"  ")
 

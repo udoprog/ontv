@@ -5,14 +5,13 @@ from ..utils import with_resource
 @with_resource(api_series_finder)
 def action(ns, series):
     if ns.series.has_series(series):
-        print ns.t.bold_red(
-            "Already exists: {0}".format(
-                series['series_name']))
+        ns.out(ns.t.bold_red(
+            u"Already exists: {0}".format(series['series_name'])))
         return 0
 
     ns.series.add(series)
 
-    print ns.t.bold_green(u"added: {0}".format(series['series_name']))
+    ns.out(ns.t.bold_green(u"added: {0}".format(series['series_name'])))
     return 0
 
 

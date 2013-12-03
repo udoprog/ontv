@@ -3,19 +3,19 @@ from ..utils import with_resource
 from ..utils import numeric_ranges
 from ..utils import group_episodes
 from ..utils import local_episodes_finder
-from ..format import print_series
+from ..format import format_series
 
 
 @with_resource(local_series_finder)
 @with_resource(local_episodes_finder)
 def action(ns, series, episodes):
-    print ns.t.bold_magenta(u"Details about series")
-    print u""
+    ns.out(ns.t.bold_magenta(u"Details about series"))
+    ns.out(u"")
 
     seasons = group_episodes(episodes)
 
-    print_series(
-        ns.t, series,
+    format_series(
+        ns.out, ns.t, series,
         seasons=seasons,
         ignored_seasons=ns.ignored_seasons,
         series_dao=ns.series)

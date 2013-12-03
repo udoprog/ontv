@@ -5,7 +5,7 @@ from ..utils import local_series_finder
 @with_resource(local_series_finder)
 def action(ns, series):
     ns.series.remove(series)
-    print ns.t.green("removed: {0}".format(series['series_name']))
+    ns.out(ns.t.green("removed: {0}".format(series['series_name'])))
     return 0
 
 
