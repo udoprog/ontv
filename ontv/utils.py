@@ -168,18 +168,20 @@ def find_next_episode(episodes, is_watched, ignored_seasons=set([0])):
     Returns None if none can be found.
     """
 
-    for episode in sorted_episodes(episodes):
-        if episode['season_number'] in ignored_seasons:
+    for e in sorted_episodes(episodes):
+        if e['season_number'] in ignored_seasons:
             continue
 
-        if is_watched(episode):
+        if is_watched(e):
             continue
 
-        if not episode['first_aired']:
+        first_aired = e.get('first_aired')
+
+        if not first_aired:
             continue
 
-        airdate = parse_datetime(episode['first_aired'])
-        return episode, airdate
+        airdate = parse_datetime(first_aired)
+        return e, airdate
 
     return None
 
@@ -197,15 +199,17 @@ def find_last_episode(episodes, is_watched, ignored_seasons=set([0])):
 
     stored = None
 
-    for episode in sorted_episodes(episodes):
-        if episode['season_number'] in ignored_seasons:
+    for e in sorted_episodes(episodes):
+        if e['season_number'] in ignored_seasons:
             continue
 
-        if is_watched(episode):
-            stored = episode
+        if is_watched(e):
+            stored = e
             continue
 
-        if not episode['first_aired']:
+        first_aired = e.get('first_aired')
+
+        if not first_aired:
             continue
 
         break
@@ -213,7 +217,7 @@ def find_last_episode(episodes, is_watched, ignored_seasons=set([0])):
     if stored is None:
         return None
 
-    airdate = parse_datetime(stored['first_aired'])
+    airdate = parse_datetime(first_aired)
     return stored, airdate
 
 
