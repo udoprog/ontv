@@ -4,6 +4,8 @@ import logging
 import blessings
 import random
 import contextlib
+import shutil
+import datetime
 
 from .api import TheTVDBApi
 from .action.sync import setup as sync_setup, action as sync_action
@@ -22,8 +24,12 @@ from .utils import write_yaml
 from .utils import read_yaml
 
 from .database import open_database
+from .database import SetDB
 
 __version__ = "0.8.2"
+
+# current scheme version.
+SCHEME_VERSION = 2
 
 log = logging.getLogger(__name__)
 
@@ -161,11 +167,13 @@ def setup_ns(ns):
             raise Exception("missing environment variable: HOME")
 
         ns.libdir = os.path.join(home, '.ontv')
+        ns.backup_libdir = os.path.join(home, '.ontv-backups')
 
     ns.mirrors_path = os.path.join(ns.libdir, 'mirrors.yaml')
     ns.languages_path = os.path.join(ns.libdir, 'languages.yaml')
     ns.config_path = os.path.join(ns.libdir, 'config.yaml')
     ns.db_path = os.path.join(ns.libdir, 'db')
+    ns.db_series_path = os.path.join(ns.libdir, 'db_series')
     ns.series_db_path = os.path.join(ns.libdir, 'series')
     ns.episodes_db_path = os.path.join(ns.libdir, 'episodes')
     ns.watched_db_path = os.path.join(ns.libdir, 'watched')
@@ -238,8 +246,89 @@ def setup_ns(ns):
     ns.C.range_outside = 'red'
     ns.C.all_seen = 'magenta'
     ns.C.warning = 'red'
+    ns.C.info = 'green'
     ns.C.title = 'bold_magenta'
     ns.C.series_title = 'bold'
+
+
+def migrate_1(ns):
+    # move all series into db_series.
+    db = ns.databases['db']
+    db_series = ns.databases['db_series']
+    series = ns.databases['series']
+    episodes = ns.databases['episodes']
+    watched = ns.databases['watched']
+
+    for series_id in db.get("series", []):
+        db_series.add(series_id)
+
+    del db["series"]
+    del db["watched"]
+
+    # convert all series id keys into numeric values.
+    for key, value in series.items():
+        series[int(key)] = value
+        del series[key]
+
+    # convert all episodes id keys into numeric values.
+    for key, value in episodes.items():
+        episodes[int(key)] = value
+        del episodes[key]
+
+    # convert all watched id keys into numeric values.
+    for key, value in watched.items():
+        watched[int(key)] = value
+        del watched[key]
+
+
+AVAILABLE_MIGRATIONS = {
+    1: migrate_1
+}
+
+
+def backup_libdir(ns):
+    if not os.path.isdir(ns.backup_libdir):
+        os.makedirs(ns.backup_libdir)
+
+    now = datetime.datetime.now()
+
+    i = 0
+
+    while True:
+        date_dir = now.strftime('%Y_%m_%d')
+        target = os.path.join(
+            ns.backup_libdir, "{0}_{1}".format(date_dir, i))
+
+        if not os.path.isdir(target):
+            break
+
+        i += 1
+
+    shutil.copytree(ns.libdir, target)
+
+    return target
+
+
+def migration_check(ns):
+    db = ns.databases['db']
+
+    version = db.get('scheme-version', 1)
+
+    migrations = list()
+
+    for key, migration in AVAILABLE_MIGRATIONS.items():
+        if version <= key:
+            migrations.append((key, migration))
+
+    if migrations:
+        path = backup_libdir(ns)
+        print ns.C.warning("Backed up library directory to: {}".format(path))
+
+        for key, migration in migrations:
+            print ns.C.title("Migrating database version {0}".format(key))
+            migration(ns)
+
+        db['scheme-version'] = SCHEME_VERSION
 
 
 def main(args):
@@ -255,20 +344,24 @@ def main(args):
 
     databases = contextlib.nested(
         open_database(ns.db_path),
+        open_database(ns.db_series_path, impl=SetDB),
         open_database(ns.series_db_path),
         open_database(ns.episodes_db_path),
         open_database(ns.watched_db_path),
     )
 
-    with databases as (db, series_db, episodes_db, watched_db):
+    with databases as (db, db_series, series, episodes, watched):
         ns.databases = {
             "db": db,
-            "series": series_db,
-            "episodes": episodes_db,
-            "watched": watched_db,
+            "db_series": db_series,
+            "series": series,
+            "episodes": episodes,
+            "watched": watched,
         }
 
-        ns.series = SeriesDAO(db, series_db, episodes_db, watched_db)
+        migration_check(ns)
+
+        ns.series = SeriesDAO(db_series, series, episodes, watched)
 
         if not ns.is_synced and ns.action != sync_action:
             print ns.t.bold_red("Your first action should be 'sync'")
