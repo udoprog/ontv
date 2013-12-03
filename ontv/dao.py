@@ -4,47 +4,29 @@ from .utils import format_datetime
 
 
 class SeriesDAO(object):
-    def __init__(self, db_series, series, episodes, watched):
-        self._db_series = db_series
+    def __init__(self, series, episodes, watched):
         self._series = series
         self._episodes = episodes
         self._watched = watched
 
     def add(self, series):
-        self._db_series.add(series['id'])
         self._series[series['id']] = series
 
     def remove(self, series):
-        self._db_series.remove(series['id'])
         del self._series[series['id']]
 
     def has_series(self, series):
-        return series['id'] in self._db_series
+        return series['id'] in self._series
 
     def list_series(self):
-        result = list()
-
-        for series_id in self._db_series:
-            series = self._series.get(series_id)
-
-            if not series:
-                continue
-
-            result.append(series)
-
-        return result
+        return self._series.values()
 
     def find_series(self, series_query):
         result = list()
 
         series_query = series_query.lower()
 
-        for series_id in self._db_series:
-            series = self._series.get(series_id)
-
-            if not series:
-                continue
-
+        for series in self._series.values():
             if series_query not in series['series_name'].lower():
                 continue
 

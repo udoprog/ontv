@@ -173,7 +173,6 @@ def setup_ns(ns):
     ns.languages_path = os.path.join(ns.libdir, 'languages.yaml')
     ns.config_path = os.path.join(ns.libdir, 'config.yaml')
     ns.db_path = os.path.join(ns.libdir, 'db')
-    ns.db_series_path = os.path.join(ns.libdir, 'db_series')
     ns.series_db_path = os.path.join(ns.libdir, 'series')
     ns.episodes_db_path = os.path.join(ns.libdir, 'episodes')
     ns.watched_db_path = os.path.join(ns.libdir, 'watched')
@@ -252,15 +251,10 @@ def setup_ns(ns):
 
 
 def migrate_1(ns):
-    # move all series into db_series.
     db = ns.databases['db']
-    db_series = ns.databases['db_series']
     series = ns.databases['series']
     episodes = ns.databases['episodes']
     watched = ns.databases['watched']
-
-    for series_id in db.get("series", []):
-        db_series.add(series_id)
 
     del db["series"]
     del db["watched"]
@@ -344,16 +338,14 @@ def main(args):
 
     databases = contextlib.nested(
         open_database(ns.db_path),
-        open_database(ns.db_series_path, impl=SetDB),
         open_database(ns.series_db_path),
         open_database(ns.episodes_db_path),
         open_database(ns.watched_db_path),
     )
 
-    with databases as (db, db_series, series, episodes, watched):
+    with databases as (db, series, episodes, watched):
         ns.databases = {
             "db": db,
-            "db_series": db_series,
             "series": series,
             "episodes": episodes,
             "watched": watched,
@@ -361,7 +353,7 @@ def main(args):
 
         migration_check(ns)
 
-        ns.series = SeriesDAO(db_series, series, episodes, watched)
+        ns.series = SeriesDAO(series, episodes, watched)
 
         if not ns.is_synced and ns.action != sync_action:
             print ns.t.bold_red("Your first action should be 'sync'")

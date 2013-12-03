@@ -224,9 +224,12 @@ def has_aired_filter(now):
     """
 
     def __has_aired(e):
-        if not e['first_aired']:
+        first_aired = e.get('first_aired')
+
+        if not first_aired:
             return False
-        return now >= parse_datetime(e['first_aired'])
+
+        return now >= parse_datetime(first_aired)
 
     return __has_aired
 
