@@ -114,11 +114,10 @@ def action(ns, series):
             short_episode(episode)))
 
     if all_seen and (specific or ns.all):
-        ns.out(color(ns.C.all_seen(u"never (all seen)")))
+        ns.out(ns.C.all_seen(u"never (all seen)"))
 
         for s in all_seen:
-            ns.out(u"  {0}".format(
-                ns.C.series_title(s['series_name'])))
+            ns.out(u"  {0}".format(ns.C.series_title(s['series_name'])))
 
     return 0
 
