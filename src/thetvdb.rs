@@ -2,10 +2,12 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
-use reqwest::{Method, Request, RequestBuilder, Response, Url};
+use bytes::Bytes;
+use reqwest::{Method, RequestBuilder, Response, Url};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-use crate::model::{Image, SearchSeries};
+use crate::model::{Image, RemoteSeriesId, SearchSeries, Series, Source, TheTvDbSeriesId};
 
 const BASE_URL: &str = "https://api.thetvdb.com";
 const ARTWORKS_URL: &str = "https://artworks.thetvdb.com";
@@ -95,7 +97,8 @@ impl Client {
         };
 
         let res = self.client.execute(req).await?;
-        let res: Response = to_json(res).await?;
+        let res: Bytes = handle_res(res).await?;
+        let res: Response = serde_json::from_slice(&res)?;
 
         let expires_at = Instant::now()
             .checked_add(Duration::from_secs(EXPIRATION_SECONDS))
@@ -129,6 +132,59 @@ impl Client {
         Ok(self.request(method, segments).bearer_auth(&token))
     }
 
+    /// Download series information.
+    pub(crate) async fn series(&self, id: TheTvDbSeriesId) -> Result<Series> {
+        let res = self
+            .request_with_auth(Method::GET, &["series", &id.to_string()])
+            .await?
+            .send()
+            .await?;
+
+        let raw: Bytes = handle_res(res).await?;
+        log::trace!("{}", serde_json::from_slice::<serde_json::Value>(&raw)?);
+        let value: Value = serde_json::from_slice::<Data<_>>(&raw)?.data;
+
+        let banner = match &value.banner {
+            Some(banner) if !banner.is_empty() => {
+                Some(Image::parse_banner(banner).context("banner image")?)
+            }
+            _ => None,
+        };
+
+        let fanart = match &value.fanart {
+            Some(fanart) if !fanart.is_empty() => {
+                Some(Image::parse_banner(fanart).context("fanart image")?)
+            }
+            _ => None,
+        };
+
+        let poster = Image::parse_banner(&value.poster).context("poster image")?;
+
+        return Ok(Series {
+            id: Uuid::new_v4(),
+            title: value.series_name.to_owned(),
+            banner,
+            poster,
+            fanart,
+            remote_ids: Vec::from([RemoteSeriesId::TheTvDb { id }]),
+            raw: [(Source::TheTvDb, raw)].into_iter().collect(),
+        });
+
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        #[allow(unused)]
+        struct Value {
+            id: TheTvDbSeriesId,
+            // "2021-03-05 07:53:14"
+            added: String,
+            banner: Option<String>,
+            fanart: Option<String>,
+            overview: Option<String>,
+            poster: String,
+            series_name: String,
+        }
+    }
+
     /// Search series result.
     pub(crate) async fn search_by_name(&self, name: &str) -> Result<Vec<SearchSeries>> {
         let res = self
@@ -138,12 +194,13 @@ impl Client {
             .send()
             .await?;
 
-        let data: Data<Row> = to_json(res).await?;
+        let data: Bytes = handle_res(res).await?;
+        let data: Data<Vec<Row>> = serde_json::from_slice(&data)?;
 
         let mut output = Vec::with_capacity(data.data.len());
 
         for row in data.data {
-            let poster = Image::thetvdb_parse(&row.poster)?;
+            let poster = Image::parse(&row.poster)?;
 
             output.push(SearchSeries {
                 id: row.id,
@@ -157,13 +214,13 @@ impl Client {
 
         #[derive(Debug, Clone, Deserialize)]
         pub(crate) struct Row {
-            pub(crate) id: u64,
+            pub(crate) id: TheTvDbSeriesId,
             #[serde(rename = "seriesName")]
             pub(crate) name: String,
             #[serde(default)]
             pub(crate) poster: String,
             #[serde(default)]
-            pub(crate) overview: String,
+            pub(crate) overview: Option<String>,
         }
     }
 
@@ -177,18 +234,15 @@ impl Client {
 }
 
 /// Handle converting response to JSON.
-async fn to_json<T>(mut res: Response) -> Result<T>
-where
-    T: for<'de> Deserialize<'de>,
-{
+async fn handle_res(res: Response) -> Result<Bytes> {
     if !res.status().is_success() {
         bail!("{}: {}", res.status(), res.text().await?);
     }
 
-    Ok(res.json().await?)
+    Ok(res.bytes().await?)
 }
 
 #[derive(Deserialize)]
 struct Data<T> {
-    data: Vec<T>,
+    data: T,
 }

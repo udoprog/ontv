@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::Error;
 use serde::{Deserialize, Serialize};
 
-use crate::page;
+use crate::{model::TheTvDbSeriesId, page};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Page {
@@ -38,11 +38,16 @@ pub(crate) enum Message {
     /// Setting-specific messages.
     Settings(page::settings::SettingsMessage),
     /// Dashboard-specific messages.
+    #[allow(unused)]
     Dashboard(page::dashboard::DashboardMessage),
     /// Search-specific messages.
     Search(page::search::SearchMessage),
+    /// Series tracked.
+    SeriesTracked,
     /// Images have been loaded.
     ImagesLoaded,
     /// Start tracking the series with the given ID.
-    Track(u64),
+    Track(TheTvDbSeriesId),
+    /// Stop tracking the given show.
+    Untrack(TheTvDbSeriesId),
 }

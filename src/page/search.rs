@@ -2,14 +2,12 @@ use anyhow::Error;
 
 use iced::widget::{button, column, image, row, scrollable, text, text_input};
 use iced::{theme, Alignment};
-use iced::{Color, Command, Element, Length};
+use iced::{Command, Element, Length};
 
 use crate::message::Message;
 use crate::model::SearchSeries;
-use crate::page::settings;
-use crate::params::{GAP, GAP2, SPACE};
+use crate::params::{ACTION_BUTTON_SIZE, GAP, GAP2, SPACE};
 use crate::service::Service;
-use crate::thetvdb;
 
 const PER_PAGE: usize = 5;
 
@@ -40,7 +38,6 @@ pub(crate) struct State {
 pub(crate) fn update(
     service: &Service,
     state: &mut State,
-    settings: &settings::State,
     message: SearchMessage,
 ) -> Command<Message> {
     match message {
@@ -110,18 +107,32 @@ pub(crate) fn view(service: &Service, state: &State) -> Element<'static, Message
     {
         let handle = service.get_image(&series.poster);
 
+        let track = if service.is_thetvdb_tracked(series.id) {
+            button(text("Untrack").size(ACTION_BUTTON_SIZE))
+                .style(theme::Button::Destructive)
+                .on_press(Message::Untrack(series.id))
+        } else {
+            button(text("Track").size(ACTION_BUTTON_SIZE))
+                .style(theme::Button::Positive)
+                .on_press(Message::Track(series.id))
+        };
+
+        let overview = series
+            .overview
+            .as_ref()
+            .map(|o| o.as_str())
+            .unwrap_or_default();
+
         results = results.push(
             column![
                 row![
                     image(handle).height(Length::Units(100)),
-                    column![text(&series.name).size(24), text(&series.overview),].spacing(SPACE)
+                    column![text(&series.name).size(24), text(overview),].spacing(SPACE)
                 ]
                 .spacing(GAP),
-                button(text("Track").size(14))
-                    .style(theme::Button::Positive)
-                    .on_press(Message::Track(series.id)),
+                track,
             ]
-            .spacing(SPACE),
+            .spacing(GAP),
         );
     }
 

@@ -103,19 +103,18 @@ impl Application for Main {
                 return page::dashboard::update(&mut self.dashboard, message);
             }
             Message::Search(message) => {
-                return page::search::update(
-                    &self.service,
-                    &mut self.search,
-                    &self.settings,
-                    message,
-                );
+                return page::search::update(&self.service, &mut self.search, message);
             }
             Message::Error(error) => {
                 log::error!("error: {error}");
             }
+            Message::SeriesTracked => {}
             Message::ImagesLoaded => {}
             Message::Track(id) => {
-                log::debug!("track: {id}");
+                return Command::perform(self.service.track_thetvdb(id), |m| m);
+            }
+            Message::Untrack(id) => {
+                return Command::perform(self.service.untrack(id), |m| m);
             }
         }
 
@@ -142,20 +141,20 @@ impl Application for Main {
 
         let menu = column![
             menu_item(&self.page, "Dashboard", Page::Dashboard),
-            menu_item(&self.page, "Settings", Page::Settings),
             menu_item(&self.page, "Search", Page::Search),
+            menu_item(&self.page, "Settings", Page::Settings),
         ]
         .spacing(SPACE)
         .max_width(140);
 
-        let mut content = row![menu,]
+        let content = row![menu,]
             .spacing(GAP2)
             .padding(GAP2)
             .width(Length::Fill)
             .height(Length::Fill);
 
         let content = match &self.page {
-            Page::Dashboard => content.push(page::dashboard::view(&self.dashboard)),
+            Page::Dashboard => content.push(page::dashboard::view(&self.service, &self.dashboard)),
             Page::Search => content.push(page::search::view(&self.service, &self.search)),
             Page::Settings => content.push(page::settings::view(&self.settings)),
         };
