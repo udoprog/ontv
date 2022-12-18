@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::fmt;
 
 use anyhow::Error;
 use serde::{Deserialize, Serialize};
@@ -20,15 +20,36 @@ pub(crate) enum ThemeType {
     Dark,
 }
 
+/// A detailed error message.
+#[derive(Debug, Clone)]
+pub(crate) struct ErrorMessage {
+    message: String,
+    causes: Vec<String>,
+}
+
+impl fmt::Display for ErrorMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.causes.is_empty() {
+            return self.message.fmt(f);
+        }
+
+        writeln!(f, "{}", self.message)?;
+
+        for cause in &self.causes {
+            writeln!(f, "caused by: {}", cause)?;
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Default, Debug, Clone)]
 pub(crate) enum Message {
     /// Do nothing.
     #[default]
     Noop,
     /// Error during operation.
-    Error(String),
-    /// Setup procedure finished running.
-    Setup((page::settings::State, Option<Arc<Error>>)),
+    Error(ErrorMessage),
     /// Actually save configuration.
     SaveConfig,
     /// Configuration saved and whether it was successful or not.
@@ -45,9 +66,24 @@ pub(crate) enum Message {
     /// Series tracked.
     SeriesTracked,
     /// Images have been loaded.
-    ImagesLoaded,
+    ImageLoaded,
     /// Start tracking the series with the given ID.
     Track(TheTvDbSeriesId),
     /// Stop tracking the given show.
     Untrack(TheTvDbSeriesId),
+}
+
+impl Message {
+    /// Construct an error message with detailed information.
+    pub(crate) fn error(error: Error) -> Self {
+        let mut message = error.to_string();
+
+        let mut causes = Vec::new();
+
+        for cause in error.chain().skip(1) {
+            causes.push(cause.to_string());
+        }
+
+        Self::Error(ErrorMessage { message, causes })
+    }
 }

@@ -73,14 +73,7 @@ pub(crate) fn update(
             state.page = page;
         }
         SearchMessage::Result(series) => {
-            let mut ids = Vec::with_capacity(series.len());
-
-            for s in &series {
-                ids.push(s.poster);
-            }
-
             state.series = series;
-            return Command::perform(service.load_images(&ids), |m| m);
         }
     }
 

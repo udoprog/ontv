@@ -140,9 +140,9 @@ impl Client {
             .send()
             .await?;
 
-        let raw: Bytes = handle_res(res).await?;
-        log::trace!("{}", serde_json::from_slice::<serde_json::Value>(&raw)?);
-        let value: Value = serde_json::from_slice::<Data<_>>(&raw)?.data;
+        let bytes: Bytes = handle_res(res).await?;
+        let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
+        let value: Value = serde_json::from_slice::<Data<_>>(&bytes)?.data;
 
         let banner = match &value.banner {
             Some(banner) if !banner.is_empty() => {

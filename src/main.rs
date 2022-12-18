@@ -6,23 +6,25 @@ mod service;
 mod thetvdb;
 mod utils;
 
-use std::sync::Arc;
+use std::collections::VecDeque;
 use std::time::Duration;
 
-use anyhow::{Error, Result};
+use anyhow::Result;
 use iced::theme::{self, Theme};
 use iced::widget::{button, column, container, row, text};
 use iced::{Application, Command, Element, Length, Settings};
 
 use crate::message::{Message, Page, ThemeType};
+use crate::model::Image;
+use crate::page::search::SearchMessage;
 use crate::params::{GAP2, SPACE};
 use crate::service::Service;
 use crate::utils::Timeout;
 
 pub fn main() -> Result<()> {
     pretty_env_logger::init();
-    let service = Service::new()?;
-    Main::run(Settings::with_flags(Flags { service }))?;
+    let (service, settings) = Service::new()?;
+    Main::run(Settings::with_flags(Flags { service, settings }))?;
     Ok(())
 }
 
@@ -31,14 +33,16 @@ struct Main {
     page: Page,
     dashboard: page::dashboard::State,
     settings: page::settings::State,
-    settings_error: Option<Arc<Error>>,
     search: page::search::State,
     loading: bool,
     save_timeout: Timeout,
+    /// Image IDs to load.
+    image_ids: VecDeque<Image>,
 }
 
 struct Flags {
     service: Service,
+    settings: page::settings::State,
 }
 
 impl Application for Main {
@@ -51,18 +55,19 @@ impl Application for Main {
         let this = Main {
             service: flags.service,
             page: Page::Dashboard,
-            loading: true,
+            loading: false,
             dashboard: page::dashboard::State::default(),
-            settings: page::settings::State::default(),
-            settings_error: None,
+            settings: flags.settings,
             search: page::search::State::default(),
             save_timeout: Timeout::default(),
+            image_ids: VecDeque::new(),
         };
 
         let command = Command::perform(this.service.setup(), |out| out);
         (this, command)
     }
 
+    #[inline]
     fn title(&self) -> String {
         String::from("Styling - Iced")
     }
@@ -70,10 +75,8 @@ impl Application for Main {
     fn update(&mut self, message: Message) -> Command<Self::Message> {
         match message {
             Message::Noop => {}
-            Message::Setup((settings, error)) => {
-                self.settings = settings;
-                self.settings_error = error;
-                self.loading = false;
+            Message::Error(error) => {
+                log::error!("error: {error}");
             }
             Message::SaveConfig => {
                 self.loading = true;
@@ -83,6 +86,10 @@ impl Application for Main {
                 self.loading = false;
             }
             Message::Navigate(page) => {
+                if !matches!(page, Page::Search) {
+                    self.image_ids.clear();
+                }
+
                 self.page = page;
             }
             Message::Settings(message) => {
@@ -103,13 +110,22 @@ impl Application for Main {
                 return page::dashboard::update(&mut self.dashboard, message);
             }
             Message::Search(message) => {
-                return page::search::update(&self.service, &mut self.search, message);
-            }
-            Message::Error(error) => {
-                log::error!("error: {error}");
+                let image_loading = match &message {
+                    SearchMessage::Result(series) => {
+                        self.image_ids.clear();
+                        self.handle_image_loading(series.iter().map(|s| s.poster))
+                    }
+                    _ => None,
+                };
+
+                let command = page::search::update(&self.service, &mut self.search, message);
+                return Command::batch([command].into_iter().chain(image_loading));
             }
             Message::SeriesTracked => {}
-            Message::ImagesLoaded => {}
+            Message::ImageLoaded => {
+                let command = self.handle_image_loading([]);
+                return Command::batch(command);
+            }
             Message::Track(id) => {
                 return Command::perform(self.service.track_thetvdb(id), |m| m);
             }
@@ -172,5 +188,16 @@ impl Application for Main {
             ThemeType::Light => Theme::Light,
             ThemeType::Dark => Theme::Dark,
         }
+    }
+}
+
+impl Main {
+    fn handle_image_loading<I>(&mut self, iter: I) -> Option<Command<Message>>
+    where
+        I: IntoIterator<Item = Image>,
+    {
+        self.image_ids.extend(iter);
+        let id = self.image_ids.pop_front()?;
+        Some(Command::perform(self.service.load_image(id), |m| m))
     }
 }

@@ -9,13 +9,13 @@ use iced_native::image::Handle;
 use uuid::Uuid;
 
 use crate::message::Message;
-use crate::model::{Image, Series, TheTvDbSeriesId};
+use crate::model::{Image, RemoteSeriesId, Series, TheTvDbSeriesId};
 use crate::page;
 use crate::thetvdb::Client;
 
 static MISSING_BANNER: &[u8] = include_bytes!("../assets/missing_banner.png");
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct SeriesState {
     thetvdb_ids: HashMap<TheTvDbSeriesId, Uuid>,
     data: HashMap<Uuid, Series>,
@@ -33,6 +33,10 @@ pub struct Service {
     config_path: PathBuf,
     /// Images configuration directory.
     images_dir: PathBuf,
+    /// Path where series are stored.
+    series_path: PathBuf,
+    /// Path where episodes are stored.
+    episodes_path: PathBuf,
     // In-memory state of the service.
     state: Arc<State>,
     /// Shared client.
@@ -41,25 +45,41 @@ pub struct Service {
 
 impl Service {
     /// Construct and setup in-memory state of
-    pub(crate) fn new() -> Result<Self> {
+    pub(crate) fn new() -> Result<(Self, page::settings::State)> {
         let dirs = directories_next::ProjectDirs::from("se.tedro", "setbac", "OnTV")
             .context("missing project dirs")?;
 
         let config_path = dirs.config_dir().join("config.json");
+        let series_path = dirs.config_dir().join("series.json");
+        let episodes_path = dirs.config_dir().join("episodes");
         let images_dir = dirs.cache_dir().join("images");
 
         let missing_banner = Handle::from_memory(MISSING_BANNER);
 
-        Ok(Self {
+        let series = load_initial_state(&series_path, &episodes_path)?;
+
+        let settings = match load_config(&config_path)? {
+            Some(settings) => settings,
+            None => Default::default(),
+        };
+
+        let client = Client::new();
+        client.set_api_key(&settings.thetvdb_legacy_apikey);
+
+        let this = Self {
             config_path,
             images_dir,
+            series_path,
+            episodes_path,
             state: Arc::new(State {
                 missing_banner,
-                series: Mutex::new(SeriesState::default()),
+                series: Mutex::new(series),
                 images: Mutex::new(HashMap::new()),
             }),
-            client: Client::new(),
-        })
+            client,
+        };
+
+        Ok((this, settings))
     }
 
     /// Get list of series.
@@ -79,21 +99,28 @@ impl Service {
 
     /// Setup background service, loading state from filesystem.
     pub(crate) fn setup(&self) -> impl Future<Output = Message> + 'static {
-        let config_path = self.config_path.clone();
         let client = self.client.clone();
+        let state = self.state.clone();
+        let images_dir = self.images_dir.clone();
+
+        let op = async move {
+            let mut ids = Vec::new();
+
+            for s in state.series.lock().unwrap().data.values() {
+                ids.push(s.poster);
+                ids.extend(s.banner);
+                ids.extend(s.fanart);
+            }
+
+            cache_images(&state, &client, &images_dir, ids).await?;
+            Ok::<_, Error>(Message::ImageLoaded)
+        };
 
         async move {
-            let (settings, error) = match load_config(&config_path).await {
-                Ok(Some(settings)) => (settings, None),
-                Ok(None) => (Default::default(), None),
-                Err(error) => {
-                    log::error!("failed to load config: {}: {error}", config_path.display());
-                    (Default::default(), Some(Arc::new(error)))
-                }
-            };
-
-            client.set_api_key(&settings.thetvdb_legacy_apikey);
-            Message::Setup((settings, error))
+            match op.await {
+                Ok(m) => m,
+                Err(e) => Message::error(e),
+            }
         }
     }
 
@@ -144,6 +171,7 @@ impl Service {
         let state = self.state.clone();
         let client = self.client.clone();
         let images_dir = self.images_dir.clone();
+        let series_path = self.series_path.clone();
 
         let op = async move {
             if state.series.lock().unwrap().thetvdb_ids.contains_key(&id) {
@@ -163,16 +191,21 @@ impl Service {
             )
             .await?;
 
-            let mut s = state.series.lock().unwrap();
-            s.thetvdb_ids.insert(id, series.id);
-            s.data.insert(series.id, series);
+            let data = {
+                let mut s = state.series.lock().unwrap();
+                s.thetvdb_ids.insert(id, series.id);
+                s.data.insert(series.id, series);
+                s.data.clone()
+            };
+
+            save_series(&series_path, &data).await?;
             Ok::<_, Error>(())
         };
 
         async move {
             match op.await {
                 Ok(()) => Message::SeriesTracked,
-                Err(e) => Message::Error(e.to_string()),
+                Err(e) => Message::error(e),
             }
         }
     }
@@ -198,38 +231,37 @@ impl Service {
         async move {
             match op.await {
                 Ok(()) => Message::SeriesTracked,
-                Err(e) => Message::Error(e.to_string()),
+                Err(e) => Message::error(e),
             }
         }
     }
 
     /// Ensure that a collection of the given image ids are loaded.
-    pub(crate) fn load_images(&self, ids: &[Image]) -> impl Future<Output = Message> {
+    pub(crate) fn load_image(&self, id: Image) -> impl Future<Output = Message> {
         let state = self.state.clone();
         let client = self.client.clone();
         let images_dir = self.images_dir.clone();
-        let ids = ids.to_vec();
 
         let op = async move {
-            cache_images(&state, &client, &images_dir, ids).await?;
+            cache_images(&state, &client, &images_dir, [id]).await?;
             Ok::<_, Error>(())
         };
 
         async move {
             match op.await {
-                Ok(()) => Message::ImagesLoaded,
-                Err(e) => Message::Error(e.to_string()),
+                Ok(()) => Message::ImageLoaded,
+                Err(e) => Message::error(e),
             }
         }
     }
 }
 
 /// Load configuration file.
-pub(crate) async fn load_config(path: &Path) -> Result<Option<page::settings::State>> {
+pub(crate) fn load_config(path: &Path) -> Result<Option<page::settings::State>> {
+    use std::fs;
     use std::io;
-    use tokio::fs;
 
-    let bytes = match fs::read(path).await {
+    let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(e.into()),
@@ -292,6 +324,80 @@ where
         log::debug!("downloaded: {id} ({} bytes)", data.len());
         let handle = Handle::from_memory(data);
         state.images.lock().unwrap().insert(id, handle);
+    }
+
+    Ok(())
+}
+
+/// Try to load initial state.
+fn load_initial_state(series: &Path, episodes: &Path) -> Result<SeriesState> {
+    let mut state = SeriesState::default();
+
+    if let Some(series) = load_series(series)? {
+        for s in series {
+            for remote_id in &s.remote_ids {
+                match remote_id {
+                    RemoteSeriesId::TheTvDb { id } => {
+                        state.thetvdb_ids.insert(*id, s.id);
+                    }
+                }
+            }
+
+            state.data.insert(s.id, s);
+        }
+    }
+
+    Ok(state)
+}
+
+/// Load series from the given path.
+fn load_series(path: &Path) -> Result<Option<Vec<Series>>> {
+    use std::fs;
+    use std::io::{self, BufRead, BufReader};
+
+    let f = match fs::File::open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
+
+    let mut output = Vec::new();
+
+    for line in BufReader::new(f).lines() {
+        let line = line?;
+        let line = line.trim();
+
+        if line.starts_with('#') || line.is_empty() {
+            continue;
+        }
+
+        output.push(serde_json::from_str(&line)?);
+    }
+
+    Ok(Some(output))
+}
+
+/// Save series to the given path.
+async fn save_series(path: &Path, data: &HashMap<Uuid, Series>) -> Result<()> {
+    use tokio::fs;
+    use tokio::io::AsyncWriteExt;
+
+    log::debug!("saving series to {}", path.display());
+
+    if let Some(d) = path.parent() {
+        if !matches!(fs::metadata(d).await, Ok(m) if m.is_dir()) {
+            fs::create_dir_all(d).await?;
+        }
+    }
+
+    let mut f = fs::File::create(path).await?;
+    let mut line = Vec::new();
+
+    for s in data.values() {
+        line.clear();
+        serde_json::to_writer(&mut line, s)?;
+        line.push(b'\n');
+        f.write_all(&line).await?;
     }
 
     Ok(())

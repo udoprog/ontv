@@ -9,7 +9,6 @@ use std::fmt;
 use std::sync::Arc;
 
 use anyhow::{bail, ensure, Context, Result};
-use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -58,7 +57,7 @@ pub(crate) struct Episode {
 }
 
 /// A series.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Series {
     /// Allocated UUID.
     pub(crate) id: Uuid,
@@ -75,7 +74,7 @@ pub(crate) struct Series {
     pub(crate) remote_ids: Vec<RemoteSeriesId>,
     // Raw API response in case we need to reconstruct something later.
     #[allow(unused)]
-    pub(crate) raw: HashMap<Source, Bytes>,
+    pub(crate) raw: HashMap<Source, serde_json::Value>,
 }
 
 /// Image format in use.
@@ -228,14 +227,17 @@ impl Image {
                     bail!("{input}: missing extension");
                 };
 
-                let Some((series_id, suffix)) = rest.split_once('-') else {
-                    bail!("{input}: missing number");
+                let format = ImageFormat::parse(ext)?;
+
+                let kind = if let Some((series_id, suffix)) = rest.split_once('-') {
+                    let series_id = series_id.parse()?;
+                    let suffix = Raw16::from_string(suffix);
+                    ImageKind::FanartSuffixed { series_id, suffix }
+                } else {
+                    let id = Hex16::from_hex(rest).context("bad hex")?;
+                    ImageKind::Fanart { id }
                 };
 
-                let series_id = series_id.parse()?;
-                let suffix = Raw16::from_string(suffix);
-                let format = ImageFormat::parse(ext)?;
-                let kind = ImageKind::Fanart { series_id, suffix };
                 (kind, format)
             }
             _ => {
@@ -263,8 +265,7 @@ impl Image {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
-#[serde(tag = "type")]
-#[serde(rename = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum ArtKind {
     /// Poster art.
     Posters,
@@ -300,7 +301,7 @@ impl fmt::Display for ArtKind {
 /// The identifier of an image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 #[serde(tag = "type")]
-#[serde(rename = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum ImageKind {
     Legacy {
         series_id: u64,
@@ -324,6 +325,9 @@ pub(crate) enum ImageKind {
         suffix: Raw16,
     },
     Fanart {
+        id: Hex16,
+    },
+    FanartSuffixed {
         series_id: u64,
         suffix: Raw16,
     },
@@ -358,7 +362,10 @@ impl fmt::Display for Image {
             ImageKind::Graphical { series_id, suffix } => {
                 write!(f, "/banners/graphical/{series_id}-{suffix}.{format}")
             }
-            ImageKind::Fanart { series_id, suffix } => {
+            ImageKind::Fanart { id } => {
+                write!(f, "/banners/fanart/original/{id}.{format}")
+            }
+            ImageKind::FanartSuffixed { series_id, suffix } => {
                 write!(f, "/banners/fanart/original/{series_id}-{suffix}.{format}")
             }
             ImageKind::Missing => {
