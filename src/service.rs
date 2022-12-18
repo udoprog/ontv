@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use anyhow::{Context, Error, Result};
 use iced_native::image::Handle;
+use parking_lot::Mutex;
 use uuid::Uuid;
 
 use crate::message::Message;
@@ -63,8 +63,7 @@ impl Service {
             None => Default::default(),
         };
 
-        let client = Client::new();
-        client.set_api_key(&settings.thetvdb_legacy_apikey);
+        let client = Client::new(&settings.thetvdb_legacy_apikey);
 
         let this = Self {
             config_path,
@@ -88,7 +87,6 @@ impl Service {
             .state
             .series
             .lock()
-            .unwrap()
             .data
             .values()
             .cloned()
@@ -106,7 +104,7 @@ impl Service {
         let op = async move {
             let mut ids = Vec::new();
 
-            for s in state.series.lock().unwrap().data.values() {
+            for s in state.series.lock().data.values() {
                 ids.push(s.poster);
                 ids.extend(s.banner);
                 ids.extend(s.fanart);
@@ -126,28 +124,23 @@ impl Service {
 
     /// Load configuration file.
     pub(crate) fn save_config(
-        &self,
+        &mut self,
         settings: page::settings::State,
     ) -> impl Future<Output = Message> + 'static {
+        self.client.set_api_key(&settings.thetvdb_legacy_apikey);
         let config_path = self.config_path.clone();
-        let client = self.client.clone();
 
         async move {
-            let ok = if let Err(error) = save_config(&config_path, &settings).await {
-                log::error!("failed to save config: {}: {error}", config_path.display());
-                false
-            } else {
-                true
-            };
-
-            client.set_api_key(&settings.thetvdb_legacy_apikey);
-            Message::SavedConfig(ok)
+            match save_config(&config_path, &settings).await {
+                Ok(()) => Message::SavedConfig,
+                Err(e) => Message::error(e),
+            }
         }
     }
 
     /// Get an image, will return the default handle if the given image doesn't exist.
     pub(crate) fn get_image(&self, id: &Image) -> Handle {
-        let images = self.state.images.lock().unwrap();
+        let images = self.state.images.lock();
 
         let Some(image) = images.get(&id) else {
             return self.state.missing_banner.clone();
@@ -158,12 +151,7 @@ impl Service {
 
     /// Check if series is tracked.
     pub(crate) fn is_thetvdb_tracked(&self, id: TheTvDbSeriesId) -> bool {
-        self.state
-            .series
-            .lock()
-            .unwrap()
-            .thetvdb_ids
-            .contains_key(&id)
+        self.state.series.lock().thetvdb_ids.contains_key(&id)
     }
 
     /// Enable tracking of the series with the given id.
@@ -174,7 +162,7 @@ impl Service {
         let series_path = self.series_path.clone();
 
         let op = async move {
-            if state.series.lock().unwrap().thetvdb_ids.contains_key(&id) {
+            if state.series.lock().thetvdb_ids.contains_key(&id) {
                 return Ok::<_, Error>(());
             }
 
@@ -192,7 +180,7 @@ impl Service {
             .await?;
 
             let data = {
-                let mut s = state.series.lock().unwrap();
+                let mut s = state.series.lock();
                 s.thetvdb_ids.insert(id, series.id);
                 s.data.insert(series.id, series);
                 s.data.clone()
@@ -215,11 +203,11 @@ impl Service {
         let state = self.state.clone();
 
         let op = async move {
-            if !state.series.lock().unwrap().thetvdb_ids.contains_key(&id) {
+            if !state.series.lock().thetvdb_ids.contains_key(&id) {
                 return Ok::<_, Error>(());
             }
 
-            let mut series = state.series.lock().unwrap();
+            let mut series = state.series.lock();
 
             if let Some(id) = series.thetvdb_ids.remove(&id) {
                 let _ = series.data.remove(&id);
@@ -296,7 +284,7 @@ where
     use tokio::fs;
 
     for id in ids {
-        if state.images.lock().unwrap().contains_key(&id) {
+        if state.images.lock().contains_key(&id) {
             continue;
         }
 
@@ -323,7 +311,7 @@ where
 
         log::debug!("downloaded: {id} ({} bytes)", data.len());
         let handle = Handle::from_memory(data);
-        state.images.lock().unwrap().insert(id, handle);
+        state.images.lock().insert(id, handle);
     }
 
     Ok(())

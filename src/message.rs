@@ -53,7 +53,7 @@ pub(crate) enum Message {
     /// Actually save configuration.
     SaveConfig,
     /// Configuration saved and whether it was successful or not.
-    SavedConfig(bool),
+    SavedConfig,
     /// Request to navigate to the specified page.
     Navigate(Page),
     /// Setting-specific messages.
@@ -76,7 +76,7 @@ pub(crate) enum Message {
 impl Message {
     /// Construct an error message with detailed information.
     pub(crate) fn error(error: Error) -> Self {
-        let mut message = error.to_string();
+        let message = error.to_string();
 
         let mut causes = Vec::new();
 

@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
@@ -30,35 +30,38 @@ struct State {
     cached: tokio::sync::Mutex<Option<Credentials>>,
     base_url: Url,
     artworks_url: Url,
-    api_key: Mutex<Box<str>>,
 }
 
 #[derive(Clone)]
 pub(crate) struct Client {
     state: Arc<State>,
     client: reqwest::Client,
+    api_key: Arc<str>,
 }
 
 impl Client {
     /// Construct a new client wrapping the given api key.
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new<S>(api_key: &S) -> Self
+    where
+        S: ?Sized + AsRef<str>,
+    {
         Self {
             state: Arc::new(State {
                 cached: tokio::sync::Mutex::new(None),
                 base_url: Url::parse(BASE_URL).expect("illegal base url"),
                 artworks_url: Url::parse(ARTWORKS_URL).expect("illegal artworks url"),
-                api_key: Mutex::new("".into()),
             }),
             client: reqwest::Client::new(),
+            api_key: api_key.as_ref().into(),
         }
     }
 
     /// Set API key to the given value.
-    pub(crate) fn set_api_key<S>(&self, api_key: &S)
+    pub(crate) fn set_api_key<S>(&mut self, api_key: &S)
     where
         S: ?Sized + AsRef<str>,
     {
-        *self.state.api_key.lock().unwrap() = api_key.as_ref().into();
+        self.api_key = api_key.as_ref().into();
     }
 
     fn request<I>(&self, method: Method, segments: I) -> RequestBuilder
@@ -88,13 +91,12 @@ impl Client {
             }
         }
 
-        let req = {
-            let api_key = self.state.api_key.lock().unwrap();
-
-            self.request(Method::POST, &["login"])
-                .json(&Body { apikey: &api_key })
-                .build()?
-        };
+        let req = self
+            .request(Method::POST, &["login"])
+            .json(&Body {
+                apikey: &self.api_key,
+            })
+            .build()?;
 
         let res = self.client.execute(req).await?;
         let res: Bytes = handle_res(res).await?;

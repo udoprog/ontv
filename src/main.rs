@@ -82,7 +82,7 @@ impl Application for Main {
                 self.loading = true;
                 return Command::perform(self.service.save_config(self.settings.clone()), |m| m);
             }
-            Message::SavedConfig(..) => {
+            Message::SavedConfig => {
                 self.loading = false;
             }
             Message::Navigate(page) => {
