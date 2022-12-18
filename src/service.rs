@@ -107,9 +107,47 @@ impl Service {
 
     /// Ensure that a collection of the given image ids are loaded.
     pub(crate) fn load_images(&self, ids: &[Image]) -> impl Future<Output = Message> {
-        let state = self.state.clone();
+        use tokio::fs;
 
-        let mut op = async move { Ok::<_, Error>(()) };
+        let state = self.state.clone();
+        let client = self.client.clone();
+        let images_dir = self.images_dir.clone();
+        let ids = Box::<[Image]>::from(ids);
+
+        let mut op = async move {
+            for &id in ids.iter() {
+                if state.images.lock().unwrap().contains_key(&id) {
+                    continue;
+                }
+
+                let hash = id.hash();
+                let cache_path = images_dir.join(format!("{:032x}.{}", hash, id.format()));
+
+                let data = if matches!(fs::metadata(&cache_path).await, Ok(m) if m.is_file()) {
+                    log::debug!("reading image from cache: {id}: {}", cache_path.display());
+                    fs::read(&cache_path).await?
+                } else {
+                    log::debug!("downloading: {id}: {}", cache_path.display());
+                    let data = client.get_image_data(&id).await?;
+
+                    if let Some(parent) = cache_path.parent() {
+                        if !matches!(fs::metadata(parent).await, Ok(m) if m.is_dir()) {
+                            log::debug!("creating image cache directory: {}", parent.display());
+                            fs::create_dir_all(parent).await?;
+                        }
+                    }
+
+                    fs::write(&cache_path, &data).await?;
+                    data
+                };
+
+                log::debug!("downloaded: {id} ({} bytes)", data.len());
+                let handle = Handle::from_memory(data);
+                state.images.lock().unwrap().insert(id, handle);
+            }
+
+            Ok::<_, Error>(())
+        };
 
         async move {
             match op.await {

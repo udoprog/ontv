@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::{Image, SearchSeries};
 
-const BASE_URL: &str = "https://api.thetvdb.com/";
+const BASE_URL: &str = "https://api.thetvdb.com";
+const ARTWORKS_URL: &str = "https://artworks.thetvdb.com";
 const EXPIRATION_SECONDS: u64 = 3600;
 
 struct Credentials {
@@ -26,6 +27,7 @@ struct State {
     // attempting to login.
     cached: tokio::sync::Mutex<Option<Credentials>>,
     base_url: Url,
+    artworks_url: Url,
     api_key: Mutex<Box<str>>,
 }
 
@@ -42,6 +44,7 @@ impl Client {
             state: Arc::new(State {
                 cached: tokio::sync::Mutex::new(None),
                 base_url: Url::parse(BASE_URL).expect("illegal base url"),
+                artworks_url: Url::parse(ARTWORKS_URL).expect("illegal artworks url"),
                 api_key: Mutex::new("".into()),
             }),
             client: reqwest::Client::new(),
@@ -128,20 +131,22 @@ impl Client {
 
     /// Search series result.
     pub(crate) async fn search_by_name(&self, name: &str) -> Result<Vec<SearchSeries>> {
-        let mut req = self
+        let res = self
             .request_with_auth(Method::GET, &["search", "series"])
             .await?
             .query(&[&("name", name)])
-            .build()?;
+            .send()
+            .await?;
 
-        let res = self.client.execute(req).await?;
         let data: Data<Row> = to_json(res).await?;
 
         let mut output = Vec::with_capacity(data.data.len());
 
         for row in data.data {
             let poster = Image::thetvdb_parse(&row.poster)?;
+
             output.push(SearchSeries {
+                id: row.id,
                 name: row.name,
                 poster,
                 overview: row.overview,
@@ -152,6 +157,7 @@ impl Client {
 
         #[derive(Debug, Clone, Deserialize)]
         pub(crate) struct Row {
+            pub(crate) id: u64,
             #[serde(rename = "seriesName")]
             pub(crate) name: String,
             #[serde(default)]
@@ -159,6 +165,14 @@ impl Client {
             #[serde(default)]
             pub(crate) overview: String,
         }
+    }
+
+    /// Load image data.
+    pub(crate) async fn get_image_data(&self, id: &Image) -> Result<Vec<u8>> {
+        let mut url = self.state.artworks_url.clone();
+        url.set_path(&id.to_string());
+        let res = self.client.get(url).send().await?;
+        Ok(res.bytes().await?.to_vec())
     }
 }
 

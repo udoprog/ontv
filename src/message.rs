@@ -8,8 +8,8 @@ use crate::page;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Page {
     Dashboard,
-    Settings,
     Search,
+    Settings,
 }
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,4 +43,6 @@ pub(crate) enum Message {
     Search(page::search::SearchMessage),
     /// Images have been loaded.
     ImagesLoaded,
+    /// Start tracking the series with the given ID.
+    Track(u64),
 }

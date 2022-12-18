@@ -158,61 +158,59 @@ impl fmt::Display for ImageFormat {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
+pub(crate) struct Image {
+    kind: ImageKind,
+    format: ImageFormat,
+}
+
+impl Image {
+    /// Generate a 16-byte hash.
+    pub(crate) fn hash(&self) -> u128 {
+        use std::hash::Hash;
+        use twox_hash::xxh3::HasherExt;
+
+        let mut hasher = twox_hash::Xxh3Hash128::default();
+        self.kind.hash(&mut hasher);
+        hasher.finish_ext()
+    }
+
+    /// Get the expected image format.
+    pub(crate) fn format(&self) -> ImageFormat {
+        self.format
+    }
+}
+
 /// The identifier of an image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename = "kebab-case")]
-pub(crate) enum Image {
-    Series {
-        series_id: u64,
-        id: Id,
-        format: ImageFormat,
-    },
-    SeriesV4 {
-        series_id: u64,
-        id: Id,
-        format: ImageFormat,
-    },
-    Banner {
-        id: Id,
-        format: ImageFormat,
-    },
-    BannerNumbered {
-        series_id: u64,
-        number: u32,
-        format: ImageFormat,
-    },
+pub(crate) enum ImageKind {
+    Series { series_id: u64, id: Id },
+    SeriesV4 { series_id: u64, id: Id },
+    Banner { id: Id },
+    BannerNumbered { series_id: u64, number: u32 },
     Missing,
 }
 
 impl fmt::Display for Image {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Image::Series {
-                series_id,
-                id,
-                format,
-            } => {
+        let format = &self.format;
+
+        match self.kind {
+            ImageKind::Series { series_id, id } => {
                 write!(f, "/banners/series/{series_id}/posters/{id}.{format}")
             }
-            Image::SeriesV4 {
-                series_id,
-                id,
-                format,
-            } => {
+            ImageKind::SeriesV4 { series_id, id } => {
                 write!(f, "/banners/v4/series/{series_id}/posters/{id}.{format}")
             }
-            Image::Banner { id, format } => {
+            ImageKind::Banner { id } => {
                 write!(f, "/banners/posters/{id}.{format}")
             }
-            Image::BannerNumbered {
-                series_id,
-                number,
-                format,
-            } => {
+            ImageKind::BannerNumbered { series_id, number } => {
                 write!(f, "/banners/posters/{series_id}-{number}.{format}")
             }
-            Image::Missing => {
+            ImageKind::Missing => {
                 write!(f, "/banners/images/missing/series.jpg")
             }
         }
@@ -222,10 +220,6 @@ impl fmt::Display for Image {
 impl Image {
     /// Parse an image URL from thetvdb.
     pub(crate) fn thetvdb_parse(input: &str) -> Result<Self> {
-        if input == "/banners/images/missing/series.jpg" {
-            return Ok(Image::Missing);
-        }
-
         let mut it = input.split('/');
         ensure!(it.next().is_some(), "{input}: missing leading");
         ensure!(
@@ -233,7 +227,7 @@ impl Image {
             "{input}: missing `banners`"
         );
 
-        match (
+        let (kind, format) = match (
             it.next(),
             it.next(),
             it.next(),
@@ -241,6 +235,14 @@ impl Image {
             it.next(),
             it.next(),
         ) {
+            (Some("images"), Some("missing"), Some(name), None, None, None) => {
+                let Some(("series", ext)) = name.split_once('.') else {
+                    bail!("{input}: missing extension");
+                };
+
+                let format = ImageFormat::parse(ext)?;
+                (ImageKind::Missing, format)
+            }
             (Some("v4"), Some("series"), Some(series_id), Some("posters"), Some(name), None) => {
                 let Some((id, ext)) = name.split_once('.') else {
                     bail!("{input}: missing extension");
@@ -250,11 +252,7 @@ impl Image {
                 let format = ImageFormat::parse(ext)?;
                 let id = Id::from_hex(id).context("bad id")?;
 
-                Ok(Image::SeriesV4 {
-                    series_id,
-                    id,
-                    format,
-                })
+                (ImageKind::SeriesV4 { series_id, id }, format)
             }
             (Some("series"), Some(series_id), Some("posters"), Some(name), None, None) => {
                 let Some((id, ext)) = name.split_once('.') else {
@@ -265,11 +263,7 @@ impl Image {
                 let format = ImageFormat::parse(ext)?;
                 let id = Id::from_hex(id).context("bad id")?;
 
-                Ok(Image::Series {
-                    series_id,
-                    id,
-                    format,
-                })
+                (ImageKind::Series { series_id, id }, format)
             }
             (Some("posters"), Some(name), None, None, None, None) => {
                 let Some((rest, ext)) = name.split_once('.') else {
@@ -278,29 +272,30 @@ impl Image {
 
                 let format = ImageFormat::parse(ext)?;
 
-                if let Some((series_id, number)) = rest.split_once('-') {
+                let kind = if let Some((series_id, number)) = rest.split_once('-') {
                     let series_id = series_id.parse()?;
                     let number = number.parse()?;
 
-                    Ok(Image::BannerNumbered {
-                        series_id,
-                        number,
-                        format,
-                    })
+                    ImageKind::BannerNumbered { series_id, number }
                 } else {
                     let id = Id::from_hex(rest).context("bad id")?;
-                    Ok(Image::Banner { id, format })
-                }
+                    ImageKind::Banner { id }
+                };
+
+                (kind, format)
             }
             _ => {
                 bail!("{input}: unsupported image");
             }
-        }
+        };
+
+        Ok(Image { kind, format })
     }
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct SearchSeries {
+    pub(crate) id: u64,
     pub(crate) name: String,
     pub(crate) poster: Image,
     pub(crate) overview: String,

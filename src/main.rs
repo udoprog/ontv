@@ -1,6 +1,7 @@
 mod message;
 mod model;
 mod page;
+mod params;
 mod service;
 mod thetvdb;
 mod utils;
@@ -14,6 +15,7 @@ use iced::widget::{button, column, container, row, text};
 use iced::{Application, Command, Element, Length, Settings};
 
 use crate::message::{Message, Page, ThemeType};
+use crate::params::{GAP2, SPACE};
 use crate::service::Service;
 use crate::utils::Timeout;
 
@@ -112,6 +114,9 @@ impl Application for Main {
                 log::error!("error: {error}");
             }
             Message::ImagesLoaded => {}
+            Message::Track(id) => {
+                log::debug!("track: {id}");
+            }
         }
 
         Command::none()
@@ -140,19 +145,19 @@ impl Application for Main {
             menu_item(&self.page, "Settings", Page::Settings),
             menu_item(&self.page, "Search", Page::Search),
         ]
-        .spacing(5)
+        .spacing(SPACE)
         .max_width(140);
 
         let mut content = row![menu,]
-            .spacing(20)
-            .padding(20)
+            .spacing(GAP2)
+            .padding(GAP2)
             .width(Length::Fill)
             .height(Length::Fill);
 
         let content = match &self.page {
             Page::Dashboard => content.push(page::dashboard::view(&self.dashboard)),
-            Page::Settings => content.push(page::settings::view(&self.settings)),
             Page::Search => content.push(page::search::view(&self.service, &self.search)),
+            Page::Settings => content.push(page::settings::view(&self.settings)),
         };
 
         container(content)

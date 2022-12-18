@@ -1844,6 +1844,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "twox-hash",
 ]
 
 [[package]]
