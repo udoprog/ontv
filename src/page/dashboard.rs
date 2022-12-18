@@ -13,23 +13,25 @@ pub(crate) enum DashboardMessage {}
 #[derive(Default)]
 pub(crate) struct State {}
 
-/// Handle theme change.
-pub(crate) fn update(_: &mut State, message: DashboardMessage) -> Command<Message> {
-    match message {}
-}
-
-/// Generate the view for the settings page.
-pub(crate) fn view(service: &Service, _: &State) -> Element<'static, Message> {
-    let mut series = row![].spacing(GAP);
-
-    for s in service.series() {
-        let handle = service.get_image(&s.poster);
-        series = series.push(
-            column![image(handle).height(Length::Units(200)), text(&s.title),]
-                .spacing(GAP)
-                .align_items(Alignment::Center),
-        );
+impl State {
+    /// Handle theme change.
+    pub(crate) fn update(&mut self, message: DashboardMessage) -> Command<Message> {
+        match message {}
     }
 
-    column![series].spacing(GAP).into()
+    /// Generate the view for the settings page.
+    pub(crate) fn view(&self, service: &Service) -> Element<'static, Message> {
+        let mut series = row![].spacing(GAP);
+
+        for s in service.series() {
+            let handle = service.get_image(&s.poster);
+            series = series.push(
+                column![image(handle).height(Length::Units(200)), text(&s.title),]
+                    .spacing(GAP)
+                    .align_items(Alignment::Center),
+            );
+        }
+
+        column![series].spacing(GAP).into()
+    }
 }

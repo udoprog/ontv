@@ -33,44 +33,46 @@ impl Default for State {
     }
 }
 
-/// Handle theme change.
-pub(crate) fn update(state: &mut State, message: SettingsMessage) -> bool {
-    match message {
-        SettingsMessage::ThemeChanged(theme) => {
-            state.theme = theme;
-            false
-        }
-        SettingsMessage::ThetvdbLegacyApiChanged(string) => {
-            state.thetvdb_legacy_apikey = string;
-            true
+impl State {
+    /// Handle theme change.
+    pub(crate) fn update(&mut self, message: SettingsMessage) -> bool {
+        match message {
+            SettingsMessage::ThemeChanged(theme) => {
+                self.theme = theme;
+                false
+            }
+            SettingsMessage::ThetvdbLegacyApiChanged(string) => {
+                self.thetvdb_legacy_apikey = string;
+                true
+            }
         }
     }
-}
 
-/// Generate the view for the settings page.
-pub(crate) fn view(state: &State) -> Element<'static, Message> {
-    let choose_theme = [ThemeType::Light, ThemeType::Dark].iter().fold(
-        column![text("Theme:")].spacing(GAP),
-        |column, theme| {
-            column.push(radio(
-                format!("{:?}", theme),
-                *theme,
-                Some(state.theme),
-                |theme| Message::Settings(SettingsMessage::ThemeChanged(theme)),
-            ))
-        },
-    );
+    /// Generate the view for the settings page.
+    pub(crate) fn view(&self) -> Element<'static, Message> {
+        let choose_theme = [ThemeType::Light, ThemeType::Dark].iter().fold(
+            column![text("Theme:")].spacing(GAP),
+            |column, theme| {
+                column.push(radio(
+                    format!("{:?}", theme),
+                    *theme,
+                    Some(self.theme),
+                    |theme| Message::Settings(SettingsMessage::ThemeChanged(theme)),
+                ))
+            },
+        );
 
-    let thetvdb_legacy_apikey = column![
-        text("TheTVDB Legacy API Key:"),
-        text_input("Key...", &state.thetvdb_legacy_apikey, |value| {
-            Message::Settings(SettingsMessage::ThetvdbLegacyApiChanged(value))
-        }),
-    ]
-    .spacing(GAP);
+        let thetvdb_legacy_apikey = column![
+            text("TheTVDB Legacy API Key:"),
+            text_input("Key...", &self.thetvdb_legacy_apikey, |value| {
+                Message::Settings(SettingsMessage::ThetvdbLegacyApiChanged(value))
+            }),
+        ]
+        .spacing(GAP);
 
-    column![choose_theme, thetvdb_legacy_apikey]
-        .spacing(GAP2)
-        .padding(GAP2)
-        .into()
+        column![choose_theme, thetvdb_legacy_apikey]
+            .spacing(GAP2)
+            .padding(GAP2)
+            .into()
+    }
 }

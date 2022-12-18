@@ -100,7 +100,7 @@ impl Application for Main {
                 self.page = page;
             }
             Message::Settings(message) => {
-                if page::settings::update(&mut self.settings, message) {
+                if self.settings.update(message) {
                     return Command::single(
                         self.save_timeout
                             .set(Duration::from_secs(2), Message::SaveConfig),
@@ -114,10 +114,10 @@ impl Application for Main {
                 }
             }
             Message::Dashboard(message) => {
-                return page::dashboard::update(&mut self.dashboard, message);
+                return self.dashboard.update(message);
             }
             Message::Search(message) => {
-                return page::search::update(&mut self.service, &mut self.search, message);
+                return self.search.update(&mut self.service, message);
             }
             Message::SeriesTracked(id, series, loaded) => {
                 self.service.insert_loaded_images(loaded);
@@ -180,9 +180,9 @@ impl Application for Main {
             .height(Length::Fill);
 
         let content = match &self.page {
-            Page::Dashboard => content.push(page::dashboard::view(&self.service, &self.dashboard)),
-            Page::Search => content.push(page::search::view(&self.service, &self.search)),
-            Page::Settings => content.push(page::settings::view(&self.settings)),
+            Page::Dashboard => content.push(self.dashboard.view(&self.service)),
+            Page::Search => content.push(self.search.view(&self.service)),
+            Page::Settings => content.push(self.settings.view()),
         };
 
         container(content)

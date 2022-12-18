@@ -38,151 +38,148 @@ pub(crate) struct State {
     pub(crate) image_ids: VecDeque<Image>,
 }
 
-/// Handle theme change.
-pub(crate) fn update(
-    service: &mut Service,
-    state: &mut State,
-    message: SearchMessage,
-) -> Command<Message> {
-    match message {
-        SearchMessage::Search => {
-            state.page = 0;
+impl State {
+    /// Handle theme change.
+    pub(crate) fn update(
+        &mut self,
+        service: &mut Service,
+        message: SearchMessage,
+    ) -> Command<Message> {
+        match message {
+            SearchMessage::Search => {
+                self.page = 0;
 
-            let query = state.text.clone();
-            let client = service.client.clone();
+                let query = self.text.clone();
+                let client = service.client.clone();
 
-            let op = async move { client.search_by_name(&query).await };
+                let op = async move { client.search_by_name(&query).await };
 
-            let out = |out| match out {
-                Ok(series) => Message::Search(SearchMessage::Result(series)),
-                Err(error) => Message::error(error),
-            };
+                let out = |out| match out {
+                    Ok(series) => Message::Search(SearchMessage::Result(series)),
+                    Err(error) => Message::error(error),
+                };
 
-            return Command::perform(op, out);
+                return Command::perform(op, out);
+            }
+            SearchMessage::Change(text) => {
+                self.text = text;
+            }
+            SearchMessage::Page(page) => {
+                self.page = page;
+            }
+            SearchMessage::Result(series) => {
+                self.image_ids.clear();
+                self.image_ids.extend(series.iter().map(|s| s.poster));
+                self.series = series;
+                return Command::batch(self.handle_image_loading(service));
+            }
+            SearchMessage::ImagesLoaded(loaded) => {
+                service.insert_loaded_images(loaded);
+                let command = self.handle_image_loading(service);
+                return Command::batch(command);
+            }
         }
-        SearchMessage::Change(text) => {
-            state.text = text;
-        }
-        SearchMessage::Page(page) => {
-            state.page = page;
-        }
-        SearchMessage::Result(series) => {
-            state.image_ids.clear();
-            state.image_ids.extend(series.iter().map(|s| s.poster));
-            state.series = series;
-            return Command::batch(handle_image_loading(state, service));
-        }
-        SearchMessage::ImagesLoaded(loaded) => {
-            service.insert_loaded_images(loaded);
-            let command = handle_image_loading(state, service);
-            return Command::batch(command);
-        }
+
+        Command::none()
     }
 
-    Command::none()
-}
+    /// Generate the view for the settings page.
+    pub(crate) fn view(&self, service: &Service) -> Element<'static, Message> {
+        let submit = button("Search");
 
-/// Generate the view for the settings page.
-pub(crate) fn view(service: &Service, state: &State) -> Element<'static, Message> {
-    let submit = button("Search");
-
-    let submit = if !state.text.is_empty() {
-        submit.on_press(Message::Search(SearchMessage::Search))
-    } else {
-        submit
-    };
-
-    let mut results = column![].spacing(GAP2);
-
-    for series in state
-        .series
-        .iter()
-        .skip(state.page * PER_PAGE)
-        .take(PER_PAGE)
-    {
-        let handle = service.get_image(&series.poster);
-
-        let track = if service.is_thetvdb_tracked(series.id) {
-            button(text("Untrack").size(ACTION_BUTTON_SIZE))
-                .style(theme::Button::Destructive)
-                .on_press(Message::Untrack(series.id))
+        let submit = if !self.text.is_empty() {
+            submit.on_press(Message::Search(SearchMessage::Search))
         } else {
-            button(text("Track").size(ACTION_BUTTON_SIZE))
-                .style(theme::Button::Positive)
-                .on_press(Message::Track(series.id))
+            submit
         };
 
-        let overview = series
-            .overview
-            .as_ref()
-            .map(|o| o.as_str())
-            .unwrap_or_default();
+        let mut results = column![].spacing(GAP2);
 
-        results = results.push(
-            column![
-                row![
-                    image(handle).height(Length::Units(100)),
-                    column![text(&series.name).size(24), text(overview),].spacing(SPACE)
+        for series in self.series.iter().skip(self.page * PER_PAGE).take(PER_PAGE) {
+            let handle = service.get_image(&series.poster);
+
+            let track = if service.is_thetvdb_tracked(series.id) {
+                button(text("Untrack").size(ACTION_BUTTON_SIZE))
+                    .style(theme::Button::Destructive)
+                    .on_press(Message::Untrack(series.id))
+            } else {
+                button(text("Track").size(ACTION_BUTTON_SIZE))
+                    .style(theme::Button::Positive)
+                    .on_press(Message::Track(series.id))
+            };
+
+            let overview = series
+                .overview
+                .as_ref()
+                .map(|o| o.as_str())
+                .unwrap_or_default();
+
+            results = results.push(
+                column![
+                    row![
+                        image(handle).height(Length::Units(100)),
+                        column![text(&series.name).size(24), text(overview),].spacing(SPACE)
+                    ]
+                    .spacing(GAP),
+                    track,
                 ]
                 .spacing(GAP),
-                track,
+            );
+        }
+
+        let mut pages = row![];
+
+        if self.series.len() > PER_PAGE {
+            let mut prev = button("previous page");
+            let mut next = button("next page");
+
+            if let Some(page) = self.page.checked_sub(1) {
+                prev = prev.on_press(Message::Search(SearchMessage::Page(page)));
+            }
+
+            if (self.page + 1) * PER_PAGE < self.series.len() {
+                next = next.on_press(Message::Search(SearchMessage::Page(self.page + 1)));
+            }
+
+            pages = row![
+                prev,
+                text(format!(
+                    "{}-{} result(s)",
+                    self.page * PER_PAGE,
+                    ((self.page + 1) * PER_PAGE).min(self.series.len())
+                )),
+                next
             ]
-            .spacing(GAP),
-        );
-    }
-
-    let mut pages = row![];
-
-    if state.series.len() > PER_PAGE {
-        let mut prev = button("previous page");
-        let mut next = button("next page");
-
-        if let Some(page) = state.page.checked_sub(1) {
-            prev = prev.on_press(Message::Search(SearchMessage::Page(page)));
+            .align_items(Alignment::Center)
+            .spacing(GAP);
         }
 
-        if (state.page + 1) * PER_PAGE < state.series.len() {
-            next = next.on_press(Message::Search(SearchMessage::Page(state.page + 1)));
-        }
-
-        pages = row![
-            prev,
-            text(format!(
-                "{}-{} result(s)",
-                state.page * PER_PAGE,
-                ((state.page + 1) * PER_PAGE).min(state.series.len())
-            )),
-            next
+        let column = column![
+            text("Search"),
+            row![
+                text_input("Query...", &self.text, |value| Message::Search(
+                    SearchMessage::Change(value)
+                )),
+                submit,
+            ],
+            scrollable(results).height(Length::Fill),
+            pages,
         ]
-        .align_items(Alignment::Center)
+        .width(Length::Fill)
         .spacing(GAP);
+
+        column.into()
     }
 
-    let column = column![
-        text("Search"),
-        row![
-            text_input("Query...", &state.text, |value| Message::Search(
-                SearchMessage::Change(value)
-            )),
-            submit,
-        ],
-        scrollable(results).height(Length::Fill),
-        pages,
-    ]
-    .width(Length::Fill)
-    .spacing(GAP);
-
-    column.into()
-}
-
-fn handle_image_loading(this: &mut State, service: &Service) -> Option<Command<Message>> {
-    fn translate(value: Result<Vec<(Image, Handle)>>) -> Message {
-        match value {
-            Ok(value) => Message::Search(SearchMessage::ImagesLoaded(value)),
-            Err(e) => Message::error(e),
+    fn handle_image_loading(&mut self, service: &Service) -> Option<Command<Message>> {
+        fn translate(value: Result<Vec<(Image, Handle)>>) -> Message {
+            match value {
+                Ok(value) => Message::Search(SearchMessage::ImagesLoaded(value)),
+                Err(e) => Message::error(e),
+            }
         }
-    }
 
-    let id = this.image_ids.pop_front()?;
-    Some(Command::perform(service.load_image(id), translate))
+        let id = self.image_ids.pop_front()?;
+        Some(Command::perform(service.load_image(id), translate))
+    }
 }
