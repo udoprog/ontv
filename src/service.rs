@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use anyhow::{Context, Error, Result};
 use iced_native::image::Handle;
-use parking_lot::Mutex;
 use uuid::Uuid;
 
 use crate::message::Message;
@@ -23,8 +21,8 @@ struct SeriesState {
 
 struct State {
     missing_banner: Handle,
-    series: Mutex<SeriesState>,
-    images: Mutex<HashMap<Image, Handle>>,
+    series: SeriesState,
+    images: HashMap<Image, Handle>,
 }
 
 /// Background service taking care of all state handling.
@@ -38,7 +36,7 @@ pub struct Service {
     /// Path where episodes are stored.
     episodes_path: PathBuf,
     // In-memory state of the service.
-    state: Arc<State>,
+    state: State,
     /// Shared client.
     pub(crate) client: Client,
 }
@@ -70,11 +68,11 @@ impl Service {
             images_dir,
             series_path,
             episodes_path,
-            state: Arc::new(State {
+            state: State {
                 missing_banner,
-                series: Mutex::new(series),
-                images: Mutex::new(HashMap::new()),
-            }),
+                series,
+                images: HashMap::new(),
+            },
             client,
         };
 
@@ -82,51 +80,38 @@ impl Service {
     }
 
     /// Get list of series.
-    pub(crate) fn series(&self) -> Vec<Series> {
-        let series = self
-            .state
-            .series
-            .lock()
-            .data
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
+    pub(crate) fn series<'a>(&'a self) -> impl IntoIterator<Item = &'a Series> {
+        self.state.series.data.values()
+    }
 
-        series
+    /// Insert loaded images.
+    pub(crate) fn insert_loaded_images(&mut self, loaded: Vec<(Image, Handle)>) {
+        for (id, handle) in loaded {
+            self.state.images.insert(id, handle);
+        }
     }
 
     /// Setup background service, loading state from filesystem.
-    pub(crate) fn setup(&self) -> impl Future<Output = Message> + 'static {
+    pub(crate) fn setup(&self) -> impl Future<Output = Result<Vec<(Image, Handle)>>> {
         let client = self.client.clone();
-        let state = self.state.clone();
         let images_dir = self.images_dir.clone();
 
-        let op = async move {
-            let mut ids = Vec::new();
+        let mut ids = Vec::new();
 
-            for s in state.series.lock().data.values() {
-                ids.push(s.poster);
-                ids.extend(s.banner);
-                ids.extend(s.fanart);
-            }
-
-            cache_images(&state, &client, &images_dir, ids).await?;
-            Ok::<_, Error>(Message::ImageLoaded)
-        };
-
-        async move {
-            match op.await {
-                Ok(m) => m,
-                Err(e) => Message::error(e),
-            }
+        for s in self.state.series.data.values() {
+            ids.push(s.poster);
+            ids.extend(s.banner);
+            ids.extend(s.fanart);
         }
+
+        cache_images(client, images_dir, ids)
     }
 
     /// Load configuration file.
     pub(crate) fn save_config(
         &mut self,
         settings: page::settings::State,
-    ) -> impl Future<Output = Message> + 'static {
+    ) -> impl Future<Output = Message> {
         self.client.set_api_key(&settings.thetvdb_legacy_apikey);
         let config_path = self.config_path.clone();
 
@@ -140,9 +125,7 @@ impl Service {
 
     /// Get an image, will return the default handle if the given image doesn't exist.
     pub(crate) fn get_image(&self, id: &Image) -> Handle {
-        let images = self.state.images.lock();
-
-        let Some(image) = images.get(&id) else {
+        let Some(image) = self.state.images.get(&id) else {
             return self.state.missing_banner.clone();
         };
 
@@ -151,27 +134,23 @@ impl Service {
 
     /// Check if series is tracked.
     pub(crate) fn is_thetvdb_tracked(&self, id: TheTvDbSeriesId) -> bool {
-        self.state.series.lock().thetvdb_ids.contains_key(&id)
+        self.state.series.thetvdb_ids.contains_key(&id)
     }
 
     /// Enable tracking of the series with the given id.
-    pub(crate) fn track_thetvdb(&self, id: TheTvDbSeriesId) -> impl Future<Output = Message> {
-        let state = self.state.clone();
+    pub(crate) fn track_thetvdb(
+        &self,
+        id: TheTvDbSeriesId,
+    ) -> impl Future<Output = Result<(TheTvDbSeriesId, Series, Vec<(Image, Handle)>)>> {
         let client = self.client.clone();
         let images_dir = self.images_dir.clone();
-        let series_path = self.series_path.clone();
 
-        let op = async move {
-            if state.series.lock().thetvdb_ids.contains_key(&id) {
-                return Ok::<_, Error>(());
-            }
-
+        async move {
             let series = client.series(id).await?;
 
-            cache_images(
-                &state,
-                &client,
-                &images_dir,
+            let output = cache_images(
+                client,
+                images_dir,
                 [series.poster]
                     .into_iter()
                     .chain(series.banner)
@@ -179,68 +158,61 @@ impl Service {
             )
             .await?;
 
-            let data = {
-                let mut s = state.series.lock();
-                s.thetvdb_ids.insert(id, series.id);
-                s.data.insert(series.id, series);
-                s.data.clone()
-            };
-
-            save_series(&series_path, &data).await?;
-            Ok::<_, Error>(())
-        };
-
-        async move {
-            match op.await {
-                Ok(()) => Message::SeriesTracked,
-                Err(e) => Message::error(e),
-            }
+            Ok::<_, Error>((id, series, output))
         }
+    }
+
+    /// Insert a new tracked song.
+    pub(crate) fn track(
+        &mut self,
+        id: TheTvDbSeriesId,
+        series: Series,
+    ) -> Option<impl Future<Output = Result<()>>> {
+        if self.state.series.thetvdb_ids.contains_key(&id) {
+            return None;
+        }
+
+        self.state.series.thetvdb_ids.insert(id, series.id);
+        self.state.series.data.insert(series.id, series);
+
+        let series_path = self.series_path.clone();
+        let data = self.state.series.data.clone();
+        Some(save_series(series_path, data))
     }
 
     /// Disable tracking of the series with the given id.
-    pub(crate) fn untrack(&self, id: TheTvDbSeriesId) -> impl Future<Output = Message> {
-        let state = self.state.clone();
-
-        let op = async move {
-            if !state.series.lock().thetvdb_ids.contains_key(&id) {
-                return Ok::<_, Error>(());
-            }
-
-            let mut series = state.series.lock();
-
-            if let Some(id) = series.thetvdb_ids.remove(&id) {
-                let _ = series.data.remove(&id);
-            }
-
-            Ok::<_, Error>(())
-        };
-
-        async move {
-            match op.await {
-                Ok(()) => Message::SeriesTracked,
-                Err(e) => Message::error(e),
-            }
+    pub(crate) fn untrack(
+        &mut self,
+        id: TheTvDbSeriesId,
+    ) -> Option<impl Future<Output = Result<()>>> {
+        if !self.state.series.thetvdb_ids.contains_key(&id) {
+            return None;
         }
+
+        if let Some(id) = self.state.series.thetvdb_ids.remove(&id) {
+            let _ = self.state.series.data.remove(&id);
+        }
+
+        let series_path = self.series_path.clone();
+        let data = self.state.series.data.clone();
+        Some(save_series(series_path, data))
     }
 
     /// Ensure that a collection of the given image ids are loaded.
-    pub(crate) fn load_image(&self, id: Image) -> impl Future<Output = Message> {
-        let state = self.state.clone();
+    pub(crate) fn load_image(
+        &self,
+        id: Image,
+    ) -> impl Future<Output = Result<Vec<(Image, Handle)>>> {
         let client = self.client.clone();
         let images_dir = self.images_dir.clone();
 
-        let op = async move {
-            cache_images(&state, &client, &images_dir, [id]).await?;
-            Ok::<_, Error>(())
+        let id = if !self.state.images.contains_key(&id) {
+            Some(id)
+        } else {
+            None
         };
 
-        async move {
-            match op.await {
-                Ok(()) => Message::ImageLoaded,
-                Err(e) => Message::error(e),
-            }
-        }
+        cache_images(client, images_dir, id)
     }
 }
 
@@ -277,17 +249,19 @@ pub(crate) async fn save_config(path: &Path, state: &page::settings::State) -> R
 
 /// Ensure that the given image IDs are in the in-memory and filesystem image
 /// caches.
-async fn cache_images<I>(state: &State, client: &Client, images_dir: &Path, ids: I) -> Result<()>
+async fn cache_images<I>(
+    client: Client,
+    images_dir: PathBuf,
+    ids: I,
+) -> Result<Vec<(Image, Handle)>>
 where
     I: IntoIterator<Item = Image>,
 {
     use tokio::fs;
 
-    for id in ids {
-        if state.images.lock().contains_key(&id) {
-            continue;
-        }
+    let mut output = Vec::new();
 
+    for id in ids {
         let hash = id.hash();
         let cache_path = images_dir.join(format!("{:032x}.{}", hash, id.format()));
 
@@ -311,10 +285,10 @@ where
 
         log::debug!("downloaded: {id} ({} bytes)", data.len());
         let handle = Handle::from_memory(data);
-        state.images.lock().insert(id, handle);
+        output.push((id, handle));
     }
 
-    Ok(())
+    Ok(output)
 }
 
 /// Try to load initial state.
@@ -366,7 +340,7 @@ fn load_series(path: &Path) -> Result<Option<Vec<Series>>> {
 }
 
 /// Save series to the given path.
-async fn save_series(path: &Path, data: &HashMap<Uuid, Series>) -> Result<()> {
+async fn save_series(path: PathBuf, data: HashMap<Uuid, Series>) -> Result<()> {
     use tokio::fs;
     use tokio::io::AsyncWriteExt;
 

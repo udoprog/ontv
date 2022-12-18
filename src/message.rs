@@ -1,9 +1,11 @@
 use std::fmt;
 
-use anyhow::Error;
+use anyhow::{Error, Result};
+use iced_native::image::Handle;
 use serde::{Deserialize, Serialize};
 
-use crate::{model::TheTvDbSeriesId, page};
+use crate::model::{Image, Series, TheTvDbSeriesId};
+use crate::page;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Page {
@@ -48,6 +50,8 @@ pub(crate) enum Message {
     /// Do nothing.
     #[default]
     Noop,
+    /// Original loading completed.
+    Loaded(Vec<(Image, Handle)>),
     /// Error during operation.
     Error(ErrorMessage),
     /// Actually save configuration.
@@ -64,13 +68,21 @@ pub(crate) enum Message {
     /// Search-specific messages.
     Search(page::search::SearchMessage),
     /// Series tracked.
-    SeriesTracked,
-    /// Images have been loaded.
-    ImageLoaded,
+    SeriesTracked(TheTvDbSeriesId, Series, Vec<(Image, Handle)>),
     /// Start tracking the series with the given ID.
     Track(TheTvDbSeriesId),
     /// Stop tracking the given show.
     Untrack(TheTvDbSeriesId),
+}
+
+impl From<Result<()>> for Message {
+    #[inline]
+    fn from(result: Result<()>) -> Self {
+        match result {
+            Ok(()) => Message::Noop,
+            Err(error) => Message::error(error),
+        }
+    }
 }
 
 impl Message {

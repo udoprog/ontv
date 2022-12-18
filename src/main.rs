@@ -6,17 +6,16 @@ mod service;
 mod thetvdb;
 mod utils;
 
-use std::collections::VecDeque;
 use std::time::Duration;
 
 use anyhow::Result;
 use iced::theme::{self, Theme};
 use iced::widget::{button, column, container, row, text};
 use iced::{Application, Command, Element, Length, Settings};
+use iced_native::image::Handle;
 
 use crate::message::{Message, Page, ThemeType};
 use crate::model::Image;
-use crate::page::search::SearchMessage;
 use crate::params::{GAP2, SPACE};
 use crate::service::Service;
 use crate::utils::Timeout;
@@ -36,8 +35,6 @@ struct Main {
     search: page::search::State,
     loading: bool,
     save_timeout: Timeout,
-    /// Image IDs to load.
-    image_ids: VecDeque<Image>,
 }
 
 struct Flags {
@@ -52,18 +49,24 @@ impl Application for Main {
     type Flags = Flags;
 
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
+        fn translate(result: Result<Vec<(Image, Handle)>>) -> Message {
+            match result {
+                Ok(output) => Message::Loaded(output),
+                Err(e) => Message::error(e),
+            }
+        }
+
         let this = Main {
             service: flags.service,
             page: Page::Dashboard,
-            loading: false,
+            loading: true,
             dashboard: page::dashboard::State::default(),
             settings: flags.settings,
             search: page::search::State::default(),
             save_timeout: Timeout::default(),
-            image_ids: VecDeque::new(),
         };
 
-        let command = Command::perform(this.service.setup(), |out| out);
+        let command = Command::perform(this.service.setup(), translate);
         (this, command)
     }
 
@@ -75,6 +78,10 @@ impl Application for Main {
     fn update(&mut self, message: Message) -> Command<Self::Message> {
         match message {
             Message::Noop => {}
+            Message::Loaded(loaded) => {
+                self.service.insert_loaded_images(loaded);
+                self.loading = false;
+            }
             Message::Error(error) => {
                 log::error!("error: {error}");
             }
@@ -87,7 +94,7 @@ impl Application for Main {
             }
             Message::Navigate(page) => {
                 if !matches!(page, Page::Search) {
-                    self.image_ids.clear();
+                    self.search.image_ids.clear();
                 }
 
                 self.page = page;
@@ -110,27 +117,30 @@ impl Application for Main {
                 return page::dashboard::update(&mut self.dashboard, message);
             }
             Message::Search(message) => {
-                let image_loading = match &message {
-                    SearchMessage::Result(series) => {
-                        self.image_ids.clear();
-                        self.handle_image_loading(series.iter().map(|s| s.poster))
-                    }
-                    _ => None,
-                };
-
-                let command = page::search::update(&self.service, &mut self.search, message);
-                return Command::batch([command].into_iter().chain(image_loading));
+                return page::search::update(&mut self.service, &mut self.search, message);
             }
-            Message::SeriesTracked => {}
-            Message::ImageLoaded => {
-                let command = self.handle_image_loading([]);
+            Message::SeriesTracked(id, series, loaded) => {
+                self.service.insert_loaded_images(loaded);
+                let command = self
+                    .service
+                    .track(id, series)
+                    .map(|f| Command::perform(f, Message::from));
                 return Command::batch(command);
             }
             Message::Track(id) => {
-                return Command::perform(self.service.track_thetvdb(id), |m| m);
+                let translate = |result| match result {
+                    Ok((id, series, output)) => Message::SeriesTracked(id, series, output),
+                    Err(e) => Message::error(e),
+                };
+
+                return Command::perform(self.service.track_thetvdb(id), translate);
             }
             Message::Untrack(id) => {
-                return Command::perform(self.service.untrack(id), |m| m);
+                let command = self
+                    .service
+                    .untrack(id)
+                    .map(|f| Command::perform(f, Message::from));
+                return Command::batch(command);
             }
         }
 
@@ -188,16 +198,5 @@ impl Application for Main {
             ThemeType::Light => Theme::Light,
             ThemeType::Dark => Theme::Dark,
         }
-    }
-}
-
-impl Main {
-    fn handle_image_loading<I>(&mut self, iter: I) -> Option<Command<Message>>
-    where
-        I: IntoIterator<Item = Image>,
-    {
-        self.image_ids.extend(iter);
-        let id = self.image_ids.pop_front()?;
-        Some(Command::perform(self.service.load_image(id), |m| m))
     }
 }

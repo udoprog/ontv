@@ -1,11 +1,13 @@
-use anyhow::Error;
+use std::collections::VecDeque;
 
+use anyhow::Result;
 use iced::widget::{button, column, image, row, scrollable, text, text_input};
 use iced::{theme, Alignment};
 use iced::{Command, Element, Length};
+use iced_native::image::Handle;
 
 use crate::message::Message;
-use crate::model::SearchSeries;
+use crate::model::{Image, SearchSeries};
 use crate::params::{ACTION_BUTTON_SIZE, GAP, GAP2, SPACE};
 use crate::service::Service;
 
@@ -22,8 +24,8 @@ pub(crate) enum SearchMessage {
     Page(usize),
     /// Search result from API.
     Result(Vec<SearchSeries>),
-    /// Error when doing the search.
-    Error(Box<str>),
+    /// Images have been loaded.
+    ImagesLoaded(Vec<(Image, Handle)>),
 }
 
 /// The state for the settings page.
@@ -32,39 +34,31 @@ pub(crate) struct State {
     text: String,
     series: Vec<SearchSeries>,
     page: usize,
+    /// Image IDs to load.
+    pub(crate) image_ids: VecDeque<Image>,
 }
 
 /// Handle theme change.
 pub(crate) fn update(
-    service: &Service,
+    service: &mut Service,
     state: &mut State,
     message: SearchMessage,
 ) -> Command<Message> {
     match message {
-        SearchMessage::Error(error) => {
-            log::error!("error when searching: {error}");
-        }
         SearchMessage::Search => {
             state.page = 0;
 
             let query = state.text.clone();
             let client = service.client.clone();
 
-            let op = async move {
-                let series = client.search_by_name(&query).await?;
-                Ok::<_, Error>(series)
+            let op = async move { client.search_by_name(&query).await };
+
+            let out = |out| match out {
+                Ok(series) => Message::Search(SearchMessage::Result(series)),
+                Err(error) => Message::error(error),
             };
 
-            let op = async move {
-                let message = match op.await {
-                    Ok(series) => SearchMessage::Result(series),
-                    Err(error) => SearchMessage::Error(error.to_string().into()),
-                };
-
-                Message::Search(message)
-            };
-
-            return Command::perform(op, |m| m);
+            return Command::perform(op, out);
         }
         SearchMessage::Change(text) => {
             state.text = text;
@@ -73,7 +67,15 @@ pub(crate) fn update(
             state.page = page;
         }
         SearchMessage::Result(series) => {
+            state.image_ids.clear();
+            state.image_ids.extend(series.iter().map(|s| s.poster));
             state.series = series;
+            return Command::batch(handle_image_loading(state, service));
+        }
+        SearchMessage::ImagesLoaded(loaded) => {
+            service.insert_loaded_images(loaded);
+            let command = handle_image_loading(state, service);
+            return Command::batch(command);
         }
     }
 
@@ -171,4 +173,16 @@ pub(crate) fn view(service: &Service, state: &State) -> Element<'static, Message
     .spacing(GAP);
 
     column.into()
+}
+
+fn handle_image_loading(this: &mut State, service: &Service) -> Option<Command<Message>> {
+    fn translate(value: Result<Vec<(Image, Handle)>>) -> Message {
+        match value {
+            Ok(value) => Message::Search(SearchMessage::ImagesLoaded(value)),
+            Err(e) => Message::error(e),
+        }
+    }
+
+    let id = this.image_ids.pop_front()?;
+    Some(Command::perform(service.load_image(id), translate))
 }
