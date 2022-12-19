@@ -13,6 +13,7 @@ use iced::theme::{self, Theme};
 use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{Alignment, Application, Command, Element, Length, Settings};
 use iced_native::image::Handle;
+use utils::Singleton;
 
 use crate::message::{Message, Page, ThemeType};
 use crate::model::Image;
@@ -38,6 +39,8 @@ struct Main {
     season: page::season::Season,
     loading: bool,
     save_timeout: Timeout,
+    /// Image loader future being run.
+    image_loader: Singleton,
 }
 
 struct Flags {
@@ -52,17 +55,10 @@ impl Application for Main {
     type Flags = Flags;
 
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
-        fn translate(result: Result<Vec<(Image, Handle)>>) -> Message {
-            match result {
-                Ok(output) => Message::Loaded(output),
-                Err(e) => Message::error(e),
-            }
-        }
-
-        let this = Main {
+        let mut this = Main {
             service: flags.service,
             page: Page::Dashboard,
-            loading: true,
+            loading: false,
             dashboard: page::dashboard::Dashboard::default(),
             settings: flags.settings,
             search: page::search::Search::default(),
@@ -70,9 +66,10 @@ impl Application for Main {
             series_list: page::series_list::SeriesList::default(),
             season: page::season::Season::default(),
             save_timeout: Timeout::default(),
+            image_loader: Singleton::default(),
         };
 
-        let command = Command::perform(this.service.setup(), translate);
+        let command = this.handle_image_loading();
         (this, command)
     }
 
@@ -82,21 +79,25 @@ impl Application for Main {
     }
 
     fn update(&mut self, message: Message) -> Command<Self::Message> {
-        match message {
-            Message::Noop => {}
-            Message::Loaded(loaded) => {
-                self.service.insert_loaded_images(loaded);
-                self.loading = false;
+        let command = match message {
+            Message::Noop => {
+                return Command::none();
             }
             Message::Error(error) => {
                 log::error!("error: {error}");
+                Command::none()
             }
-            Message::SaveConfig => {
-                self.loading = true;
-                return Command::perform(self.service.save_config(self.settings.clone()), |m| m);
+            Message::SaveConfig(timed_out) => {
+                if timed_out {
+                    self.loading = true;
+                    Command::perform(self.service.save_config(self.settings.clone()), |m| m)
+                } else {
+                    Command::none()
+                }
             }
             Message::SavedConfig => {
                 self.loading = false;
+                Command::none()
             }
             Message::Navigate(page) => {
                 if !matches!(page, Page::Search) {
@@ -104,37 +105,31 @@ impl Application for Main {
                 }
 
                 self.page = page;
+                Command::none()
             }
             Message::Settings(message) => {
                 if self.settings.update(message) {
-                    return Command::single(
+                    Command::single(
                         self.save_timeout
                             .set(Duration::from_secs(2), Message::SaveConfig),
-                    );
+                    )
                 } else {
                     self.loading = true;
-                    return Command::perform(
-                        self.service.save_config(self.settings.clone()),
-                        |m| m,
-                    );
+                    Command::perform(self.service.save_config(self.settings.clone()), |m| m)
                 }
             }
-            Message::Dashboard(message) => {
-                return self.dashboard.update(message);
-            }
-            Message::Search(message) => {
-                return self.search.update(&mut self.service, message);
-            }
-            Message::SeriesDownloadToTrack(data, loaded) => {
-                self.service.insert_loaded_images(loaded);
+            Message::Dashboard(message) => self.dashboard.update(message),
+            Message::Search(message) => self.search.update(&mut self.service, message),
+            Message::SeriesDownloadToTrack(data) => {
+                let load = self.handle_image_loading();
                 let command = self
                     .service
                     .insert_new_series(data)
                     .map(|f| Command::perform(f, Message::from));
-                return Command::batch(command);
+                Command::batch(command.into_iter().chain([load]))
             }
             Message::TrackRemote(id) => {
-                return if let Some(action) = self.service.set_tracked_by_remote(id) {
+                if let Some(action) = self.service.set_tracked_by_remote(id) {
                     let translate = |result| match result {
                         Ok(()) => Message::Noop,
                         Err(e) => Message::error(e),
@@ -143,16 +138,18 @@ impl Application for Main {
                     Command::perform(action, translate)
                 } else {
                     let translate = |result| match result {
-                        Ok((data, output)) => Message::SeriesDownloadToTrack(data, output),
+                        Ok(data) => Message::SeriesDownloadToTrack(data),
                         Err(e) => Message::error(e),
                     };
 
                     Command::perform(self.service.track_by_remote(id), translate)
-                };
+                }
             }
             Message::Track(id) => {
                 if let Some(future) = self.service.set_tracked(id) {
-                    return Command::perform(future, Message::from);
+                    Command::perform(future, Message::from)
+                } else {
+                    Command::none()
                 }
             }
             Message::Untrack(id) => {
@@ -160,11 +157,36 @@ impl Application for Main {
                     .service
                     .untrack(id)
                     .map(|f| Command::perform(f, Message::from));
-                return Command::batch(command);
+                Command::batch(command)
+            }
+            Message::ImagesLoaded(loaded) => {
+                self.service.insert_loaded_images(loaded);
+                return self.handle_image_loading();
+            }
+        };
+
+        match self.page {
+            Page::Dashboard => {
+                self.dashboard.prepare(&mut self.service);
+            }
+            Page::Search => {
+                self.search.prepare(&mut self.service);
+            }
+            Page::SeriesList => {
+                self.series_list.prepare(&mut self.service);
+            }
+            Page::Series(id) => {
+                self.series.prepare(&mut self.service, id);
+            }
+            Page::Settings => {
+                self.settings.prepare(&mut self.service);
+            }
+            Page::Season(id, season) => {
+                self.season.prepare(&mut self.service, id, season);
             }
         }
 
-        Command::none()
+        Command::batch([self.handle_image_loading(), command])
     }
 
     fn view(&self) -> Element<Message> {
@@ -228,5 +250,31 @@ impl Application for Main {
             ThemeType::Light => Theme::Light,
             ThemeType::Dark => Theme::Dark,
         }
+    }
+}
+
+impl Main {
+    fn handle_image_loading(&mut self) -> Command<Message> {
+        fn translate(value: Option<Result<Vec<(Image, Handle)>>>) -> Message {
+            match value {
+                Some(Ok(value)) => Message::ImagesLoaded(value),
+                Some(Err(e)) => Message::error(e),
+                None => Message::Noop,
+            }
+        }
+
+        if !self.service.new_images && !self.image_loader.is_set() {
+            return Command::none();
+        }
+
+        self.service.new_images = false;
+
+        let Some(id) = self.service.image_ids.pop_front() else {
+            self.image_loader.clear();
+            return Command::none();
+        };
+
+        let future = self.image_loader.set(self.service.load_image(id));
+        Command::perform(future, translate)
     }
 }

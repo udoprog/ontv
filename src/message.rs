@@ -55,12 +55,10 @@ pub(crate) enum Message {
     /// Do nothing.
     #[default]
     Noop,
-    /// Original loading completed.
-    Loaded(Vec<(Image, Handle)>),
     /// Error during operation.
     Error(ErrorMessage),
     /// Actually save configuration.
-    SaveConfig,
+    SaveConfig(bool),
     /// Configuration saved and whether it was successful or not.
     SavedConfig,
     /// Request to navigate to the specified page.
@@ -73,13 +71,15 @@ pub(crate) enum Message {
     /// Search-specific messages.
     Search(page::search::M),
     /// Series tracked.
-    SeriesDownloadToTrack(NewSeries, Vec<(Image, Handle)>),
+    SeriesDownloadToTrack(NewSeries),
     /// Start tracking the series with the given remote ID.
     TrackRemote(RemoteSeriesId),
     /// Start tracking the series with the given ID.
     Track(Uuid),
     /// Stop tracking the given show.
     Untrack(Uuid),
+    /// Images have been loaded in the background.
+    ImagesLoaded(Vec<(Image, Handle)>),
 }
 
 impl From<Result<()>> for Message {

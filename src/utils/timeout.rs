@@ -13,9 +13,9 @@ pub(crate) struct Timeout {
 
 impl Timeout {
     /// Set a new timeout.
-    pub(crate) fn set<O>(&mut self, duration: Duration, output: O) -> Action<O>
+    pub(crate) fn set<T, O>(&mut self, duration: Duration, output: T) -> Action<O>
     where
-        O: Default + MaybeSend + 'static,
+        T: MaybeSend + 'static + FnOnce(bool) -> O,
     {
         let (tx, rx) = oneshot::channel();
         self.tx = Some(tx);
@@ -24,8 +24,8 @@ impl Timeout {
             let sleep = tokio::time::sleep(duration);
 
             tokio::select! {
-                _ = rx => O::default(),
-                _ = sleep => output,
+                _ = rx => output(false),
+                _ = sleep => output(true),
             }
         }))
     }

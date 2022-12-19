@@ -1,10 +1,8 @@
 use std::collections::VecDeque;
 
-use anyhow::Result;
 use iced::widget::{button, column, image, row, text, text_input, Column};
 use iced::{theme, Alignment};
 use iced::{Command, Length};
-use iced_native::image::Handle;
 
 use crate::message::Message;
 use crate::model::{Image, RemoteSeriesId, SearchSeries};
@@ -24,8 +22,6 @@ pub(crate) enum M {
     Page(usize),
     /// Search result from API.
     Result(Vec<SearchSeries>),
-    /// Images have been loaded.
-    ImagesLoaded(Vec<(Image, Handle)>),
 }
 
 /// The state for the settings page.
@@ -39,6 +35,17 @@ pub(crate) struct Search {
 }
 
 impl Search {
+    /// Prepare data that is needed for the view.
+    pub(crate) fn prepare(&mut self, service: &mut Service) {
+        service.mark_images(
+            self.series
+                .iter()
+                .map(|s| s.poster)
+                .skip(self.page * PER_PAGE)
+                .take(PER_PAGE),
+        );
+    }
+
     /// Handle theme change.
     pub(crate) fn update(&mut self, service: &mut Service, message: M) -> Command<Message> {
         match message {
@@ -66,15 +73,8 @@ impl Search {
                 Command::none()
             }
             M::Result(series) => {
-                self.image_ids.clear();
-                self.image_ids.extend(series.iter().map(|s| s.poster));
                 self.series = series;
-                Command::batch(self.handle_image_loading(service))
-            }
-            M::ImagesLoaded(loaded) => {
-                service.insert_loaded_images(loaded);
-                let command = self.handle_image_loading(service);
-                Command::batch(command)
+                Command::none()
             }
         }
     }
@@ -169,17 +169,5 @@ impl Search {
         ]
         .spacing(GAP)
         .padding(GAP)
-    }
-
-    fn handle_image_loading(&mut self, service: &Service) -> Option<Command<Message>> {
-        fn translate(value: Result<Vec<(Image, Handle)>>) -> Message {
-            match value {
-                Ok(value) => Message::Search(M::ImagesLoaded(value)),
-                Err(e) => Message::error(e),
-            }
-        }
-
-        let id = self.image_ids.pop_front()?;
-        Some(Command::perform(service.load_image(id), translate))
     }
 }

@@ -17,6 +17,9 @@ pub(crate) enum M {
 pub(crate) struct Dashboard {}
 
 impl Dashboard {
+    /// Prepare data that is needed for the view.
+    pub(crate) fn prepare(&mut self, service: &mut Service) {}
+
     /// Handle theme change.
     pub(crate) fn update(&mut self, message: M) -> Command<Message> {
         match message {

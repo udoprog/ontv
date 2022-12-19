@@ -13,6 +13,9 @@ use crate::service::Service;
 pub(crate) struct Series;
 
 impl Series {
+    /// Prepare data that is needed for the view.
+    pub(crate) fn prepare(&mut self, service: &mut Service, id: Uuid) {}
+
     pub(crate) fn view(&self, service: &Service, id: Uuid) -> Column<'static, Message> {
         let Some(s) = service.series(id) else {
             return column![text("no series")];

@@ -13,6 +13,9 @@ use crate::service::Service;
 pub(crate) struct Season;
 
 impl Season {
+    /// Prepare data that is needed for the view.
+    pub(crate) fn prepare(&mut self, service: &mut Service, id: Uuid, season: Option<u32>) {}
+
     pub(crate) fn view(
         &self,
         service: &Service,

@@ -10,6 +10,12 @@ use crate::service::Service;
 pub(crate) struct SeriesList;
 
 impl SeriesList {
+    /// Prepare the view.
+    pub(crate) fn prepare(&mut self, service: &mut Service) {
+        let images = service.all_series().map(|s| s.poster).collect::<Vec<_>>();
+        service.mark_images(images);
+    }
+
     pub(crate) fn view(&self, service: &Service) -> Column<'static, Message> {
         let mut series = column![].spacing(GAP);
 

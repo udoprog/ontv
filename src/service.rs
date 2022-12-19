@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 
@@ -56,6 +56,10 @@ pub struct Service {
     images: HashMap<Image, Handle>,
     /// Shared client.
     pub(crate) client: Client,
+    /// If there are new images to load.
+    pub(crate) new_images: bool,
+    /// Image queue to load.
+    pub(crate) image_ids: VecDeque<Image>,
 }
 
 impl Service {
@@ -97,9 +101,38 @@ impl Service {
             db,
             images: HashMap::new(),
             client,
+            new_images: false,
+            image_ids: VecDeque::new(),
         };
 
         Ok((this, settings))
+    }
+
+    /// Setup images to load task.
+    pub(crate) fn mark_images<I>(&mut self, images: I)
+    where
+        I: IntoIterator<Item = Image>,
+    {
+        self.image_ids.clear();
+
+        let mut all_loaded = true;
+
+        for image in images {
+            self.image_ids.push_back(image);
+
+            if !self.images.contains_key(&image) {
+                all_loaded = false;
+            }
+        }
+
+        if all_loaded {
+            self.image_ids.clear();
+            return;
+        }
+
+        self.new_images = true;
+        // NB: important to free the memory of images we are no longer using.
+        self.images.clear();
     }
 
     /// Get a single series.
@@ -127,26 +160,6 @@ impl Service {
         for (id, handle) in loaded {
             self.images.insert(id, handle);
         }
-    }
-
-    /// Setup background service, loading state from filesystem.
-    pub(crate) fn setup(&self) -> impl Future<Output = Result<Vec<(Image, Handle)>>> {
-        let client = self.client.clone();
-        let images_dir = self.images_dir.clone();
-
-        let mut ids = Vec::new();
-
-        for s in self.db.series.values() {
-            ids.push(s.poster);
-            ids.extend(s.banner);
-            ids.extend(s.fanart);
-        }
-
-        for e in self.db.episodes.values().flatten() {
-            ids.extend(e.filename);
-        }
-
-        cache_images(client, images_dir, ids)
     }
 
     /// Load configuration file.
@@ -192,7 +205,7 @@ impl Service {
     pub(crate) fn track_by_remote(
         &self,
         id: RemoteSeriesId,
-    ) -> impl Future<Output = Result<(NewSeries, Vec<(Image, Handle)>)>> {
+    ) -> impl Future<Output = Result<NewSeries>> {
         fn seasons(episodes: &[Episode]) -> Vec<Season> {
             let mut map = BTreeMap::new();
 
@@ -205,7 +218,6 @@ impl Service {
         }
 
         let client = self.client.clone();
-        let images_dir = self.images_dir.clone();
 
         let new_id = self
             .db
@@ -237,25 +249,13 @@ impl Service {
                 }
             };
 
-            let mut ids = Vec::new();
-
-            ids.push(series.poster);
-            ids.extend(series.banner);
-            ids.extend(series.fanart);
-
-            for e in &episodes {
-                ids.extend(e.filename);
-            }
-
-            let output = cache_images(client, images_dir, ids).await?;
-
             let data = NewSeries {
                 series,
                 episodes,
                 seasons,
             };
 
-            Ok::<_, Error>((data, output))
+            Ok::<_, Error>(data)
         }
     }
 
