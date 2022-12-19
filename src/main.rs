@@ -10,13 +10,13 @@ use std::time::Duration;
 
 use anyhow::Result;
 use iced::theme::{self, Theme};
-use iced::widget::{button, column, container, row, text};
-use iced::{Application, Command, Element, Length, Settings};
+use iced::widget::{button, column, container, row, scrollable, text};
+use iced::{Alignment, Application, Command, Element, Length, Settings};
 use iced_native::image::Handle;
 
 use crate::message::{Message, Page, ThemeType};
 use crate::model::Image;
-use crate::params::{GAP, GAP2, SPACE};
+use crate::params::{CONTAINER_WIDTH, GAP, GAP2, SPACE};
 use crate::service::Service;
 use crate::utils::Timeout;
 
@@ -125,21 +125,35 @@ impl Application for Main {
             Message::Search(message) => {
                 return self.search.update(&mut self.service, message);
             }
-            Message::SeriesTracked(data, loaded) => {
+            Message::SeriesDownloadToTrack(data, loaded) => {
                 self.service.insert_loaded_images(loaded);
                 let command = self
                     .service
-                    .track(data)
+                    .insert_new_series(data)
                     .map(|f| Command::perform(f, Message::from));
                 return Command::batch(command);
             }
-            Message::Track(id) => {
-                let translate = |result| match result {
-                    Ok((data, output)) => Message::SeriesTracked(data, output),
-                    Err(e) => Message::error(e),
-                };
+            Message::TrackRemote(id) => {
+                return if let Some(action) = self.service.set_tracked_by_remote(id) {
+                    let translate = |result| match result {
+                        Ok(()) => Message::Noop,
+                        Err(e) => Message::error(e),
+                    };
 
-                return Command::perform(self.service.track_thetvdb(id), translate);
+                    Command::perform(action, translate)
+                } else {
+                    let translate = |result| match result {
+                        Ok((data, output)) => Message::SeriesDownloadToTrack(data, output),
+                        Err(e) => Message::error(e),
+                    };
+
+                    Command::perform(self.service.track_by_remote(id), translate)
+                };
+            }
+            Message::Track(id) => {
+                if let Some(future) = self.service.set_tracked(id) {
+                    return Command::perform(future, Message::from);
+                }
             }
             Message::Untrack(id) => {
                 let command = self
@@ -186,14 +200,20 @@ impl Application for Main {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        let content = match self.page {
-            Page::Dashboard => content.push(self.dashboard.view(&self.service)),
-            Page::Search => content.push(self.search.view(&self.service)),
-            Page::SeriesList => content.push(self.series_list.view(&self.service)),
-            Page::Series(id) => content.push(self.series.view(&self.service, id)),
-            Page::Settings => content.push(self.settings.view()),
-            Page::Season(id, season) => content.push(self.season.view(&self.service, id, season)),
+        let page = match self.page {
+            Page::Dashboard => self.dashboard.view(&self.service),
+            Page::Search => self.search.view(&self.service),
+            Page::SeriesList => self.series_list.view(&self.service),
+            Page::Series(id) => self.series.view(&self.service, id),
+            Page::Settings => self.settings.view(),
+            Page::Season(id, season) => self.season.view(&self.service, id, season),
         };
+
+        let content = content.push(scrollable(
+            column![container(page.width(Length::Fill)).max_width(CONTAINER_WIDTH)]
+                .width(Length::Fill)
+                .align_items(Alignment::Center),
+        ));
 
         container(content)
             .width(Length::Fill)

@@ -5,18 +5,37 @@ mod raw16;
 mod tests;
 
 use std::fmt;
-use std::sync::Arc;
 
 use anyhow::{bail, ensure, Context, Result};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub(crate) use self::hex16::Hex16;
 pub(crate) use self::raw16::Raw16;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "type")]
+pub(crate) enum RemoteId {
+    Series {
+        #[serde(flatten)]
+        id: RemoteSeriesId,
+    },
+    Episode {
+        #[serde(flatten)]
+        id: RemoteEpisodeId,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", tag = "remote")]
 pub(crate) enum RemoteSeriesId {
+    TheTvDb { id: SeriesId },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", tag = "remote")]
+pub(crate) enum RemoteEpisodeId {
     TheTvDb { id: SeriesId },
 }
 
@@ -39,16 +58,6 @@ impl fmt::Display for SeriesId {
     }
 }
 
-/// A single episode in a series.
-#[derive(Debug, Clone)]
-#[allow(unused)]
-pub(crate) struct Episode {
-    title: Arc<str>,
-    season: u32,
-    number: u32,
-    series: Hex16,
-}
-
 /// A series.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -68,12 +77,29 @@ pub(crate) struct Series {
     /// Remote series ids.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) remote_ids: Vec<RemoteSeriesId>,
+    /// Indicates if the series is tracked or not, in that it will receive updates.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub(crate) tracked: bool,
+}
+
+#[inline]
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// A season in a series.
+#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) struct Watched {
+    /// Identifier of watched episode.
+    pub(crate) episode: Uuid,
+    pub(crate) timestamp: DateTime<Utc>,
 }
 
 /// A season in a series.
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub struct SeriesSeason {
+pub struct Season {
     /// The number of the season.
     pub(crate) number: Option<u32>,
 }
@@ -81,7 +107,9 @@ pub struct SeriesSeason {
 /// An episode in a series.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub struct SeriesEpisode {
+pub struct Episode {
+    /// Uuid of the watched episode.
+    pub(crate) id: Uuid,
     /// Name of the episode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) name: Option<String>,
@@ -96,9 +124,15 @@ pub struct SeriesEpisode {
     pub(crate) season: Option<u32>,
     /// Number in the season.
     pub(crate) number: u32,
+    /// Air date of the episode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) aired: Option<NaiveDate>,
     /// Episode image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) filename: Option<Image>,
+    /// Remote episode ids.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) remote_ids: Vec<RemoteEpisodeId>,
 }
 
 /// Image format in use.

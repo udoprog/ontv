@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.67"
 bytes = { version = "1.3.0", features = ["serde"] }
+chrono = { version = "0.4.23", features = ["serde"] }
 directories-next = "2.0.0"
 iced = { version = "0.6.0", features = ["image", "tokio"] }
 iced_futures = { version = "0.5.1", features = ["tokio"] }

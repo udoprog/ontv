@@ -1,14 +1,14 @@
 use std::collections::VecDeque;
 
 use anyhow::Result;
-use iced::widget::{button, column, image, row, scrollable, text, text_input};
+use iced::widget::{button, column, image, row, text, text_input, Column};
 use iced::{theme, Alignment};
-use iced::{Command, Element, Length};
+use iced::{Command, Length};
 use iced_native::image::Handle;
 
 use crate::message::Message;
-use crate::model::{Image, SearchSeries};
-use crate::params::{ACTION_BUTTON_SIZE, GAP, GAP2, SPACE};
+use crate::model::{Image, RemoteSeriesId, SearchSeries};
+use crate::params::{ACTION_SIZE, GAP, GAP2, SPACE};
 use crate::service::Service;
 
 const PER_PAGE: usize = 5;
@@ -80,7 +80,7 @@ impl Search {
     }
 
     /// Generate the view for the settings page.
-    pub(crate) fn view(&self, service: &Service) -> Element<'static, Message> {
+    pub(crate) fn view(&self, service: &Service) -> Column<'static, Message> {
         let submit = button("Search");
 
         let submit = if !self.text.is_empty() {
@@ -97,14 +97,16 @@ impl Search {
                 None => service.missing_banner(),
             };
 
-            let track = if service.is_thetvdb_tracked(series.id) {
-                button(text("Untrack").size(ACTION_BUTTON_SIZE))
+            let id = RemoteSeriesId::TheTvDb { id: series.id };
+
+            let track = if let Some(s) = service.get_series_by_remote(id).filter(|s| s.tracked) {
+                button(text("Untrack").size(ACTION_SIZE))
                     .style(theme::Button::Destructive)
-                    .on_press(Message::Untrack(series.id))
+                    .on_press(Message::Untrack(s.id))
             } else {
-                button(text("Track").size(ACTION_BUTTON_SIZE))
+                button(text("Track").size(ACTION_SIZE))
                     .style(theme::Button::Positive)
-                    .on_press(Message::Track(series.id))
+                    .on_press(Message::TrackRemote(id))
             };
 
             let overview = series
@@ -154,23 +156,19 @@ impl Search {
             .padding(GAP);
         }
 
-        let column = column![
-            column![
-                text("Search"),
-                row![
-                    text_input("Query...", &self.text, |value| Message::Search(M::Change(
-                        value
-                    ))),
-                    submit,
-                ]
-            ]
-            .padding(GAP),
-            scrollable(results).height(Length::Fill),
+        column![
+            text("Search"),
+            row![
+                text_input("Query...", &self.text, |value| Message::Search(M::Change(
+                    value
+                ))),
+                submit,
+            ],
+            results,
             pages,
         ]
-        .width(Length::Fill);
-
-        column.into()
+        .spacing(GAP)
+        .padding(GAP)
     }
 
     fn handle_image_loading(&mut self, service: &Service) -> Option<Command<Message>> {

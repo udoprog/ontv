@@ -5,9 +5,9 @@ use iced_native::image::Handle;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::model::{Image, SeriesId};
+use crate::model::{Image, RemoteSeriesId};
 use crate::page;
-use crate::service::SeriesData;
+use crate::service::NewSeries;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Page {
@@ -73,11 +73,13 @@ pub(crate) enum Message {
     /// Search-specific messages.
     Search(page::search::M),
     /// Series tracked.
-    SeriesTracked(SeriesData, Vec<(Image, Handle)>),
+    SeriesDownloadToTrack(NewSeries, Vec<(Image, Handle)>),
+    /// Start tracking the series with the given remote ID.
+    TrackRemote(RemoteSeriesId),
     /// Start tracking the series with the given ID.
-    Track(SeriesId),
+    Track(Uuid),
     /// Stop tracking the given show.
-    Untrack(SeriesId),
+    Untrack(Uuid),
 }
 
 impl From<Result<()>> for Message {

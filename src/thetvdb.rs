@@ -4,12 +4,15 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use bytes::Bytes;
+use chrono::NaiveDate;
 use reqwest::{Method, RequestBuilder, Response, Url};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::model::{Image, RemoteSeriesId, SearchSeries, Series, SeriesEpisode, SeriesId};
+use crate::model::{
+    Episode, Image, RemoteEpisodeId, RemoteSeriesId, SearchSeries, Series, SeriesId,
+};
 
 const BASE_URL: &str = "https://api.thetvdb.com";
 const ARTWORKS_URL: &str = "https://artworks.thetvdb.com";
@@ -137,12 +140,16 @@ impl Client {
     }
 
     /// Download series information.
-    pub(crate) async fn series(&self, id: SeriesId) -> Result<Series> {
+    pub(crate) async fn series(&self, id: SeriesId, new_id: Uuid) -> Result<Series> {
         let res = self
             .request_with_auth(Method::GET, &["series", &id.to_string()])
             .await?
             .send()
             .await?;
+
+        for header in res.headers() {
+            dbg!(header);
+        }
 
         let bytes: Bytes = handle_res(res).await?;
 
@@ -170,12 +177,13 @@ impl Client {
         let poster = Image::parse_banner(&value.poster).context("poster image")?;
 
         return Ok(Series {
-            id: Uuid::new_v4(),
+            id: new_id,
             title: value.series_name.to_owned(),
             banner,
             poster,
             fanart,
             remote_ids: Vec::from([RemoteSeriesId::TheTvDb { id }]),
+            tracked: true,
         });
 
         #[derive(Deserialize)]
@@ -190,15 +198,26 @@ impl Client {
             overview: Option<String>,
             poster: String,
             series_name: String,
+            #[serde(default)]
+            airs_day_of_week: Option<String>,
+            #[serde(default)]
+            airs_time: Option<String>,
         }
     }
 
     /// Download all series episodes.
-    pub(crate) async fn series_episodes(&self, id: SeriesId) -> Result<Vec<SeriesEpisode>> {
+    pub(crate) async fn series_episodes<A>(
+        &self,
+        id: SeriesId,
+        mut alloc: A,
+    ) -> Result<Vec<Episode>>
+    where
+        A: FnMut(SeriesId) -> Uuid,
+    {
         let path = ["series", &id.to_string(), "episodes"];
 
         return self
-            .paged_request("episode", &path, |row: Row| {
+            .paged_request("episode", &path, move |row: Row| {
                 let filename = match row.filename {
                     Some(filename) if !filename.is_empty() => {
                         Some(Image::parse_banner(&filename).context("filename")?)
@@ -206,14 +225,19 @@ impl Client {
                     _ => None,
                 };
 
-                Ok(SeriesEpisode {
+                let id = alloc(row.id);
+
+                Ok(Episode {
+                    id,
                     name: row.episode_name,
                     overview: row.overview.filter(|o| !o.is_empty()),
                     absolute_number: row.absolute_number,
                     // NB: thetvdb.com uses season 0 as specials season.
                     season: row.aired_season.filter(|n| *n != 0),
                     number: row.aired_episode_number,
+                    aired: row.first_aired,
                     filename,
+                    remote_ids: Vec::from([RemoteEpisodeId::TheTvDb { id: row.id }]),
                 })
             })
             .await;
@@ -222,6 +246,7 @@ impl Client {
         #[serde(rename_all = "camelCase")]
         #[allow(unused)]
         struct Row {
+            id: SeriesId,
             #[serde(default)]
             absolute_number: Option<u32>,
             aired_episode_number: u32,
@@ -233,6 +258,8 @@ impl Client {
             overview: Option<String>,
             #[serde(default)]
             filename: Option<String>,
+            #[serde(default)]
+            first_aired: Option<NaiveDate>,
         }
     }
 

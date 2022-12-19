@@ -1,12 +1,12 @@
 use iced::alignment::Horizontal;
 use iced::theme;
-use iced::widget::{button, column, container, image, row, scrollable, text};
-use iced::{Element, Length};
+use iced::widget::{button, column, container, image, row, text, Column};
+use iced::Length;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::message::{Message, Page};
-use crate::params::{ACTION_BUTTON_SIZE, GAP, SPACE, SUBTITLE_SIZE};
+use crate::params::{ACTION_SIZE, GAP, GAP2, SPACE, SUBTITLE_SIZE};
 use crate::service::Service;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -18,9 +18,9 @@ impl Season {
         service: &Service,
         id: Uuid,
         season: Option<u32>,
-    ) -> Element<'static, Message> {
+    ) -> Column<'static, Message> {
         let Some(s) = service.series(id) else {
-            return text("no such series").into();
+            return column![text("no such series")];
         };
 
         let mut episodes = column![];
@@ -44,9 +44,16 @@ impl Season {
             let mut actions = row![];
 
             actions = actions.push(
-                button(text("mark watched").size(ACTION_BUTTON_SIZE))
-                    .style(theme::Button::Destructive),
+                button(text("mark watched").size(ACTION_SIZE)).style(theme::Button::Destructive),
             );
+
+            let mut info = column![name].spacing(GAP).push(actions);
+
+            if let Some(air_date) = e.aired {
+                info = info.push(text(format!("Aired: {}", air_date)).size(ACTION_SIZE));
+            }
+
+            info = info.push(overview);
 
             episodes = episodes.push(
                 row![
@@ -54,7 +61,7 @@ impl Season {
                         .width(Length::Units(140))
                         .max_height(140)
                         .align_x(Horizontal::Center),
-                    column![name, overview, actions.spacing(GAP)].spacing(GAP)
+                    info,
                 ]
                 .spacing(GAP),
             );
@@ -70,11 +77,8 @@ impl Season {
 
         let back = button("back").on_press(Message::Navigate(Page::Series(s.id)));
 
-        scrollable(
-            column![banner, back, episodes.spacing(GAP).width(Length::Fill)]
-                .spacing(GAP)
-                .padding(GAP),
-        )
-        .into()
+        column![banner, back, episodes.spacing(GAP2)]
+            .spacing(GAP)
+            .padding(GAP)
     }
 }
