@@ -4,7 +4,6 @@ mod raw16;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -18,28 +17,22 @@ pub(crate) use self::raw16::Raw16;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "type")]
 pub(crate) enum RemoteSeriesId {
-    TheTvDb { id: TheTvDbSeriesId },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum Source {
-    TheTvDb,
+    TheTvDb { id: SeriesId },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 #[serde(transparent)]
-pub(crate) struct TheTvDbSeriesId(u64);
+pub(crate) struct SeriesId(u64);
 
-impl From<u64> for TheTvDbSeriesId {
+impl From<u64> for SeriesId {
     #[inline]
     fn from(value: u64) -> Self {
         Self(value)
     }
 }
 
-impl fmt::Display for TheTvDbSeriesId {
+impl fmt::Display for SeriesId {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
@@ -58,6 +51,7 @@ pub(crate) struct Episode {
 
 /// A series.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) struct Series {
     /// Allocated UUID.
     pub(crate) id: Uuid,
@@ -66,15 +60,45 @@ pub(crate) struct Series {
     /// Poster image.
     pub(crate) poster: Image,
     /// Banner image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) banner: Option<Image>,
     /// Fanart image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) fanart: Option<Image>,
     /// Remote series ids.
-    #[allow(unused)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) remote_ids: Vec<RemoteSeriesId>,
-    // Raw API response in case we need to reconstruct something later.
-    #[allow(unused)]
-    pub(crate) raw: HashMap<Source, serde_json::Value>,
+}
+
+/// A season in a series.
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct SeriesSeason {
+    /// The number of the season.
+    pub(crate) number: Option<u32>,
+}
+
+/// An episode in a series.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct SeriesEpisode {
+    /// Name of the episode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) name: Option<String>,
+    /// Overview of the episode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) overview: Option<String>,
+    /// Absolute number in the series.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) absolute_number: Option<u32>,
+    /// Season number. If empty indicates special season.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) season: Option<u32>,
+    /// Number in the season.
+    pub(crate) number: u32,
+    /// Episode image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) filename: Option<Image>,
 }
 
 /// Image format in use.
@@ -107,6 +131,7 @@ impl fmt::Display for ImageFormat {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub(crate) struct Image {
+    #[serde(flatten)]
     pub(crate) kind: ImageKind,
     pub(crate) format: ImageFormat,
 }
@@ -161,15 +186,7 @@ impl Image {
                 let format = ImageFormat::parse(ext)?;
                 let kind = ArtKind::parse(kind)?;
                 let id = Hex16::from_hex(id).context("bad id")?;
-
-                (
-                    ImageKind::V4 {
-                        series_id,
-                        kind,
-                        id,
-                    },
-                    format,
-                )
+                (ImageKind::V4(series_id, kind, id), format)
             }
             (Some("series"), Some(series_id), Some(kind), Some(name), None, None) => {
                 let Some((id, ext)) = name.split_once('.') else {
@@ -180,14 +197,7 @@ impl Image {
                 let format = ImageFormat::parse(ext)?;
                 let kind = ArtKind::parse(kind)?;
                 let id = Hex16::from_hex(id).context("bad id")?;
-                (
-                    ImageKind::Legacy {
-                        series_id,
-                        kind,
-                        id,
-                    },
-                    format,
-                )
+                (ImageKind::Legacy(series_id, kind, id), format)
             }
             (Some("posters"), Some(name), None, None, None, None) => {
                 let Some((rest, ext)) = name.split_once('.') else {
@@ -199,10 +209,10 @@ impl Image {
                 let kind = if let Some((series_id, suffix)) = rest.split_once('-') {
                     let series_id = series_id.parse()?;
                     let suffix = Raw16::from_string(suffix);
-                    ImageKind::BannerSuffixed { series_id, suffix }
+                    ImageKind::BannerSuffixed(series_id, suffix)
                 } else {
                     let id = Hex16::from_hex(rest).context("bad id")?;
-                    ImageKind::Banner { id }
+                    ImageKind::Banner(id)
                 };
 
                 (kind, format)
@@ -219,7 +229,7 @@ impl Image {
                 let series_id = series_id.parse()?;
                 let suffix = Raw16::from_string(suffix);
                 let format = ImageFormat::parse(ext)?;
-                let kind = ImageKind::Graphical { series_id, suffix };
+                let kind = ImageKind::Graphical(series_id, suffix);
                 (kind, format)
             }
             (Some("fanart"), Some("original"), Some(name), None, None, None) => {
@@ -232,12 +242,42 @@ impl Image {
                 let kind = if let Some((series_id, suffix)) = rest.split_once('-') {
                     let series_id = series_id.parse()?;
                     let suffix = Raw16::from_string(suffix);
-                    ImageKind::FanartSuffixed { series_id, suffix }
+                    ImageKind::FanartSuffixed(series_id, suffix)
                 } else {
                     let id = Hex16::from_hex(rest).context("bad hex")?;
-                    ImageKind::Fanart { id }
+                    ImageKind::Fanart(id)
                 };
 
+                (kind, format)
+            }
+            // Example: v4/episode/8538342/screencap/63887bf74c84e.jpg
+            (
+                Some("v4"),
+                Some("episode"),
+                Some(episode_id),
+                Some("screencap"),
+                Some(name),
+                None,
+            ) => {
+                let Some((name, ext)) = name.split_once('.') else {
+                    bail!("{input}: missing extension");
+                };
+
+                let format = ImageFormat::parse(ext)?;
+                let episode_id = episode_id.parse()?;
+                let id = Hex16::from_hex(name).context("bad id")?;
+                let kind = ImageKind::ScreenCap(episode_id, id);
+                (kind, format)
+            }
+            (Some("episodes"), Some(episode_id), Some(name), None, None, None) => {
+                let Some((image_id, ext)) = name.split_once('.') else {
+                    bail!("{input}: missing extension");
+                };
+
+                let format = ImageFormat::parse(ext)?;
+                let episode_id = episode_id.parse()?;
+                let image_id = image_id.parse()?;
+                let kind = ImageKind::Episodes(episode_id, image_id);
                 (kind, format)
             }
             _ => {
@@ -273,6 +313,8 @@ pub(crate) enum ArtKind {
     Banners,
     /// Background art.
     Backgrounds,
+    /// Episodes art.
+    Episodes,
 }
 
 impl ArtKind {
@@ -281,6 +323,7 @@ impl ArtKind {
             "posters" => Ok(ArtKind::Posters),
             "banners" => Ok(ArtKind::Banners),
             "backgrounds" => Ok(ArtKind::Backgrounds),
+            "episodes" => Ok(ArtKind::Episodes),
             _ => {
                 bail!("{input}: unsupported art kind")
             }
@@ -294,43 +337,24 @@ impl fmt::Display for ArtKind {
             ArtKind::Posters => write!(f, "posters"),
             ArtKind::Banners => write!(f, "banners"),
             ArtKind::Backgrounds => write!(f, "backgrounds"),
+            ArtKind::Episodes => write!(f, "episodes"),
         }
     }
 }
 
 /// The identifier of an image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
-#[serde(tag = "type")]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", tag = "type", content = "data")]
 pub(crate) enum ImageKind {
-    Legacy {
-        series_id: u64,
-        kind: ArtKind,
-        id: Hex16,
-    },
-    V4 {
-        series_id: u64,
-        kind: ArtKind,
-        id: Hex16,
-    },
-    Banner {
-        id: Hex16,
-    },
-    BannerSuffixed {
-        series_id: u64,
-        suffix: Raw16,
-    },
-    Graphical {
-        series_id: u64,
-        suffix: Raw16,
-    },
-    Fanart {
-        id: Hex16,
-    },
-    FanartSuffixed {
-        series_id: u64,
-        suffix: Raw16,
-    },
+    Legacy(u64, ArtKind, Hex16),
+    V4(u64, ArtKind, Hex16),
+    Banner(Hex16),
+    BannerSuffixed(u64, Raw16),
+    Graphical(u64, Raw16),
+    Fanart(Hex16),
+    FanartSuffixed(u64, Raw16),
+    ScreenCap(u64, Hex16),
+    Episodes(u32, u32),
     Missing,
 }
 
@@ -339,34 +363,35 @@ impl fmt::Display for Image {
         let format = &self.format;
 
         match self.kind {
-            ImageKind::Legacy {
-                series_id,
-                kind,
-                id,
-            } => {
+            ImageKind::Legacy(series_id, kind, id) => {
                 write!(f, "/banners/series/{series_id}/{kind}/{id}.{format}")
             }
-            ImageKind::V4 {
-                series_id,
-                kind,
-                id,
-            } => {
+            ImageKind::V4(series_id, kind, id) => {
                 write!(f, "/banners/v4/series/{series_id}/{kind}/{id}.{format}")
             }
-            ImageKind::Banner { id } => {
+            ImageKind::Banner(id) => {
                 write!(f, "/banners/posters/{id}.{format}")
             }
-            ImageKind::BannerSuffixed { series_id, suffix } => {
+            ImageKind::BannerSuffixed(series_id, suffix) => {
                 write!(f, "/banners/posters/{series_id}-{suffix}.{format}")
             }
-            ImageKind::Graphical { series_id, suffix } => {
+            ImageKind::Graphical(series_id, suffix) => {
                 write!(f, "/banners/graphical/{series_id}-{suffix}.{format}")
             }
-            ImageKind::Fanart { id } => {
+            ImageKind::Fanart(id) => {
                 write!(f, "/banners/fanart/original/{id}.{format}")
             }
-            ImageKind::FanartSuffixed { series_id, suffix } => {
+            ImageKind::FanartSuffixed(series_id, suffix) => {
                 write!(f, "/banners/fanart/original/{series_id}-{suffix}.{format}")
+            }
+            ImageKind::ScreenCap(episode_id, id) => {
+                write!(
+                    f,
+                    "/banners/v4/episode/{episode_id}/screencap/{id}.{format}"
+                )
+            }
+            ImageKind::Episodes(episode_id, image_id) => {
+                write!(f, "/banners/episodes/{episode_id}/{image_id}.{format}")
             }
             ImageKind::Missing => {
                 write!(f, "/banners/images/missing/series.jpg")
@@ -377,7 +402,7 @@ impl fmt::Display for Image {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SearchSeries {
-    pub(crate) id: TheTvDbSeriesId,
+    pub(crate) id: SeriesId,
     pub(crate) name: String,
     pub(crate) poster: Image,
     pub(crate) overview: Option<String>,

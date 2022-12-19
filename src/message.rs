@@ -3,15 +3,20 @@ use std::fmt;
 use anyhow::{Error, Result};
 use iced_native::image::Handle;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-use crate::model::{Image, Series, TheTvDbSeriesId};
+use crate::model::{Image, SeriesId};
 use crate::page;
+use crate::service::SeriesData;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Page {
     Dashboard,
     Search,
+    SeriesList,
+    Series(Uuid),
     Settings,
+    Season(Uuid, Option<u32>),
 }
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,18 +66,18 @@ pub(crate) enum Message {
     /// Request to navigate to the specified page.
     Navigate(Page),
     /// Setting-specific messages.
-    Settings(page::settings::SettingsMessage),
+    Settings(page::settings::M),
     /// Dashboard-specific messages.
     #[allow(unused)]
-    Dashboard(page::dashboard::DashboardMessage),
+    Dashboard(page::dashboard::M),
     /// Search-specific messages.
-    Search(page::search::SearchMessage),
+    Search(page::search::M),
     /// Series tracked.
-    SeriesTracked(TheTvDbSeriesId, Series, Vec<(Image, Handle)>),
+    SeriesTracked(SeriesData, Vec<(Image, Handle)>),
     /// Start tracking the series with the given ID.
-    Track(TheTvDbSeriesId),
+    Track(SeriesId),
     /// Stop tracking the given show.
-    Untrack(TheTvDbSeriesId),
+    Untrack(SeriesId),
 }
 
 impl From<Result<()>> for Message {

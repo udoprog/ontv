@@ -1,13 +1,15 @@
+use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use bytes::Bytes;
 use reqwest::{Method, RequestBuilder, Response, Url};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::model::{Image, RemoteSeriesId, SearchSeries, Series, Source, TheTvDbSeriesId};
+use crate::model::{Image, RemoteSeriesId, SearchSeries, Series, SeriesEpisode, SeriesId};
 
 const BASE_URL: &str = "https://api.thetvdb.com";
 const ARTWORKS_URL: &str = "https://artworks.thetvdb.com";
@@ -135,7 +137,7 @@ impl Client {
     }
 
     /// Download series information.
-    pub(crate) async fn series(&self, id: TheTvDbSeriesId) -> Result<Series> {
+    pub(crate) async fn series(&self, id: SeriesId) -> Result<Series> {
         let res = self
             .request_with_auth(Method::GET, &["series", &id.to_string()])
             .await?
@@ -143,7 +145,12 @@ impl Client {
             .await?;
 
         let bytes: Bytes = handle_res(res).await?;
-        let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
+
+        if log::log_enabled!(log::Level::Trace) {
+            let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
+            log::trace!("{raw}");
+        }
+
         let value: Value = serde_json::from_slice::<Data<_>>(&bytes)?.data;
 
         let banner = match &value.banner {
@@ -169,14 +176,13 @@ impl Client {
             poster,
             fanart,
             remote_ids: Vec::from([RemoteSeriesId::TheTvDb { id }]),
-            raw: [(Source::TheTvDb, raw)].into_iter().collect(),
         });
 
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         #[allow(unused)]
         struct Value {
-            id: TheTvDbSeriesId,
+            id: SeriesId,
             // "2021-03-05 07:53:14"
             added: String,
             banner: Option<String>,
@@ -185,6 +191,121 @@ impl Client {
             poster: String,
             series_name: String,
         }
+    }
+
+    /// Download all series episodes.
+    pub(crate) async fn series_episodes(&self, id: SeriesId) -> Result<Vec<SeriesEpisode>> {
+        let path = ["series", &id.to_string(), "episodes"];
+
+        return self
+            .paged_request("episode", &path, |row: Row| {
+                let filename = match row.filename {
+                    Some(filename) if !filename.is_empty() => {
+                        Some(Image::parse_banner(&filename).context("filename")?)
+                    }
+                    _ => None,
+                };
+
+                Ok(SeriesEpisode {
+                    name: row.episode_name,
+                    overview: row.overview.filter(|o| !o.is_empty()),
+                    absolute_number: row.absolute_number,
+                    // NB: thetvdb.com uses season 0 as specials season.
+                    season: row.aired_season.filter(|n| *n != 0),
+                    number: row.aired_episode_number,
+                    filename,
+                })
+            })
+            .await;
+
+        #[derive(Debug, Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        #[allow(unused)]
+        struct Row {
+            #[serde(default)]
+            absolute_number: Option<u32>,
+            aired_episode_number: u32,
+            #[serde(default)]
+            aired_season: Option<u32>,
+            #[serde(default)]
+            episode_name: Option<String>,
+            #[serde(default)]
+            overview: Option<String>,
+            #[serde(default)]
+            filename: Option<String>,
+        }
+    }
+
+    /// Handle series pagination.
+    async fn paged_request<T, U, M, I>(
+        &self,
+        thing: &'static str,
+        path: I,
+        mut map: M,
+    ) -> Result<Vec<U>>
+    where
+        T: DeserializeOwned + fmt::Debug,
+        M: FnMut(T) -> Result<U>,
+        I: Copy + IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        let res = self
+            .request_with_auth(Method::GET, path)
+            .await?
+            .send()
+            .await?;
+
+        let bytes: Bytes = handle_res(res).await?;
+
+        if log::log_enabled!(log::Level::Trace) {
+            let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
+            log::trace!("{raw}");
+        }
+
+        let mut data: DataLinks<Vec<serde_json::Value>> = serde_json::from_slice(&bytes)?;
+
+        let mut output = Vec::new();
+
+        loop {
+            output.reserve(data.data.len());
+
+            for value in data.data {
+                log::trace!("{}: {thing}: {value}", output.len());
+
+                let row = match serde_json::from_value::<T>(value) {
+                    Ok(row) => row,
+                    Err(error) => {
+                        log::warn!("{}: {thing}: {error}", output.len());
+                        continue;
+                    }
+                };
+
+                log::trace!("{}: {thing}: {row:?}", output.len());
+                output.push(map(row)?);
+            }
+
+            let Some(next) = data.links.next else {
+                break;
+            };
+
+            let res = self
+                .request_with_auth(Method::GET, path)
+                .await?
+                .query(&[("page", &next.to_string())])
+                .send()
+                .await?;
+
+            let bytes: Bytes = handle_res(res).await?;
+
+            if log::log_enabled!(log::Level::Trace) {
+                let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
+                log::trace!("{raw}");
+            }
+
+            data = serde_json::from_slice(&bytes)?;
+        }
+
+        Ok(output)
     }
 
     /// Search series result.
@@ -216,7 +337,7 @@ impl Client {
 
         #[derive(Debug, Clone, Deserialize)]
         pub(crate) struct Row {
-            pub(crate) id: TheTvDbSeriesId,
+            pub(crate) id: SeriesId,
             #[serde(rename = "seriesName")]
             pub(crate) name: String,
             #[serde(default)]
@@ -242,6 +363,23 @@ async fn handle_res(res: Response) -> Result<Bytes> {
     }
 
     Ok(res.bytes().await?)
+}
+
+#[derive(Deserialize)]
+#[allow(unused)]
+struct Links {
+    first: u32,
+    last: u32,
+    #[serde(default)]
+    next: Option<u32>,
+    #[serde(default)]
+    prev: Option<u32>,
+}
+
+#[derive(Deserialize)]
+struct DataLinks<T> {
+    data: T,
+    links: Links,
 }
 
 #[derive(Deserialize)]

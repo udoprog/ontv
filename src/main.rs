@@ -16,7 +16,7 @@ use iced_native::image::Handle;
 
 use crate::message::{Message, Page, ThemeType};
 use crate::model::Image;
-use crate::params::{GAP2, SPACE};
+use crate::params::{GAP, GAP2, SPACE};
 use crate::service::Service;
 use crate::utils::Timeout;
 
@@ -30,16 +30,19 @@ pub fn main() -> Result<()> {
 struct Main {
     service: Service,
     page: Page,
-    dashboard: page::dashboard::State,
-    settings: page::settings::State,
-    search: page::search::State,
+    dashboard: page::dashboard::Dashboard,
+    settings: page::settings::Settings,
+    search: page::search::Search,
+    series: page::series::Series,
+    series_list: page::series_list::SeriesList,
+    season: page::season::Season,
     loading: bool,
     save_timeout: Timeout,
 }
 
 struct Flags {
     service: Service,
-    settings: page::settings::State,
+    settings: page::settings::Settings,
 }
 
 impl Application for Main {
@@ -60,9 +63,12 @@ impl Application for Main {
             service: flags.service,
             page: Page::Dashboard,
             loading: true,
-            dashboard: page::dashboard::State::default(),
+            dashboard: page::dashboard::Dashboard::default(),
             settings: flags.settings,
-            search: page::search::State::default(),
+            search: page::search::Search::default(),
+            series: page::series::Series::default(),
+            series_list: page::series_list::SeriesList::default(),
+            season: page::season::Season::default(),
             save_timeout: Timeout::default(),
         };
 
@@ -119,17 +125,17 @@ impl Application for Main {
             Message::Search(message) => {
                 return self.search.update(&mut self.service, message);
             }
-            Message::SeriesTracked(id, series, loaded) => {
+            Message::SeriesTracked(data, loaded) => {
                 self.service.insert_loaded_images(loaded);
                 let command = self
                     .service
-                    .track(id, series)
+                    .track(data)
                     .map(|f| Command::perform(f, Message::from));
                 return Command::batch(command);
             }
             Message::Track(id) => {
                 let translate = |result| match result {
-                    Ok((id, series, output)) => Message::SeriesTracked(id, series, output),
+                    Ok((data, output)) => Message::SeriesTracked(data, output),
                     Err(e) => Message::error(e),
                 };
 
@@ -168,21 +174,25 @@ impl Application for Main {
         let menu = column![
             menu_item(&self.page, "Dashboard", Page::Dashboard),
             menu_item(&self.page, "Search", Page::Search),
+            menu_item(&self.page, "Series", Page::SeriesList),
             menu_item(&self.page, "Settings", Page::Settings),
         ]
         .spacing(SPACE)
+        .padding(GAP)
         .max_width(140);
 
         let content = row![menu,]
             .spacing(GAP2)
-            .padding(GAP2)
             .width(Length::Fill)
             .height(Length::Fill);
 
-        let content = match &self.page {
+        let content = match self.page {
             Page::Dashboard => content.push(self.dashboard.view(&self.service)),
             Page::Search => content.push(self.search.view(&self.service)),
+            Page::SeriesList => content.push(self.series_list.view(&self.service)),
+            Page::Series(id) => content.push(self.series.view(&self.service, id)),
             Page::Settings => content.push(self.settings.view()),
+            Page::Season(id, season) => content.push(self.season.view(&self.service, id, season)),
         };
 
         container(content)
