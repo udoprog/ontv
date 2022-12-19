@@ -91,8 +91,13 @@ fn is_false(b: &bool) -> bool {
 #[derive(Default, Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct Watched {
+    /// Unique identifier for this watch.
+    pub(crate) id: Uuid,
+    /// Identifier of watched series.
+    pub(crate) series: Uuid,
     /// Identifier of watched episode.
     pub(crate) episode: Uuid,
+    /// Timestamp when it was watched.
     pub(crate) timestamp: DateTime<Utc>,
 }
 
@@ -133,6 +138,17 @@ pub struct Episode {
     /// Remote episode ids.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) remote_ids: Vec<RemoteEpisodeId>,
+}
+
+impl Episode {
+    /// Test if the given episode has aired by the provided timestamp.
+    pub(crate) fn has_aired(&self, now: &DateTime<Utc>) -> bool {
+        let Some(aired) = &self.aired else {
+            return false;
+        };
+
+        *aired <= now.date_naive()
+    }
 }
 
 /// Image format in use.

@@ -121,7 +121,6 @@ impl Application for Main {
                     Command::perform(self.service.save_config(self.settings.clone()), |m| m)
                 }
             }
-            Message::Dashboard(message) => self.dashboard.update(message),
             Message::Search(message) => {
                 self.search
                     .update(&mut self.service, &mut self.assets, message)
@@ -162,6 +161,13 @@ impl Application for Main {
 
                     Command::perform(self.service.add_series_by_remote(id), translate)
                 }
+            }
+            Message::Watch(series, episode) => {
+                let timestamp = chrono::Utc::now();
+                Command::perform(
+                    self.service.watch(series, episode, timestamp),
+                    Message::from,
+                )
             }
             Message::Track(id) => {
                 if let Some(future) = self.service.set_tracked(id) {

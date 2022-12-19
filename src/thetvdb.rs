@@ -147,10 +147,6 @@ impl Client {
             .send()
             .await?;
 
-        for header in res.headers() {
-            dbg!(header);
-        }
-
         let bytes: Bytes = handle_res(res).await?;
 
         if log::log_enabled!(log::Level::Trace) {

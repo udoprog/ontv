@@ -79,9 +79,6 @@ pub(crate) enum Message {
     Navigate(Page),
     /// Setting-specific messages.
     Settings(page::settings::M),
-    /// Dashboard-specific messages.
-    #[allow(unused)]
-    Dashboard(page::dashboard::M),
     /// Search-specific messages.
     Search(page::search::M),
     /// Series tracked.
@@ -92,6 +89,8 @@ pub(crate) enum Message {
     RemoveSeries(Uuid),
     /// Start tracking the series with the given remote ID.
     AddSeriesByRemote(RemoteSeriesId),
+    /// Mark the given series / episode as watched.
+    Watch(Uuid, Uuid),
     /// Start tracking the series with the given ID.
     Track(Uuid),
     /// Stop tracking the given show.

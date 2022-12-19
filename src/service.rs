@@ -1,11 +1,13 @@
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Error, Result};
+use chrono::{DateTime, Utc};
 use iced_native::image::Handle;
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::message::Message;
@@ -23,6 +25,21 @@ pub(crate) struct NewSeries {
     seasons: Vec<Season>,
 }
 
+/// A pending thing to watch.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub(crate) struct Pending {
+    series: Uuid,
+    episode: Uuid,
+    timestamp: DateTime<Utc>,
+}
+
+/// A pending thing to watch.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PendingRef<'a> {
+    pub(crate) series: &'a Series,
+    pub(crate) episode: &'a Episode,
+}
+
 #[derive(Clone, Default)]
 struct Database {
     remote_series: BTreeMap<RemoteSeriesId, Uuid>,
@@ -31,22 +48,33 @@ struct Database {
     episodes: HashMap<Uuid, Vec<Episode>>,
     seasons: HashMap<Uuid, Vec<Season>>,
     watched: Vec<Watched>,
+    /// Ordered list of things to watch.
+    pending: Vec<Pending>,
+}
+
+struct Paths {
+    /// Path to configuration file.
+    config: Box<Path>,
+    /// Path where remote mappings are stored.
+    remotes: Box<Path>,
+    /// Images configuration directory.
+    images: Box<Path>,
+    /// Path where series are stored.
+    series: Box<Path>,
+    /// Watch history.
+    watched: Box<Path>,
+    /// Pending history.
+    pending: Box<Path>,
+    /// Path where episodes are stored.
+    episodes: Box<Path>,
+    /// Path where seasons are stored.
+    seasons: Box<Path>,
 }
 
 /// Background service taking care of all state handling.
 pub struct Service {
-    /// Path to configuration file.
-    config_path: PathBuf,
-    /// Path where remote mappings are stored.
-    remotes_path: PathBuf,
-    /// Images configuration directory.
-    images_dir: PathBuf,
-    /// Path where series are stored.
-    series_path: PathBuf,
-    /// Path where episodes are stored.
-    episodes_path: PathBuf,
-    /// Path where seasons are stored.
-    seasons_path: PathBuf,
+    paths: Arc<Paths>,
+    /// Service database.
     db: Database,
     /// Shared client.
     pub(crate) client: Client,
@@ -58,16 +86,20 @@ impl Service {
         let dirs = directories_next::ProjectDirs::from("se.tedro", "setbac", "OnTV")
             .context("missing project dirs")?;
 
-        let config_path = dirs.config_dir().join("config.json");
-        let remotes_path = dirs.config_dir().join("remotes.json");
-        let series_path = dirs.config_dir().join("series.json");
-        let episodes_path = dirs.config_dir().join("episodes");
-        let seasons_path = dirs.config_dir().join("seasons");
-        let images_dir = dirs.cache_dir().join("images");
+        let paths = Paths {
+            config: dirs.config_dir().join("config.json").into(),
+            remotes: dirs.config_dir().join("remotes.json").into(),
+            series: dirs.config_dir().join("series.json").into(),
+            watched: dirs.config_dir().join("watched.json").into(),
+            pending: dirs.config_dir().join("pending.json").into(),
+            episodes: dirs.config_dir().join("episodes").into(),
+            seasons: dirs.config_dir().join("seasons").into(),
+            images: dirs.cache_dir().join("images").into(),
+        };
 
-        let db = load_database(&remotes_path, &series_path, &episodes_path, &seasons_path)?;
+        let db = load_database(&paths)?;
 
-        let settings = match load_config(&config_path)? {
+        let settings = match load_config(&paths.config)? {
             Some(settings) => settings,
             None => Default::default(),
         };
@@ -75,12 +107,7 @@ impl Service {
         let client = Client::new(&settings.thetvdb_legacy_apikey);
 
         let this = Self {
-            config_path,
-            remotes_path,
-            images_dir,
-            series_path,
-            episodes_path,
-            seasons_path,
+            paths: Arc::new(paths),
             db,
             client,
         };
@@ -94,27 +121,121 @@ impl Service {
     }
 
     /// Get list of series.
-    pub(crate) fn all_series<'a>(&'a self) -> impl Iterator<Item = &'a Series> {
+    pub(crate) fn all_series(&self) -> impl Iterator<Item = &Series> {
         self.db.series.values()
     }
 
     /// Iterator over available episodes.
-    pub(crate) fn episodes<'a>(&'a self, id: Uuid) -> impl Iterator<Item = &'a Episode> {
+    pub(crate) fn episodes(&self, id: Uuid) -> impl Iterator<Item = &Episode> {
         self.db.episodes.get(&id).into_iter().flatten()
     }
 
     /// Iterator over available seasons.
-    pub(crate) fn seasons<'a>(&'a self, id: Uuid) -> impl Iterator<Item = &'a Season> {
+    pub(crate) fn seasons(&self, id: Uuid) -> impl Iterator<Item = &Season> {
         self.db.seasons.get(&id).into_iter().flatten()
+    }
+
+    /// Get watch history.
+    pub(crate) fn watched(&self) -> impl Iterator<Item = &Watched> {
+        self.db.watched.iter()
+    }
+
+    /// Return list of pending episodes.
+    pub(crate) fn pending(&self) -> impl Iterator<Item = PendingRef<'_>> {
+        self.db.pending.iter().flat_map(|p| {
+            let series = self.db.series.get(&p.series)?;
+            let episodes = self.db.episodes.get(&p.series)?;
+            let episode = episodes.iter().find(|e| e.id == p.episode)?;
+            Some(PendingRef { series, episode })
+        })
+    }
+
+    /// Mark an episode as watched at the given timestamp.
+    pub(crate) fn watch(
+        &mut self,
+        series: Uuid,
+        episode: Uuid,
+        timestamp: DateTime<Utc>,
+    ) -> impl Future<Output = Result<()>> {
+        self.db.watched.push(Watched {
+            id: Uuid::new_v4(),
+            series,
+            episode,
+            timestamp,
+        });
+        let paths = self.paths.clone();
+        let watched = self.db.watched.clone();
+
+        // Remove any pending episodes for the given series.
+        self.db.pending.retain(|p| p.series != series);
+
+        let now = Utc::now();
+        self.populate_pending(&now, series, Some(episode));
+        let pending = self.db.pending.clone();
+
+        async move {
+            save_array("watched", &paths.watched, watched).await?;
+            save_array("pending", &paths.pending, pending).await?;
+            Ok(())
+        }
+    }
+
+    /// Ensure that at least one pending episode is present for the given
+    /// series.
+    fn populate_pending(&mut self, now: &DateTime<Utc>, series: Uuid, last: Option<Uuid>) {
+        // Populate the next pending episode.
+        let Some(episodes) = self.db.episodes.get(&series) else {
+            return;
+        };
+
+        let mut it = episodes.iter().peekable();
+
+        if let Some(last) = last {
+            // Find the first episode which is after the last episode indicated.
+            while let Some(e) = it.next() {
+                if e.id == last {
+                    break;
+                }
+            }
+        } else {
+            // Find the first episode which is *not* in our watch history.
+            while let Some(e) = it.peek() {
+                if !self.db.watched.iter().any(|w| w.episode == e.id) {
+                    break;
+                }
+
+                it.next();
+            }
+        }
+
+        // Mark the first episode (that has aired).
+        while let Some(e) = it.next() {
+            if !e.has_aired(now) {
+                break;
+            }
+
+            // Mark the next episode in the show as pending.
+            self.db.pending.push(Pending {
+                series,
+                episode: e.id,
+                timestamp: *now,
+            });
+
+            break;
+        }
+
+        self.db
+            .pending
+            .sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
     }
 
     /// Load configuration file.
     pub(crate) fn save_config(&mut self, settings: Settings) -> impl Future<Output = Message> {
         self.client.set_api_key(&settings.thetvdb_legacy_apikey);
-        let config_path = self.config_path.clone();
+        let paths = self.paths.clone();
 
         async move {
-            match save_config(&config_path, &settings).await {
+            match save_config(&paths.config, &settings).await {
                 Ok(()) => Message::SavedConfig,
                 Err(e) => Message::error(e),
             }
@@ -128,21 +249,21 @@ impl Service {
     }
 
     /// Remove the given series by ID.
-    pub(crate) fn remove_series(&mut self, id: Uuid) -> impl Future<Output = Result<()>> {
-        let _ = self.db.series.remove(&id);
-        let _ = self.db.episodes.remove(&id);
-        let _ = self.db.seasons.remove(&id);
+    pub(crate) fn remove_series(&mut self, series_id: Uuid) -> impl Future<Output = Result<()>> {
+        let _ = self.db.series.remove(&series_id);
+        let _ = self.db.episodes.remove(&series_id);
+        let _ = self.db.seasons.remove(&series_id);
 
-        let series_path = self.series_path.clone();
-        let episodes_path = self.episodes_path.join(format!("{}.json", id));
-        let seasons_path = self.seasons_path.join(format!("{}.json", id));
-
+        let paths = self.paths.clone();
         let series = self.db.series.clone();
 
         async move {
-            save_array("series", series_path, series.values()).await?;
-            remove_file("episodes", episodes_path).await?;
-            remove_file("episodes", seasons_path).await?;
+            let episodes = paths.episodes.join(format!("{}.json", series_id));
+            let seasons = paths.seasons.join(format!("{}.json", series_id));
+            let a = save_array("series", &paths.series, series.values());
+            let b = remove_file("episodes", &episodes);
+            let c = remove_file("episodes", &seasons);
+            let _ = tokio::try_join!(a, b, c)?;
             Ok(())
         }
     }
@@ -219,14 +340,12 @@ impl Service {
         let s = self.db.series.get_mut(&id)?;
         s.tracked = true;
 
-        let series_path = self.series_path.clone();
+        let paths = self.paths.clone();
         let series = self.db.series.clone();
 
-        Some(save_array(
-            "series",
-            series_path,
-            series.into_iter().map(|d| d.1),
-        ))
+        Some(
+            async move { save_array("series", &paths.series, series.into_iter().map(|d| d.1)).await },
+        )
     }
 
     /// Disable tracking of the series with the given id.
@@ -234,14 +353,12 @@ impl Service {
         let s = self.db.series.get_mut(&id)?;
         s.tracked = false;
 
-        let series_path = self.series_path.clone();
+        let paths = self.paths.clone();
         let series = self.db.series.clone();
 
-        Some(save_array(
-            "series",
-            series_path,
-            series.into_iter().map(|d| d.1),
-        ))
+        Some(
+            async move { save_array("series", &paths.series, series.into_iter().map(|d| d.1)).await },
+        )
     }
 
     /// Insert a new tracked song.
@@ -249,12 +366,11 @@ impl Service {
         &mut self,
         data: NewSeries,
     ) -> Option<impl Future<Output = Result<()>>> {
-        let remotes_path = self.remotes_path.clone();
-        let episodes_path = self.episodes_path.join(format!("{}.json", data.series.id));
-        let seasons_path = self.seasons_path.join(format!("{}.json", data.series.id));
+        let series_id = data.series.id;
+        let paths = self.paths.clone();
 
         for remote_id in &data.series.remote_ids {
-            self.db.remote_series.insert(*remote_id, data.series.id);
+            self.db.remote_series.insert(*remote_id, series_id);
         }
 
         for episode in &data.episodes {
@@ -263,14 +379,11 @@ impl Service {
             }
         }
 
-        self.db
-            .episodes
-            .insert(data.series.id, data.episodes.clone());
+        self.db.episodes.insert(series_id, data.episodes.clone());
 
-        self.db.seasons.insert(data.series.id, data.seasons.clone());
-        self.db.series.insert(data.series.id, data.series);
+        self.db.seasons.insert(series_id, data.seasons.clone());
+        self.db.series.insert(series_id, data.series);
 
-        let series_path = self.series_path.clone();
         let series = self.db.series.clone();
 
         let mut remotes = Vec::new();
@@ -283,11 +396,21 @@ impl Service {
             remotes.push((series_id.clone(), RemoteId::Episode { id: *id }));
         }
 
+        // Remove any pending episodes for the given series.
+        self.db.pending.retain(|p| p.series != series_id);
+        let now = Utc::now();
+        self.populate_pending(&now, series_id, None);
+        let pending = self.db.pending.clone();
+
         Some(async move {
-            save_array("series", series_path, series.values()).await?;
-            save_array("episodes", episodes_path, data.episodes).await?;
-            save_array("seasons", seasons_path, data.seasons).await?;
-            save_array("remotes", remotes_path, remotes).await?;
+            let episodes = paths.episodes.join(format!("{}.json", series_id));
+            let seasons = paths.seasons.join(format!("{}.json", series_id));
+            let a = save_array("series", &paths.series, series.values());
+            let b = save_array("episodes", &episodes, data.episodes);
+            let c = save_array("seasons", &seasons, data.seasons);
+            let d = save_array("remotes", &paths.remotes, remotes);
+            let e = save_array("pending", &paths.pending, pending);
+            tokio::try_join!(a, b, c, d, e)?;
             Ok(())
         })
     }
@@ -298,8 +421,8 @@ impl Service {
         id: Image,
     ) -> impl Future<Output = Result<Vec<(Image, Handle)>>> {
         let client = self.client.clone();
-        let images_dir = self.images_dir.clone();
-        cache_images(client, images_dir, [id])
+        let paths = self.paths.clone();
+        cache_images(client, paths, [id])
     }
 }
 
@@ -333,11 +456,7 @@ pub(crate) async fn save_config(path: &Path, state: &Settings) -> Result<()> {
 
 /// Ensure that the given image IDs are in the in-memory and filesystem image
 /// caches.
-async fn cache_images<I>(
-    client: Client,
-    images_dir: PathBuf,
-    ids: I,
-) -> Result<Vec<(Image, Handle)>>
+async fn cache_images<I>(client: Client, paths: Arc<Paths>, ids: I) -> Result<Vec<(Image, Handle)>>
 where
     I: IntoIterator<Item = Image>,
 {
@@ -347,7 +466,7 @@ where
 
     for id in ids {
         let hash = id.hash();
-        let cache_path = images_dir.join(format!("{:032x}.{}", hash, id.format()));
+        let cache_path = paths.images.join(format!("{:032x}.{}", hash, id.format()));
 
         let data = if matches!(fs::metadata(&cache_path).await, Ok(m) if m.is_file()) {
             log::debug!("reading image from cache: {id}: {}", cache_path.display());
@@ -376,15 +495,10 @@ where
 }
 
 /// Try to load initial state.
-fn load_database(
-    remotes: &Path,
-    series: &Path,
-    episodes: &Path,
-    seasons: &Path,
-) -> Result<Database> {
+fn load_database(paths: &Paths) -> Result<Database> {
     let mut db = Database::default();
 
-    if let Some(remotes) = load_array::<(Uuid, RemoteId)>(remotes)? {
+    if let Some(remotes) = load_array::<(Uuid, RemoteId)>(&paths.remotes)? {
         for (uuid, remote_id) in remotes {
             match remote_id {
                 RemoteId::Series { id } => {
@@ -397,7 +511,7 @@ fn load_database(
         }
     }
 
-    if let Some(series) = load_series(series)? {
+    if let Some(series) = load_series(&paths.series)? {
         for s in series {
             for &id in &s.remote_ids {
                 db.remote_series.insert(id, s.id);
@@ -407,13 +521,21 @@ fn load_database(
         }
     }
 
-    if let Some(episodes) = load_directory(episodes)? {
+    if let Some(watched) = load_array(&paths.watched)? {
+        db.watched = watched;
+    }
+
+    if let Some(pending) = load_array(&paths.pending)? {
+        db.pending = pending;
+    }
+
+    if let Some(episodes) = load_directory(&paths.episodes)? {
         for (id, episodes) in episodes {
             db.episodes.insert(id, episodes);
         }
     }
 
-    if let Some(seasons) = load_directory(seasons)? {
+    if let Some(seasons) = load_directory(&paths.seasons)? {
         for (id, seasons) in seasons {
             db.seasons.insert(id, seasons);
         }
@@ -434,14 +556,14 @@ fn load_series(path: &Path) -> Result<Option<Vec<Series>>> {
 }
 
 /// Remove the given file.
-async fn remove_file(what: &'static str, path: PathBuf) -> Result<()> {
+async fn remove_file(what: &'static str, path: &Path) -> Result<()> {
     log::trace!("{what}: removing: {}", path.display());
     let _ = tokio::fs::remove_file(path);
     Ok(())
 }
 
 /// Save series to the given path.
-async fn save_array<I>(what: &'static str, path: PathBuf, data: I) -> Result<()>
+async fn save_array<I>(what: &'static str, path: &Path, data: I) -> Result<()>
 where
     I: IntoIterator,
     I::Item: Serialize,

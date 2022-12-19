@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::assets::Assets;
 use crate::message::{Message, Page};
-use crate::params::{ACTION_SIZE, GAP, GAP2, SPACE, SUBTITLE_SIZE};
+use crate::params::{ACTION_SIZE, GAP, GAP2, SPACE, SUBTITLE_SIZE, WARNING_COLOR};
 use crate::service::Service;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -26,7 +26,7 @@ impl Season {
             crate::page::series::prepare_banner(assets, s);
 
             for e in service.episodes(id).filter(|e| e.season == season) {
-                assets.mark([e.filename.unwrap_or(s.poster)]);
+                assets.mark(e.filename);
             }
         }
     }
@@ -46,7 +46,7 @@ impl Season {
         let mut episodes = column![];
 
         for e in service.episodes(id).filter(|e| e.season == season) {
-            let screencap = match assets.image(&e.filename.unwrap_or(s.poster)) {
+            let screencap = match e.filename.and_then(|image| assets.image(&image)) {
                 Some(handle) => handle,
                 None => assets.missing_screencap(),
             };
@@ -61,19 +61,46 @@ impl Season {
 
             let overview = text(e.overview.as_deref().unwrap_or_default());
 
+            let watched = service
+                .watched()
+                .filter(|w| w.episode == e.id)
+                .collect::<Vec<_>>();
+
             let mut actions = row![];
 
+            let watch_text = match &watched[..] {
+                [] => "First watch",
+                _ => "Watch again",
+            };
+
             actions = actions.push(
-                button(text("mark watched").size(ACTION_SIZE)).style(theme::Button::Destructive),
+                button(text(watch_text).size(ACTION_SIZE))
+                    .style(theme::Button::Positive)
+                    .on_press(Message::Watch(id, e.id)),
             );
 
-            let mut info = column![name].spacing(GAP).push(actions);
+            let mut info = column![name].spacing(GAP);
+
+            let mut show_info = row![].spacing(GAP);
 
             if let Some(air_date) = e.aired {
-                info = info.push(text(format!("Aired: {}", air_date)).size(ACTION_SIZE));
+                show_info = show_info.push(text(format!("Aired: {}", air_date)).size(ACTION_SIZE));
             }
 
-            info = info.push(overview);
+            let watched = match &watched[..] {
+                &[] => text("Never watched").style(theme::Text::Color(WARNING_COLOR)),
+                &[once] => text(format!("Watched once on {}", once.timestamp.date_naive())),
+                all @ &[.., last] => text(format!(
+                    "Watched {} times, last on {}",
+                    all.len(),
+                    last.timestamp.date_naive()
+                )),
+            };
+
+            show_info = show_info.push(watched.size(ACTION_SIZE));
+
+            info = info.push(show_info).push(overview);
+            info = info.push(actions);
 
             episodes = episodes.push(
                 row![

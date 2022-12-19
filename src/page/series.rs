@@ -1,5 +1,5 @@
 use iced::theme;
-use iced::widget::{button, column, container, image, row, text, Column, Row};
+use iced::widget::{button, column, image, row, text, Column, Row};
 use iced::{Alignment, Element, Length};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -107,7 +107,7 @@ where
         None => assets.missing_banner(),
     };
 
-    let banner = container(image(handle)).max_height(100);
+    let banner = image(handle);
     let title = text(&s.title).size(TITLE_SIZE);
 
     let mut column = column![banner, title];
