@@ -75,6 +75,10 @@ pub(crate) enum Message {
     SaveConfig(bool),
     /// Configuration saved and whether it was successful or not.
     SavedConfig,
+    /// Save database changes.
+    SaveDatabase(bool),
+    /// Database was saved.
+    SavedDatabase,
     /// Request to navigate to the specified page.
     Navigate(Page),
     /// Setting-specific messages.
@@ -83,8 +87,6 @@ pub(crate) enum Message {
     Search(page::search::M),
     /// Series tracked.
     SeriesDownloadToTrack(NewSeries),
-    /// Series removed.
-    SeriesEdited,
     /// Refresh series data.
     RefreshSeries(Uuid),
     /// Remove the given series from the database.

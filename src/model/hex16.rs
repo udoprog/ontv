@@ -3,7 +3,7 @@ use std::fmt;
 use serde::de;
 use serde::ser;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct Hex16([u8; 16]);
 
 impl Hex16 {
@@ -54,6 +54,14 @@ impl fmt::Display for Hex16 {
         }
 
         Ok(())
+    }
+}
+
+impl fmt::Debug for Hex16 {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("0x")?;
+        fmt::Display::fmt(self, f)
     }
 }
 

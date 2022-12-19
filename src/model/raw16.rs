@@ -1,9 +1,10 @@
 use std::fmt;
+use std::fmt::Write;
 
 use serde::de;
 use serde::ser;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct Raw16([u8; 16]);
 
 impl Raw16 {
@@ -47,6 +48,16 @@ impl fmt::Display for Raw16 {
 
             bytes
         }
+    }
+}
+
+impl fmt::Debug for Raw16 {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_char('"')?;
+        fmt::Display::fmt(self, f)?;
+        f.write_char('"')?;
+        Ok(())
     }
 }
 

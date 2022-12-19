@@ -43,6 +43,7 @@ struct Main {
     season: page::season::State,
     loading: bool,
     save_timeout: Timeout,
+    database_timeout: Timeout,
     /// Image loader future being run.
     image_loader: Singleton,
     assets: Assets,
@@ -71,6 +72,7 @@ impl Application for Main {
             series_list: page::series_list::SeriesList::default(),
             season: page::season::State::default(),
             save_timeout: Timeout::default(),
+            database_timeout: Timeout::default(),
             image_loader: Singleton::default(),
             assets: Assets::new(),
         };
@@ -86,6 +88,8 @@ impl Application for Main {
     }
 
     fn update(&mut self, message: Message) -> Command<Self::Message> {
+        log::trace!("{message:?}");
+
         let command = match message {
             Message::Noop => {
                 return Command::none();
@@ -104,6 +108,23 @@ impl Application for Main {
                 }
             }
             Message::SavedConfig => {
+                self.loading = false;
+                Command::none()
+            }
+            Message::SaveDatabase(timed_out) => {
+                // To avoid a cancellation loop we need to return here.
+                if !timed_out {
+                    return Command::none();
+                }
+
+                self.loading = true;
+
+                Command::perform(self.service.save_changes(), |result| match result {
+                    Ok(()) => Message::SavedDatabase,
+                    Err(error) => Message::error(error),
+                })
+            }
+            Message::SavedDatabase => {
                 self.loading = false;
                 Command::none()
             }
@@ -128,20 +149,10 @@ impl Application for Main {
                     .update(&mut self.service, &mut self.assets, message)
             }
             Message::SeriesDownloadToTrack(data) => {
-                self.loading = false;
-                let command = self
-                    .service
-                    .insert_new_series(data)
-                    .map(|f| Command::perform(f, Message::from));
-                Command::batch(command)
-            }
-            Message::SeriesEdited => {
-                self.loading = false;
+                self.service.insert_new_series(data);
                 Command::none()
             }
             Message::RefreshSeries(id) => {
-                self.loading = true;
-
                 if let Some(future) = self.service.refresh_series(id) {
                     Command::perform(future, |result| match result {
                         Ok(new_data) => Message::SeriesDownloadToTrack(new_data),
@@ -152,63 +163,39 @@ impl Application for Main {
                 }
             }
             Message::RemoveSeries(id) => {
-                self.loading = true;
-
-                Command::perform(self.service.remove_series(id), |result| match result {
-                    Ok(()) => Message::SeriesEdited,
-                    Err(e) => Message::error(e),
-                })
+                self.service.remove_series(id);
+                Command::none()
             }
             Message::AddSeriesByRemote(id) => {
-                if let Some(action) = self.service.set_tracked_by_remote(id) {
-                    let translate = |result| match result {
-                        Ok(()) => Message::Noop,
-                        Err(e) => Message::error(e),
-                    };
-
-                    Command::perform(action, translate)
+                if self.service.set_tracked_by_remote(id) {
+                    Command::none()
                 } else {
-                    self.loading = true;
-
                     let translate = |result| match result {
                         Ok(data) => Message::SeriesDownloadToTrack(data),
                         Err(e) => Message::error(e),
                     };
 
-                    Command::perform(self.service.add_series_by_remote(id), translate)
+                    Command::perform(self.service.download_series_by_remote(id), translate)
                 }
             }
             Message::WatchRemainingSeason(series, season) => {
                 let timestamp = chrono::Utc::now();
-
-                match self
-                    .service
-                    .watch_remaining_season(series, season, timestamp)
-                {
-                    Some(future) => Command::perform(future, Message::from),
-                    None => Command::none(),
-                }
+                self.service
+                    .watch_remaining_season(series, season, timestamp);
+                Command::none()
             }
             Message::Watch(series, episode) => {
                 let timestamp = chrono::Utc::now();
-                Command::perform(
-                    self.service.watch(series, episode, timestamp),
-                    Message::from,
-                )
+                self.service.watch(series, episode, timestamp);
+                Command::none()
             }
             Message::Track(id) => {
-                if let Some(future) = self.service.set_tracked(id) {
-                    Command::perform(future, Message::from)
-                } else {
-                    Command::none()
-                }
+                self.service.track(id);
+                Command::none()
             }
             Message::Untrack(id) => {
-                let command = self
-                    .service
-                    .untrack(id)
-                    .map(|f| Command::perform(f, Message::from));
-                Command::batch(command)
+                self.service.untrack(id);
+                Command::none()
             }
             Message::ImagesLoaded(loaded) => {
                 match loaded {
@@ -225,8 +212,17 @@ impl Application for Main {
             }
         };
 
+        let save_database = if self.service.has_changes() {
+            Command::single(
+                self.database_timeout
+                    .set(Duration::from_secs(5), Message::SaveDatabase),
+            )
+        } else {
+            Command::none()
+        };
+
         self.prepare();
-        Command::batch([self.handle_image_loading(), command])
+        Command::batch([self.handle_image_loading(), save_database, command])
     }
 
     fn view(&self) -> Element<Message> {

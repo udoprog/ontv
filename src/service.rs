@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt;
 use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
@@ -19,12 +20,18 @@ use crate::page::settings::Settings;
 use crate::thetvdb::Client;
 
 /// Data encapsulating a newly added series.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct NewSeries {
     series: Series,
     episodes: Vec<Episode>,
     seasons: Vec<Season>,
     refresh_pending: bool,
+}
+
+impl fmt::Debug for NewSeries {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NewSeries").finish_non_exhaustive()
+    }
 }
 
 /// A pending thing to watch.
@@ -42,7 +49,28 @@ pub(crate) struct PendingRef<'a> {
     pub(crate) episode: &'a Episode,
 }
 
-#[derive(Clone, Default)]
+#[derive(Default)]
+struct Changes {
+    watched: bool,
+    pending: bool,
+    series: bool,
+    remotes: bool,
+    remove: HashSet<Uuid>,
+    add: HashSet<Uuid>,
+}
+
+impl Changes {
+    fn has_changes(&self) -> bool {
+        self.watched
+            || self.pending
+            || self.series
+            || self.remotes
+            || !self.remove.is_empty()
+            || !self.add.is_empty()
+    }
+}
+
+#[derive(Default)]
 struct Database {
     remote_series: BTreeMap<RemoteSeriesId, Uuid>,
     remote_episodes: BTreeMap<RemoteEpisodeId, Uuid>,
@@ -54,6 +82,8 @@ struct Database {
     watch_counts: HashMap<Uuid, usize>,
     /// Ordered list of things to watch.
     pending: Vec<Pending>,
+    /// Keeping track of changes to be saved.
+    changes: Changes,
 }
 
 struct Paths {
@@ -163,13 +193,18 @@ impl Service {
         })
     }
 
+    /// Test if we have changes.
+    pub(crate) fn has_changes(&self) -> bool {
+        self.db.changes.has_changes()
+    }
+
     /// Mark an episode as watched at the given timestamp.
     pub(crate) fn watch_remaining_season(
         &mut self,
         series: Uuid,
         season: SeasonNumber,
         timestamp: DateTime<Utc>,
-    ) -> Option<impl Future<Output = Result<()>>> {
+    ) {
         let mut last = None;
 
         for episode in self
@@ -200,19 +235,14 @@ impl Service {
         }
 
         let Some(last) = last else {
-            return None;
+            return;
         };
 
-        Some(self.setup_pending(series, Some(last)))
+        self.setup_pending(series, Some(last));
     }
 
     /// Mark an episode as watched at the given timestamp.
-    pub(crate) fn watch(
-        &mut self,
-        series: Uuid,
-        episode: Uuid,
-        timestamp: DateTime<Utc>,
-    ) -> impl Future<Output = Result<()>> {
+    pub(crate) fn watch(&mut self, series: Uuid, episode: Uuid, timestamp: DateTime<Utc>) {
         self.db.watched.push(Watched {
             id: Uuid::new_v4(),
             series,
@@ -225,24 +255,89 @@ impl Service {
     }
 
     /// Set up next pending episode.
-    fn setup_pending(
-        &mut self,
-        series: Uuid,
-        episode: Option<Uuid>,
-    ) -> impl Future<Output = Result<()>> {
+    fn setup_pending(&mut self, series: Uuid, episode: Option<Uuid>) {
         // Remove any pending episodes for the given series.
         self.db.pending.retain(|p| p.series != series);
-
         let now = Utc::now();
         self.populate_pending(&now, series, episode);
+        self.db.changes.watched = true;
+        self.db.changes.pending = true;
+    }
+
+    /// Save changes made.
+    pub(crate) fn save_changes(&mut self) -> impl Future<Output = Result<()>> {
+        let changes = std::mem::take(&mut self.db.changes);
+
+        let watched = changes.watched.then(|| self.db.watched.clone());
+        let pending = changes.pending.then(|| self.db.pending.clone());
+        let series = changes.series.then(|| self.db.series.clone());
+        let remove_series = changes.remove;
+        let mut add_series = Vec::with_capacity(changes.add.len());
+
+        for id in changes.add {
+            let Some(episodes) = self.db.episodes.get(&id) else {
+                continue;
+            };
+
+            let Some(seasons) = self.db.seasons.get(&id) else {
+                continue;
+            };
+
+            add_series.push((id, episodes.clone(), seasons.clone()));
+        }
+
+        let remotes = if changes.remotes {
+            let mut remotes =
+                Vec::with_capacity(&self.db.remote_series.len() + self.db.remote_episodes.len());
+
+            for (id, series_id) in &self.db.remote_series {
+                remotes.push((series_id.clone(), RemoteId::Series { id: *id }));
+            }
+
+            for (id, series_id) in &self.db.remote_episodes {
+                remotes.push((series_id.clone(), RemoteId::Episode { id: *id }));
+            }
+
+            Some(remotes)
+        } else {
+            None
+        };
 
         let paths = self.paths.clone();
-        let watched = self.db.watched.clone();
-        let pending = self.db.pending.clone();
 
         async move {
-            save_array("watched", &paths.watched, watched).await?;
-            save_array("pending", &paths.pending, pending).await?;
+            if let Some(series) = series {
+                save_array("series", &paths.series, series.values()).await?;
+            }
+
+            if let Some(watched) = watched {
+                save_array("watched", &paths.watched, watched).await?;
+            }
+
+            if let Some(pending) = pending {
+                save_array("pending", &paths.pending, pending).await?;
+            }
+
+            if let Some(remotes) = remotes {
+                save_array("remotes", &paths.remotes, remotes).await?;
+            }
+
+            for series_id in remove_series {
+                let episodes = paths.episodes.join(format!("{}.json", series_id));
+                let seasons = paths.seasons.join(format!("{}.json", series_id));
+                let a = remove_file("episodes", &episodes);
+                let b = remove_file("episodes", &seasons);
+                let _ = tokio::try_join!(a, b)?;
+            }
+
+            for (series_id, episodes, seasons) in add_series {
+                let episodes_path = paths.episodes.join(format!("{}.json", series_id));
+                let seasons_path = paths.seasons.join(format!("{}.json", series_id));
+                let a = save_array("episodes", &episodes_path, episodes);
+                let b = save_array("seasons", &seasons_path, seasons);
+                let _ = tokio::try_join!(a, b)?;
+            }
+
             Ok(())
         }
     }
@@ -326,27 +421,17 @@ impl Service {
     }
 
     /// Remove the given series by ID.
-    pub(crate) fn remove_series(&mut self, series_id: Uuid) -> impl Future<Output = Result<()>> {
+    pub(crate) fn remove_series(&mut self, series_id: Uuid) {
         let _ = self.db.series.remove(&series_id);
         let _ = self.db.episodes.remove(&series_id);
         let _ = self.db.seasons.remove(&series_id);
-
-        let paths = self.paths.clone();
-        let series = self.db.series.clone();
-
-        async move {
-            let episodes = paths.episodes.join(format!("{}.json", series_id));
-            let seasons = paths.seasons.join(format!("{}.json", series_id));
-            let a = save_array("series", &paths.series, series.values());
-            let b = remove_file("episodes", &episodes);
-            let c = remove_file("episodes", &seasons);
-            let _ = tokio::try_join!(a, b, c)?;
-            Ok(())
-        }
+        self.db.changes.series = true;
+        self.db.changes.add.remove(&series_id);
+        self.db.changes.remove.insert(series_id);
     }
 
     /// Enable tracking of the series with the given id.
-    pub(crate) fn add_series_by_remote(
+    pub(crate) fn download_series_by_remote(
         &self,
         id: RemoteSeriesId,
     ) -> impl Future<Output = Result<NewSeries>> {
@@ -403,47 +488,36 @@ impl Service {
     }
 
     /// If the series is already loaded in the local database, simply mark it as tracked.
-    pub(crate) fn set_tracked_by_remote(
-        &mut self,
-        id: RemoteSeriesId,
-    ) -> Option<impl Future<Output = Result<()>>> {
-        let id = *self.db.remote_series.get(&id)?;
-        self.set_tracked(id)
+    pub(crate) fn set_tracked_by_remote(&mut self, id: RemoteSeriesId) -> bool {
+        let Some(&id) = self.db.remote_series.get(&id) else {
+            return false;
+        };
+
+        self.track(id)
     }
 
     /// Set the given show as tracked.
-    pub(crate) fn set_tracked(&mut self, id: Uuid) -> Option<impl Future<Output = Result<()>>> {
-        let s = self.db.series.get_mut(&id)?;
-        s.tracked = true;
+    pub(crate) fn track(&mut self, id: Uuid) -> bool {
+        let Some(series) = self.db.series.get_mut(&id) else {
+            return false;
+        };
 
-        let paths = self.paths.clone();
-        let series = self.db.series.clone();
-
-        Some(
-            async move { save_array("series", &paths.series, series.into_iter().map(|d| d.1)).await },
-        )
+        series.tracked = true;
+        self.db.changes.series = true;
+        true
     }
 
     /// Disable tracking of the series with the given id.
-    pub(crate) fn untrack(&mut self, id: Uuid) -> Option<impl Future<Output = Result<()>>> {
-        let s = self.db.series.get_mut(&id)?;
-        s.tracked = false;
-
-        let paths = self.paths.clone();
-        let series = self.db.series.clone();
-
-        Some(
-            async move { save_array("series", &paths.series, series.into_iter().map(|d| d.1)).await },
-        )
+    pub(crate) fn untrack(&mut self, id: Uuid) {
+        if let Some(s) = self.db.series.get_mut(&id) {
+            s.tracked = false;
+            self.db.changes.series = true;
+        }
     }
 
     /// Insert a new tracked song.
-    pub(crate) fn insert_new_series(
-        &mut self,
-        data: NewSeries,
-    ) -> Option<impl Future<Output = Result<()>>> {
+    pub(crate) fn insert_new_series(&mut self, data: NewSeries) {
         let series_id = data.series.id;
-        let paths = self.paths.clone();
 
         for remote_id in &data.series.remote_ids {
             self.db.remote_series.insert(*remote_id, series_id);
@@ -460,45 +534,18 @@ impl Service {
         self.db.seasons.insert(series_id, data.seasons.clone());
         self.db.series.insert(series_id, data.series);
 
-        let series = self.db.series.clone();
-
-        let mut remotes =
-            Vec::with_capacity(self.db.remote_series.len() + self.db.remote_episodes.len());
-
-        for (id, series_id) in &self.db.remote_series {
-            remotes.push((series_id.clone(), RemoteId::Series { id: *id }));
-        }
-
-        for (id, series_id) in &self.db.remote_episodes {
-            remotes.push((series_id.clone(), RemoteId::Episode { id: *id }));
-        }
-
-        let pending = if data.refresh_pending {
+        if data.refresh_pending {
             // Remove any pending episodes for the given series.
             self.db.pending.retain(|p| p.series != series_id);
             let now = Utc::now();
             self.populate_pending(&now, series_id, None);
+            self.db.changes.pending = true;
+        }
 
-            Some(self.db.pending.clone())
-        } else {
-            None
-        };
-
-        Some(async move {
-            let episodes = paths.episodes.join(format!("{}.json", series_id));
-            let seasons = paths.seasons.join(format!("{}.json", series_id));
-            let a = save_array("series", &paths.series, series.values());
-            let b = save_array("episodes", &episodes, data.episodes);
-            let c = save_array("seasons", &seasons, data.seasons);
-            let d = save_array("remotes", &paths.remotes, remotes);
-            tokio::try_join!(a, b, c, d)?;
-
-            if let Some(pending) = pending {
-                save_array("pending", &paths.pending, pending).await?;
-            }
-
-            Ok(())
-        })
+        self.db.changes.series = true;
+        self.db.changes.remotes = true;
+        self.db.changes.remove.remove(&series_id);
+        self.db.changes.add.insert(series_id);
     }
 
     /// Ensure that a collection of the given image ids are loaded.
