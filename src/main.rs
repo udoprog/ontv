@@ -1,3 +1,4 @@
+mod assets;
 mod message;
 mod model;
 mod page;
@@ -15,6 +16,7 @@ use iced::{Alignment, Application, Command, Element, Length, Settings};
 use iced_native::image::Handle;
 use utils::Singleton;
 
+use crate::assets::Assets;
 use crate::message::{Message, Page, ThemeType};
 use crate::model::Image;
 use crate::params::{CONTAINER_WIDTH, GAP, GAP2, SPACE};
@@ -41,6 +43,7 @@ struct Main {
     save_timeout: Timeout,
     /// Image loader future being run.
     image_loader: Singleton,
+    assets: Assets,
 }
 
 struct Flags {
@@ -67,8 +70,10 @@ impl Application for Main {
             season: page::season::Season::default(),
             save_timeout: Timeout::default(),
             image_loader: Singleton::default(),
+            assets: Assets::new(),
         };
 
+        this.prepare();
         let command = this.handle_image_loading();
         (this, command)
     }
@@ -85,6 +90,7 @@ impl Application for Main {
             }
             Message::Error(error) => {
                 log::error!("error: {error}");
+                self.loading = false;
                 Command::none()
             }
             Message::SaveConfig(timed_out) => {
@@ -100,10 +106,7 @@ impl Application for Main {
                 Command::none()
             }
             Message::Navigate(page) => {
-                if !matches!(page, Page::Search) {
-                    self.search.image_ids.clear();
-                }
-
+                self.assets.clear();
                 self.page = page;
                 Command::none()
             }
@@ -119,7 +122,10 @@ impl Application for Main {
                 }
             }
             Message::Dashboard(message) => self.dashboard.update(message),
-            Message::Search(message) => self.search.update(&mut self.service, message),
+            Message::Search(message) => {
+                self.search
+                    .update(&mut self.service, &mut self.assets, message)
+            }
             Message::SeriesDownloadToTrack(data) => {
                 let load = self.handle_image_loading();
                 let command = self
@@ -128,7 +134,19 @@ impl Application for Main {
                     .map(|f| Command::perform(f, Message::from));
                 Command::batch(command.into_iter().chain([load]))
             }
-            Message::TrackRemote(id) => {
+            Message::SeriesRemoved => {
+                self.loading = false;
+                Command::none()
+            }
+            Message::RemoveSeries(id) => {
+                self.loading = true;
+
+                Command::perform(self.service.remove_series(id), |result| match result {
+                    Ok(()) => Message::SeriesRemoved,
+                    Err(e) => Message::error(e),
+                })
+            }
+            Message::AddSeriesByRemote(id) => {
                 if let Some(action) = self.service.set_tracked_by_remote(id) {
                     let translate = |result| match result {
                         Ok(()) => Message::Noop,
@@ -142,7 +160,7 @@ impl Application for Main {
                         Err(e) => Message::error(e),
                     };
 
-                    Command::perform(self.service.track_by_remote(id), translate)
+                    Command::perform(self.service.add_series_by_remote(id), translate)
                 }
             }
             Message::Track(id) => {
@@ -160,32 +178,21 @@ impl Application for Main {
                 Command::batch(command)
             }
             Message::ImagesLoaded(loaded) => {
-                self.service.insert_loaded_images(loaded);
+                match loaded {
+                    Ok(loaded) => {
+                        self.assets.insert_images(loaded);
+                    }
+                    Err(error) => {
+                        log::error!("error loading images: {error}");
+                    }
+                }
+
+                self.image_loader.clear();
                 return self.handle_image_loading();
             }
         };
 
-        match self.page {
-            Page::Dashboard => {
-                self.dashboard.prepare(&mut self.service);
-            }
-            Page::Search => {
-                self.search.prepare(&mut self.service);
-            }
-            Page::SeriesList => {
-                self.series_list.prepare(&mut self.service);
-            }
-            Page::Series(id) => {
-                self.series.prepare(&mut self.service, id);
-            }
-            Page::Settings => {
-                self.settings.prepare(&mut self.service);
-            }
-            Page::Season(id, season) => {
-                self.season.prepare(&mut self.service, id, season);
-            }
-        }
-
+        self.prepare();
         Command::batch([self.handle_image_loading(), command])
     }
 
@@ -223,12 +230,12 @@ impl Application for Main {
             .height(Length::Fill);
 
         let page = match self.page {
-            Page::Dashboard => self.dashboard.view(&self.service),
-            Page::Search => self.search.view(&self.service),
-            Page::SeriesList => self.series_list.view(&self.service),
-            Page::Series(id) => self.series.view(&self.service, id),
-            Page::Settings => self.settings.view(),
-            Page::Season(id, season) => self.season.view(&self.service, id, season),
+            Page::Dashboard => self.dashboard.view(&self.service, &self.assets),
+            Page::Search => self.search.view(&self.service, &self.assets),
+            Page::SeriesList => self.series_list.view(&self.service, &self.assets),
+            Page::Series(id) => self.series.view(&self.service, &self.assets, id),
+            Page::Settings => self.settings.view(&self.assets),
+            Page::Season(id, season) => self.season.view(&self.service, &self.assets, id, season),
         };
 
         let content = content.push(scrollable(
@@ -254,23 +261,51 @@ impl Application for Main {
 }
 
 impl Main {
+    // Call prepare on the appropriate components to prepare asset loading.
+    fn prepare(&mut self) {
+        match self.page {
+            Page::Dashboard => {
+                self.dashboard.prepare(&self.service, &mut self.assets);
+            }
+            Page::Search => {
+                self.search.prepare(&self.service, &mut self.assets);
+            }
+            Page::SeriesList => {
+                self.series_list.prepare(&self.service, &mut self.assets);
+            }
+            Page::Series(id) => {
+                self.series.prepare(&self.service, &mut self.assets, id);
+            }
+            Page::Settings => {
+                self.settings.prepare(&self.service, &mut self.assets);
+            }
+            Page::Season(id, season) => {
+                self.season
+                    .prepare(&self.service, &mut self.assets, id, season);
+            }
+        }
+
+        if self.assets.is_cleared() {
+            self.image_loader.clear();
+        }
+
+        self.assets.commit();
+    }
+
     fn handle_image_loading(&mut self) -> Command<Message> {
         fn translate(value: Option<Result<Vec<(Image, Handle)>>>) -> Message {
             match value {
-                Some(Ok(value)) => Message::ImagesLoaded(value),
-                Some(Err(e)) => Message::error(e),
+                Some(Ok(value)) => Message::ImagesLoaded(Ok(value)),
+                Some(Err(e)) => Message::ImagesLoaded(Err(e.into())),
                 None => Message::Noop,
             }
         }
 
-        if !self.service.new_images && !self.image_loader.is_set() {
+        if self.image_loader.is_set() {
             return Command::none();
         }
 
-        self.service.new_images = false;
-
-        let Some(id) = self.service.image_ids.pop_front() else {
-            self.image_loader.clear();
+        let Some(id) = self.assets.image_ids.pop_front() else {
             return Command::none();
         };
 

@@ -5,6 +5,7 @@ use iced::Length;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::assets::Assets;
 use crate::message::{Message, Page};
 use crate::params::{ACTION_SIZE, GAP, GAP2, SPACE, SUBTITLE_SIZE};
 use crate::service::Service;
@@ -14,11 +15,27 @@ pub(crate) struct Season;
 
 impl Season {
     /// Prepare data that is needed for the view.
-    pub(crate) fn prepare(&mut self, service: &mut Service, id: Uuid, season: Option<u32>) {}
+    pub(crate) fn prepare(
+        &mut self,
+        service: &Service,
+        assets: &mut Assets,
+        id: Uuid,
+        season: Option<u32>,
+    ) {
+        if let Some(s) = service.series(id) {
+            crate::page::series::prepare_banner(assets, s);
 
+            for e in service.episodes(id).filter(|e| e.season == season) {
+                assets.mark([e.filename.unwrap_or(s.poster)]);
+            }
+        }
+    }
+
+    /// Render season view.
     pub(crate) fn view(
         &self,
         service: &Service,
+        assets: &Assets,
         id: Uuid,
         season: Option<u32>,
     ) -> Column<'static, Message> {
@@ -29,9 +46,9 @@ impl Season {
         let mut episodes = column![];
 
         for e in service.episodes(id).filter(|e| e.season == season) {
-            let screencap = match service.get_image(&e.filename.unwrap_or(s.poster)) {
+            let screencap = match assets.image(&e.filename.unwrap_or(s.poster)) {
                 Some(handle) => handle,
-                None => service.missing_screencap(),
+                None => assets.missing_screencap(),
             };
 
             let mut name = row![].spacing(SPACE);
@@ -76,7 +93,7 @@ impl Season {
         }
         .size(SUBTITLE_SIZE);
 
-        let banner = crate::page::series::banner(service, s, [season]);
+        let banner = crate::page::series::banner(assets, s, [season]);
 
         let back = button("back").on_press(Message::Navigate(Page::Series(s.id)));
 

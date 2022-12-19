@@ -4,6 +4,7 @@ use iced::{Alignment, Element, Length};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::assets::Assets;
 use crate::message::{Message, Page};
 use crate::model;
 use crate::params::{ACTION_SIZE, GAP, GAP2, SUBTITLE_SIZE, TITLE_SIZE};
@@ -14,14 +15,23 @@ pub(crate) struct Series;
 
 impl Series {
     /// Prepare data that is needed for the view.
-    pub(crate) fn prepare(&mut self, service: &mut Service, id: Uuid) {}
+    pub(crate) fn prepare(&mut self, service: &Service, assets: &mut Assets, id: Uuid) {
+        if let Some(s) = service.series(id) {
+            prepare_banner(assets, s);
+        }
+    }
 
-    pub(crate) fn view(&self, service: &Service, id: Uuid) -> Column<'static, Message> {
+    pub(crate) fn view(
+        &self,
+        service: &Service,
+        assets: &Assets,
+        id: Uuid,
+    ) -> Column<'static, Message> {
         let Some(s) = service.series(id) else {
             return column![text("no series")];
         };
 
-        let top = banner::<[Element<'static, Message>; 0]>(service, s, []);
+        let top = banner::<[Element<'static, Message>; 0]>(assets, s, []);
 
         let episodes = service.episodes(s.id);
 
@@ -77,9 +87,14 @@ pub(crate) fn actions(s: &model::Series) -> Row<'static, Message> {
     row
 }
 
+/// Prepare assets needed for banner.
+pub(crate) fn prepare_banner(assets: &mut Assets, s: &crate::model::Series) {
+    assets.mark([s.banner.unwrap_or(s.poster)]);
+}
+
 /// Render a banner for the series.
 pub(crate) fn banner<I>(
-    service: &Service,
+    assets: &Assets,
     s: &crate::model::Series,
     extra: I,
 ) -> Column<'static, Message>
@@ -87,9 +102,9 @@ where
     I: IntoIterator,
     I::Item: Into<Element<'static, Message>>,
 {
-    let handle = match service.get_image(&s.banner.unwrap_or(s.poster)) {
+    let handle = match assets.image(&s.banner.unwrap_or(s.poster)) {
         Some(handle) => handle,
-        None => service.missing_banner(),
+        None => assets.missing_banner(),
     };
 
     let banner = container(image(handle)).max_height(100);

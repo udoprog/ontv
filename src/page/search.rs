@@ -1,11 +1,10 @@
-use std::collections::VecDeque;
-
 use iced::widget::{button, column, image, row, text, text_input, Column};
 use iced::{theme, Alignment};
 use iced::{Command, Length};
 
+use crate::assets::Assets;
 use crate::message::Message;
-use crate::model::{Image, RemoteSeriesId, SearchSeries};
+use crate::model::{RemoteSeriesId, SearchSeries};
 use crate::params::{ACTION_SIZE, GAP, GAP2, SPACE};
 use crate::service::Service;
 
@@ -30,14 +29,12 @@ pub(crate) struct Search {
     text: String,
     series: Vec<SearchSeries>,
     page: usize,
-    /// Image IDs to load.
-    pub(crate) image_ids: VecDeque<Image>,
 }
 
 impl Search {
     /// Prepare data that is needed for the view.
-    pub(crate) fn prepare(&mut self, service: &mut Service) {
-        service.mark_images(
+    pub(crate) fn prepare(&mut self, _: &Service, assets: &mut Assets) {
+        assets.mark(
             self.series
                 .iter()
                 .map(|s| s.poster)
@@ -47,7 +44,12 @@ impl Search {
     }
 
     /// Handle theme change.
-    pub(crate) fn update(&mut self, service: &mut Service, message: M) -> Command<Message> {
+    pub(crate) fn update(
+        &mut self,
+        service: &mut Service,
+        assets: &mut Assets,
+        message: M,
+    ) -> Command<Message> {
         match message {
             M::Search => {
                 self.page = 0;
@@ -70,17 +72,19 @@ impl Search {
             }
             M::Page(page) => {
                 self.page = page;
+                assets.clear();
                 Command::none()
             }
             M::Result(series) => {
                 self.series = series;
+                assets.clear();
                 Command::none()
             }
         }
     }
 
     /// Generate the view for the settings page.
-    pub(crate) fn view(&self, service: &Service) -> Column<'static, Message> {
+    pub(crate) fn view(&self, service: &Service, assets: &Assets) -> Column<'static, Message> {
         let submit = button("Search");
 
         let submit = if !self.text.is_empty() {
@@ -92,21 +96,21 @@ impl Search {
         let mut results = column![].spacing(GAP2).padding(GAP);
 
         for series in self.series.iter().skip(self.page * PER_PAGE).take(PER_PAGE) {
-            let handle = match service.get_image(&series.poster) {
+            let handle = match assets.image(&series.poster) {
                 Some(handle) => handle,
-                None => service.missing_banner(),
+                None => assets.missing_banner(),
             };
 
             let id = RemoteSeriesId::TheTvDb { id: series.id };
 
-            let track = if let Some(s) = service.get_series_by_remote(id).filter(|s| s.tracked) {
-                button(text("Untrack").size(ACTION_SIZE))
+            let track = if let Some(s) = service.get_series_by_remote(id) {
+                button(text("Remove").size(ACTION_SIZE))
                     .style(theme::Button::Destructive)
-                    .on_press(Message::Untrack(s.id))
+                    .on_press(Message::RemoveSeries(s.id))
             } else {
-                button(text("Track").size(ACTION_SIZE))
+                button(text("Add").size(ACTION_SIZE))
                     .style(theme::Button::Positive)
-                    .on_press(Message::TrackRemote(id))
+                    .on_press(Message::AddSeriesByRemote(id))
             };
 
             let overview = series

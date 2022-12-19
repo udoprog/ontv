@@ -136,7 +136,7 @@ pub struct Episode {
 }
 
 /// Image format in use.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum ImageFormat {
     Jpg,
@@ -163,7 +163,7 @@ impl fmt::Display for ImageFormat {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 pub(crate) struct Image {
     #[serde(flatten)]
     pub(crate) kind: ImageKind,
@@ -338,7 +338,7 @@ impl Image {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum ArtKind {
     /// Poster art.
@@ -377,7 +377,7 @@ impl fmt::Display for ArtKind {
 }
 
 /// The identifier of an image.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", tag = "type", content = "data")]
 pub(crate) enum ImageKind {
     Legacy(u64, ArtKind, Hex16),

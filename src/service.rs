@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 
@@ -14,8 +14,6 @@ use crate::model::{
 };
 use crate::page::settings::Settings;
 use crate::thetvdb::Client;
-
-static MISSING_BANNER: &[u8] = include_bytes!("../assets/missing_banner.png");
 
 /// Data encapsulating a newly added series.
 #[derive(Debug, Clone)]
@@ -49,17 +47,9 @@ pub struct Service {
     episodes_path: PathBuf,
     /// Path where seasons are stored.
     seasons_path: PathBuf,
-    missing_banner: Handle,
-    missing_poster: Handle,
-    missing_screencap: Handle,
     db: Database,
-    images: HashMap<Image, Handle>,
     /// Shared client.
     pub(crate) client: Client,
-    /// If there are new images to load.
-    pub(crate) new_images: bool,
-    /// Image queue to load.
-    pub(crate) image_ids: VecDeque<Image>,
 }
 
 impl Service {
@@ -74,10 +64,6 @@ impl Service {
         let episodes_path = dirs.config_dir().join("episodes");
         let seasons_path = dirs.config_dir().join("seasons");
         let images_dir = dirs.cache_dir().join("images");
-
-        let missing_banner = Handle::from_memory(MISSING_BANNER);
-        let missing_screencap = Handle::from_memory(MISSING_BANNER);
-        let missing_poster = Handle::from_memory(MISSING_BANNER);
 
         let db = load_database(&remotes_path, &series_path, &episodes_path, &seasons_path)?;
 
@@ -95,44 +81,11 @@ impl Service {
             series_path,
             episodes_path,
             seasons_path,
-            missing_banner,
-            missing_screencap,
-            missing_poster,
             db,
-            images: HashMap::new(),
             client,
-            new_images: false,
-            image_ids: VecDeque::new(),
         };
 
         Ok((this, settings))
-    }
-
-    /// Setup images to load task.
-    pub(crate) fn mark_images<I>(&mut self, images: I)
-    where
-        I: IntoIterator<Item = Image>,
-    {
-        self.image_ids.clear();
-
-        let mut all_loaded = true;
-
-        for image in images {
-            self.image_ids.push_back(image);
-
-            if !self.images.contains_key(&image) {
-                all_loaded = false;
-            }
-        }
-
-        if all_loaded {
-            self.image_ids.clear();
-            return;
-        }
-
-        self.new_images = true;
-        // NB: important to free the memory of images we are no longer using.
-        self.images.clear();
     }
 
     /// Get a single series.
@@ -155,13 +108,6 @@ impl Service {
         self.db.seasons.get(&id).into_iter().flatten()
     }
 
-    /// Insert loaded images.
-    pub(crate) fn insert_loaded_images(&mut self, loaded: Vec<(Image, Handle)>) {
-        for (id, handle) in loaded {
-            self.images.insert(id, handle);
-        }
-    }
-
     /// Load configuration file.
     pub(crate) fn save_config(&mut self, settings: Settings) -> impl Future<Output = Message> {
         self.client.set_api_key(&settings.thetvdb_legacy_apikey);
@@ -175,34 +121,34 @@ impl Service {
         }
     }
 
-    /// Get an image, will return the default handle if the given image doesn't exist.
-    pub(crate) fn get_image(&self, id: &Image) -> Option<Handle> {
-        self.images.get(&id).cloned()
-    }
-
-    /// Get a placeholder image for a missing banner.
-    pub(crate) fn missing_banner(&self) -> Handle {
-        self.missing_banner.clone()
-    }
-
-    /// Get a placeholder image for a missing poster.
-    pub(crate) fn missing_poster(&self) -> Handle {
-        self.missing_poster.clone()
-    }
-
-    /// Get a placeholder image for a missing screencap.
-    pub(crate) fn missing_screencap(&self) -> Handle {
-        self.missing_screencap.clone()
-    }
-
     /// Check if series is tracked.
     pub(crate) fn get_series_by_remote(&self, id: RemoteSeriesId) -> Option<&Series> {
         let id = self.db.remote_series.get(&id)?;
         self.db.series.get(id)
     }
 
+    /// Remove the given series by ID.
+    pub(crate) fn remove_series(&mut self, id: Uuid) -> impl Future<Output = Result<()>> {
+        let _ = self.db.series.remove(&id);
+        let _ = self.db.episodes.remove(&id);
+        let _ = self.db.seasons.remove(&id);
+
+        let series_path = self.series_path.clone();
+        let episodes_path = self.episodes_path.join(format!("{}.json", id));
+        let seasons_path = self.seasons_path.join(format!("{}.json", id));
+
+        let series = self.db.series.clone();
+
+        async move {
+            save_array("series", series_path, series.values()).await?;
+            remove_file("episodes", episodes_path).await?;
+            remove_file("episodes", seasons_path).await?;
+            Ok(())
+        }
+    }
+
     /// Enable tracking of the series with the given id.
-    pub(crate) fn track_by_remote(
+    pub(crate) fn add_series_by_remote(
         &self,
         id: RemoteSeriesId,
     ) -> impl Future<Output = Result<NewSeries>> {
@@ -339,9 +285,9 @@ impl Service {
 
         Some(async move {
             save_array("series", series_path, series.values()).await?;
-            save_array("remotes", remotes_path, remotes).await?;
             save_array("episodes", episodes_path, data.episodes).await?;
             save_array("seasons", seasons_path, data.seasons).await?;
+            save_array("remotes", remotes_path, remotes).await?;
             Ok(())
         })
     }
@@ -353,14 +299,7 @@ impl Service {
     ) -> impl Future<Output = Result<Vec<(Image, Handle)>>> {
         let client = self.client.clone();
         let images_dir = self.images_dir.clone();
-
-        let id = if !self.images.contains_key(&id) {
-            Some(id)
-        } else {
-            None
-        };
-
-        cache_images(client, images_dir, id)
+        cache_images(client, images_dir, [id])
     }
 }
 
@@ -492,6 +431,13 @@ fn load_series(path: &Path) -> Result<Option<Vec<Series>>> {
     };
 
     Ok(Some(load_array_from_reader(f)?))
+}
+
+/// Remove the given file.
+async fn remove_file(what: &'static str, path: PathBuf) -> Result<()> {
+    log::trace!("{what}: removing: {}", path.display());
+    let _ = tokio::fs::remove_file(path);
+    Ok(())
 }
 
 /// Save series to the given path.

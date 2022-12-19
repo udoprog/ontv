@@ -34,6 +34,20 @@ pub(crate) struct ErrorMessage {
     causes: Vec<String>,
 }
 
+impl From<Error> for ErrorMessage {
+    fn from(error: Error) -> Self {
+        let message = error.to_string();
+
+        let mut causes = Vec::new();
+
+        for cause in error.chain().skip(1) {
+            causes.push(cause.to_string());
+        }
+
+        ErrorMessage { message, causes }
+    }
+}
+
 impl fmt::Display for ErrorMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.causes.is_empty() {
@@ -72,14 +86,18 @@ pub(crate) enum Message {
     Search(page::search::M),
     /// Series tracked.
     SeriesDownloadToTrack(NewSeries),
+    /// Series removed.
+    SeriesRemoved,
+    /// Remove the given series from the database.
+    RemoveSeries(Uuid),
     /// Start tracking the series with the given remote ID.
-    TrackRemote(RemoteSeriesId),
+    AddSeriesByRemote(RemoteSeriesId),
     /// Start tracking the series with the given ID.
     Track(Uuid),
     /// Stop tracking the given show.
     Untrack(Uuid),
     /// Images have been loaded in the background.
-    ImagesLoaded(Vec<(Image, Handle)>),
+    ImagesLoaded(Result<Vec<(Image, Handle)>, ErrorMessage>),
 }
 
 impl From<Result<()>> for Message {
@@ -94,15 +112,8 @@ impl From<Result<()>> for Message {
 
 impl Message {
     /// Construct an error message with detailed information.
+    #[inline]
     pub(crate) fn error(error: Error) -> Self {
-        let message = error.to_string();
-
-        let mut causes = Vec::new();
-
-        for cause in error.chain().skip(1) {
-            causes.push(cause.to_string());
-        }
-
-        Self::Error(ErrorMessage { message, causes })
+        Self::Error(ErrorMessage::from(error))
     }
 }

@@ -2,6 +2,7 @@ use iced::theme;
 use iced::widget::{button, column, container, image, row, text, Column};
 use iced::{Alignment, Command, Length};
 
+use crate::assets::Assets;
 use crate::message::Message;
 use crate::params::{ACTION_SIZE, GAP, SPACE};
 use crate::service::Service;
@@ -18,7 +19,9 @@ pub(crate) struct Dashboard {}
 
 impl Dashboard {
     /// Prepare data that is needed for the view.
-    pub(crate) fn prepare(&mut self, service: &mut Service) {}
+    pub(crate) fn prepare(&mut self, service: &Service, assets: &mut Assets) {
+        assets.mark(service.all_series().take(5).map(|s| s.poster));
+    }
 
     /// Handle theme change.
     pub(crate) fn update(&mut self, message: M) -> Command<Message> {
@@ -32,7 +35,7 @@ impl Dashboard {
     }
 
     /// Generate the view for the settings page.
-    pub(crate) fn view(&self, service: &Service) -> Column<'static, Message> {
+    pub(crate) fn view(&self, service: &Service, assets: &Assets) -> Column<'static, Message> {
         let mut series = row![].spacing(GAP);
 
         for s in service.all_series().take(5) {
@@ -49,9 +52,9 @@ impl Dashboard {
                 );
             }
 
-            let handle = match service.get_image(&s.poster) {
+            let handle = match assets.image(&s.poster) {
                 Some(handle) => handle,
-                None => service.missing_poster(),
+                None => assets.missing_poster(),
             };
 
             series = series.push(

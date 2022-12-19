@@ -1,6 +1,7 @@
 use iced::widget::{column, radio, text, text_input, Column};
 use serde::{Deserialize, Serialize};
 
+use crate::assets::Assets;
 use crate::message::{Message, ThemeType};
 use crate::params::GAP;
 use crate::service::Service;
@@ -35,7 +36,7 @@ impl Default for Settings {
 
 impl Settings {
     /// Prepare data that is needed for the view.
-    pub(crate) fn prepare(&mut self, service: &mut Service) {}
+    pub(crate) fn prepare(&mut self, _: &Service, _: &mut Assets) {}
 
     /// Handle theme change.
     pub(crate) fn update(&mut self, message: M) -> bool {
@@ -52,7 +53,7 @@ impl Settings {
     }
 
     /// Generate the view for the settings page.
-    pub(crate) fn view(&self) -> Column<'static, Message> {
+    pub(crate) fn view(&self, _: &Assets) -> Column<'static, Message> {
         let choose_theme = [ThemeType::Light, ThemeType::Dark].iter().fold(
             column![text("Theme:")].spacing(GAP),
             |column, theme| {
