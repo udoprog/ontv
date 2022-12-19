@@ -8,6 +8,7 @@ use std::fmt;
 
 use anyhow::{bail, ensure, Context, Result};
 use chrono::{DateTime, NaiveDate, Utc};
+use iced::widget::{text, Text};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -66,6 +67,9 @@ pub(crate) struct Series {
     pub(crate) id: Uuid,
     /// Title of the series.
     pub(crate) title: String,
+    /// Overview of the series.
+    #[serde(default)]
+    pub(crate) overview: Option<String>,
     /// Poster image.
     pub(crate) poster: Image,
     /// Banner image.
@@ -101,12 +105,36 @@ pub(crate) struct Watched {
     pub(crate) timestamp: DateTime<Utc>,
 }
 
+/// Season number.
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SeasonNumber {
+    Number(u32),
+    #[serde(rename = "specials")]
+    Specials,
+    #[serde(rename = "unknown")]
+    #[default]
+    Unknown,
+}
+
 /// A season in a series.
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct Season {
     /// The number of the season.
-    pub(crate) number: Option<u32>,
+    #[serde(default)]
+    pub(crate) number: SeasonNumber,
+}
+
+impl Season {
+    /// Build season title.
+    pub(crate) fn title(&self) -> Text<'static> {
+        match self.number {
+            SeasonNumber::Number(number) => text(format!("Season {}", number)),
+            SeasonNumber::Specials => text("Specials"),
+            SeasonNumber::Unknown => text("No season"),
+        }
+    }
 }
 
 /// An episode in a series.
@@ -124,10 +152,10 @@ pub struct Episode {
     /// Absolute number in the series.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) absolute_number: Option<u32>,
-    /// Season number. If empty indicates special season.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) season: Option<u32>,
-    /// Number in the season.
+    /// Season number.
+    #[serde(default)]
+    pub(crate) season: SeasonNumber,
+    /// Episode number inside of its season.
     pub(crate) number: u32,
     /// Air date of the episode.
     #[serde(default, skip_serializing_if = "Option::is_none")]

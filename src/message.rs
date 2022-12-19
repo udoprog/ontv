@@ -5,7 +5,7 @@ use iced_native::image::Handle;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::model::{Image, RemoteSeriesId};
+use crate::model::{Image, RemoteSeriesId, SeasonNumber};
 use crate::page;
 use crate::service::NewSeries;
 
@@ -16,7 +16,7 @@ pub(crate) enum Page {
     SeriesList,
     Series(Uuid),
     Settings,
-    Season(Uuid, Option<u32>),
+    Season(Uuid, SeasonNumber),
 }
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -84,13 +84,17 @@ pub(crate) enum Message {
     /// Series tracked.
     SeriesDownloadToTrack(NewSeries),
     /// Series removed.
-    SeriesRemoved,
+    SeriesEdited,
+    /// Refresh series data.
+    RefreshSeries(Uuid),
     /// Remove the given series from the database.
     RemoveSeries(Uuid),
     /// Start tracking the series with the given remote ID.
     AddSeriesByRemote(RemoteSeriesId),
     /// Mark the given series / episode as watched.
     Watch(Uuid, Uuid),
+    /// Weatch the remainder of all unwatched episodes in the specified season.
+    WatchRemainingSeason(Uuid, SeasonNumber),
     /// Start tracking the series with the given ID.
     Track(Uuid),
     /// Stop tracking the given show.

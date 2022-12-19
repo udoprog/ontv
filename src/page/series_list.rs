@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::assets::Assets;
 use crate::message::{Message, Page};
-use crate::params::{ACTION_SIZE, GAP, SUBTITLE_SIZE};
+use crate::params::{GAP, SUBTITLE_SIZE};
 use crate::service::Service;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -31,24 +31,22 @@ impl SeriesList {
 
             let episodes = service.episodes(s.id);
 
-            let actions = crate::page::series::actions(s)
-                .push(
-                    button(text("Seasons").size(ACTION_SIZE))
-                        .on_press(Message::Navigate(Page::Series(s.id))),
-                )
-                .push(
-                    button(text("Remove").size(ACTION_SIZE))
-                        .style(theme::Button::Destructive)
-                        .on_press(Message::RemoveSeries(s.id)),
-                );
+            let actions = crate::page::series::actions(s);
 
-            let content = column![
-                text(&s.title).size(SUBTITLE_SIZE),
-                text(format!("{} episode(s)", episodes.count())),
-                actions
-            ]
-            .width(Length::Fill)
-            .spacing(GAP);
+            let title = button(text(&s.title).size(SUBTITLE_SIZE))
+                .padding(0)
+                .style(theme::Button::Text)
+                .on_press(Message::Navigate(Page::Series(s.id)));
+
+            let mut content = column![].width(Length::Fill).spacing(GAP);
+
+            content = content.push(title);
+            content = content.push(text(format!("{} episode(s)", episodes.count())));
+            content = content.push(actions);
+
+            if let Some(overview) = &s.overview {
+                content = content.push(text(overview));
+            }
 
             series = series.push(row![graphic, content].width(Length::Fill).spacing(GAP));
         }

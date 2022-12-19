@@ -4,6 +4,7 @@ use iced::{Alignment, Length};
 
 use crate::assets::Assets;
 use crate::message::{Message, Page};
+use crate::model::SeasonNumber;
 use crate::params::{ACTION_SIZE, GAP, GAP2, SCREENCAP_HEIGHT, SPACE};
 use crate::service::{PendingRef, Service};
 
@@ -14,14 +15,20 @@ pub(crate) struct Dashboard {}
 impl Dashboard {
     /// Prepare data that is needed for the view.
     pub(crate) fn prepare(&mut self, service: &Service, assets: &mut Assets) {
-        assets.mark(service.pending().take(5).flat_map(|p| p.episode.filename));
+        assets.mark(
+            service
+                .pending()
+                .rev()
+                .take(5)
+                .flat_map(|p| p.episode.filename),
+        );
     }
 
     /// Generate the view for the settings page.
     pub(crate) fn view(&self, service: &Service, assets: &Assets) -> Column<'static, Message> {
         let mut pending = row![].spacing(GAP2);
 
-        for PendingRef { series, episode } in service.pending().take(5) {
+        for PendingRef { series, episode } in service.pending().rev().take(5) {
             let mut actions = row![].spacing(SPACE);
 
             actions = actions.push(
@@ -49,11 +56,13 @@ impl Dashboard {
 
             let mut episode_info = row![].spacing(GAP);
 
-            if let Some(season) = episode.season {
-                episode_info = episode_info.push(text(format!("{}x{}", season, episode.number)));
-            } else {
-                episode_info = episode_info.push(text(format!("Special {}", episode.number)));
-            }
+            let name = match episode.season {
+                SeasonNumber::Number(number) => text(format!("{}x{}", number, episode.number)),
+                SeasonNumber::Unknown => text(format!("{} (No Season)", episode.number)),
+                SeasonNumber::Specials => text(format!("Special {}", episode.number)),
+            };
+
+            episode_info = episode_info.push(name);
 
             if let Some(name) = &episode.name {
                 episode_info = episode_info.push(text(name));

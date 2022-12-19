@@ -12,7 +12,8 @@ use uuid::Uuid;
 
 use crate::message::Message;
 use crate::model::{
-    Episode, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season, Series, Watched,
+    Episode, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season, SeasonNumber, Series,
+    Watched,
 };
 use crate::page::settings::Settings;
 use crate::thetvdb::Client;
@@ -23,6 +24,7 @@ pub(crate) struct NewSeries {
     series: Series,
     episodes: Vec<Episode>,
     seasons: Vec<Season>,
+    refresh_pending: bool,
 }
 
 /// A pending thing to watch.
@@ -48,6 +50,8 @@ struct Database {
     episodes: HashMap<Uuid, Vec<Episode>>,
     seasons: HashMap<Uuid, Vec<Season>>,
     watched: Vec<Watched>,
+    /// Temporary set of watched episodes and its corresponding watch count.
+    watch_counts: HashMap<Uuid, usize>,
     /// Ordered list of things to watch.
     pending: Vec<Pending>,
 }
@@ -140,14 +144,66 @@ impl Service {
         self.db.watched.iter()
     }
 
+    /// Test if episode is watched.
+    pub(crate) fn watch_count(&self, episode: Uuid) -> usize {
+        self.db
+            .watch_counts
+            .get(&episode)
+            .copied()
+            .unwrap_or_default()
+    }
+
     /// Return list of pending episodes.
-    pub(crate) fn pending(&self) -> impl Iterator<Item = PendingRef<'_>> {
+    pub(crate) fn pending(&self) -> impl DoubleEndedIterator<Item = PendingRef<'_>> {
         self.db.pending.iter().flat_map(|p| {
             let series = self.db.series.get(&p.series)?;
             let episodes = self.db.episodes.get(&p.series)?;
             let episode = episodes.iter().find(|e| e.id == p.episode)?;
             Some(PendingRef { series, episode })
         })
+    }
+
+    /// Mark an episode as watched at the given timestamp.
+    pub(crate) fn watch_remaining_season(
+        &mut self,
+        series: Uuid,
+        season: SeasonNumber,
+        timestamp: DateTime<Utc>,
+    ) -> Option<impl Future<Output = Result<()>>> {
+        let mut last = None;
+
+        for episode in self
+            .db
+            .episodes
+            .get(&series)
+            .into_iter()
+            .flatten()
+            .filter(|e| e.season == season)
+        {
+            if self.watch_count(episode.id) > 0 {
+                continue;
+            }
+
+            if !episode.has_aired(&timestamp) {
+                continue;
+            }
+
+            self.db.watched.push(Watched {
+                id: Uuid::new_v4(),
+                series,
+                episode: episode.id,
+                timestamp,
+            });
+
+            *self.db.watch_counts.entry(episode.id).or_default() += 1;
+            last = Some(episode.id);
+        }
+
+        let Some(last) = last else {
+            return None;
+        };
+
+        Some(self.setup_pending(series, Some(last)))
     }
 
     /// Mark an episode as watched at the given timestamp.
@@ -163,14 +219,25 @@ impl Service {
             episode,
             timestamp,
         });
-        let paths = self.paths.clone();
-        let watched = self.db.watched.clone();
 
+        *self.db.watch_counts.entry(episode).or_default() += 1;
+        self.setup_pending(series, Some(episode))
+    }
+
+    /// Set up next pending episode.
+    fn setup_pending(
+        &mut self,
+        series: Uuid,
+        episode: Option<Uuid>,
+    ) -> impl Future<Output = Result<()>> {
         // Remove any pending episodes for the given series.
         self.db.pending.retain(|p| p.series != series);
 
         let now = Utc::now();
-        self.populate_pending(&now, series, Some(episode));
+        self.populate_pending(&now, series, episode);
+
+        let paths = self.paths.clone();
+        let watched = self.db.watched.clone();
         let pending = self.db.pending.clone();
 
         async move {
@@ -200,7 +267,7 @@ impl Service {
         } else {
             // Find the first episode which is *not* in our watch history.
             while let Some(e) = it.peek() {
-                if !self.db.watched.iter().any(|w| w.episode == e.id) {
+                if self.watch_count(e.id) > 0 {
                     break;
                 }
 
@@ -226,7 +293,7 @@ impl Service {
 
         self.db
             .pending
-            .sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+            .sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
     }
 
     /// Load configuration file.
@@ -246,6 +313,16 @@ impl Service {
     pub(crate) fn get_series_by_remote(&self, id: RemoteSeriesId) -> Option<&Series> {
         let id = self.db.remote_series.get(&id)?;
         self.db.series.get(id)
+    }
+
+    /// Refresh series data.
+    pub(crate) fn refresh_series(
+        &mut self,
+        series_id: Uuid,
+    ) -> Option<impl Future<Output = Result<NewSeries>>> {
+        let series = self.db.series.get(&series_id)?;
+        let remote_id = *series.remote_ids.iter().next()?;
+        Some(self.download_series(remote_id, series_id, false))
     }
 
     /// Remove the given series by ID.
@@ -273,20 +350,7 @@ impl Service {
         &self,
         id: RemoteSeriesId,
     ) -> impl Future<Output = Result<NewSeries>> {
-        fn seasons(episodes: &[Episode]) -> Vec<Season> {
-            let mut map = BTreeMap::new();
-
-            for e in episodes {
-                map.entry(e.season)
-                    .or_insert_with(|| Season { number: e.season });
-            }
-
-            map.into_iter().map(|(_, value)| value).collect()
-        }
-
-        let client = self.client.clone();
-
-        let new_id = self
+        let series_id = self
             .db
             .remote_series
             .iter()
@@ -294,6 +358,17 @@ impl Service {
             .map(|(_, &id)| id)
             .unwrap_or_else(Uuid::new_v4);
 
+        self.download_series(id, series_id, true)
+    }
+
+    /// Download series using a remote identifier.
+    fn download_series(
+        &self,
+        remote_id: RemoteSeriesId,
+        series_id: Uuid,
+        refresh_pending: bool,
+    ) -> impl Future<Output = Result<NewSeries>> {
+        let client = self.client.clone();
         let remote_episodes = self.db.remote_episodes.clone();
 
         async move {
@@ -305,13 +380,13 @@ impl Service {
                     .unwrap_or_else(Uuid::new_v4)
             };
 
-            let (series, episodes, seasons) = match id {
+            let (series, episodes, seasons) = match remote_id {
                 RemoteSeriesId::TheTvDb { id } => {
-                    let series = client.series(id, new_id);
+                    let series = client.series(id, series_id);
                     let episodes = client
                         .series_episodes(id, move |id| lookup(RemoteEpisodeId::TheTvDb { id }));
                     let (series, episodes) = tokio::try_join!(series, episodes)?;
-                    let seasons = seasons(&episodes);
+                    let seasons = episodes_into_seasons(&episodes);
                     (series, episodes, seasons)
                 }
             };
@@ -320,6 +395,7 @@ impl Service {
                 series,
                 episodes,
                 seasons,
+                refresh_pending,
             };
 
             Ok::<_, Error>(data)
@@ -386,7 +462,8 @@ impl Service {
 
         let series = self.db.series.clone();
 
-        let mut remotes = Vec::new();
+        let mut remotes =
+            Vec::with_capacity(self.db.remote_series.len() + self.db.remote_episodes.len());
 
         for (id, series_id) in &self.db.remote_series {
             remotes.push((series_id.clone(), RemoteId::Series { id: *id }));
@@ -396,11 +473,16 @@ impl Service {
             remotes.push((series_id.clone(), RemoteId::Episode { id: *id }));
         }
 
-        // Remove any pending episodes for the given series.
-        self.db.pending.retain(|p| p.series != series_id);
-        let now = Utc::now();
-        self.populate_pending(&now, series_id, None);
-        let pending = self.db.pending.clone();
+        let pending = if data.refresh_pending {
+            // Remove any pending episodes for the given series.
+            self.db.pending.retain(|p| p.series != series_id);
+            let now = Utc::now();
+            self.populate_pending(&now, series_id, None);
+
+            Some(self.db.pending.clone())
+        } else {
+            None
+        };
 
         Some(async move {
             let episodes = paths.episodes.join(format!("{}.json", series_id));
@@ -409,8 +491,12 @@ impl Service {
             let b = save_array("episodes", &episodes, data.episodes);
             let c = save_array("seasons", &seasons, data.seasons);
             let d = save_array("remotes", &paths.remotes, remotes);
-            let e = save_array("pending", &paths.pending, pending);
-            tokio::try_join!(a, b, c, d, e)?;
+            tokio::try_join!(a, b, c, d)?;
+
+            if let Some(pending) = pending {
+                save_array("pending", &paths.pending, pending).await?;
+            }
+
             Ok(())
         })
     }
@@ -521,7 +607,11 @@ fn load_database(paths: &Paths) -> Result<Database> {
         }
     }
 
-    if let Some(watched) = load_array(&paths.watched)? {
+    if let Some(watched) = load_array::<Watched>(&paths.watched)? {
+        for w in &watched {
+            *db.watch_counts.entry(w.episode).or_default() += 1;
+        }
+
         db.watched = watched;
     }
 
@@ -675,4 +765,16 @@ where
     }
 
     Ok(output)
+}
+
+/// Helper to build seasons out of known episodes.
+fn episodes_into_seasons(episodes: &[Episode]) -> Vec<Season> {
+    let mut map = BTreeMap::new();
+
+    for e in episodes {
+        map.entry(e.season)
+            .or_insert_with(|| Season { number: e.season });
+    }
+
+    map.into_iter().map(|(_, value)| value).collect()
 }

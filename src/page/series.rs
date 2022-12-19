@@ -6,14 +6,14 @@ use uuid::Uuid;
 
 use crate::assets::Assets;
 use crate::message::{Message, Page};
-use crate::model;
+use crate::model::{Season, Series};
 use crate::params::{ACTION_SIZE, GAP, GAP2, SUBTITLE_SIZE, TITLE_SIZE};
 use crate::service::Service;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub(crate) struct Series;
+pub(crate) struct State;
 
-impl Series {
+impl State {
     /// Prepare data that is needed for the view.
     pub(crate) fn prepare(&mut self, service: &Service, assets: &mut Assets, id: Uuid) {
         if let Some(s) = service.series(id) {
@@ -27,47 +27,49 @@ impl Series {
         assets: &Assets,
         id: Uuid,
     ) -> Column<'static, Message> {
-        let Some(s) = service.series(id) else {
+        let Some(series) = service.series(id) else {
             return column![text("no series")];
         };
 
-        let top = banner::<[Element<'static, Message>; 0]>(assets, s, []);
+        let top = banner::<[Element<'static, Message>; 0]>(assets, series, []);
 
-        let episodes = service.episodes(s.id);
+        let episodes = service.episodes(series.id);
 
         let mut seasons = column![].spacing(GAP2);
 
-        for season in service.seasons(s.id) {
-            let title = if let Some(number) = season.number {
-                text(format!("Season {}", number)).size(SUBTITLE_SIZE)
-            } else {
-                text("Specials").size(SUBTITLE_SIZE)
-            };
+        for season in service.seasons(series.id) {
+            let title = button(season.title().size(SUBTITLE_SIZE))
+                .padding(0)
+                .style(theme::Button::Text)
+                .on_press(Message::Navigate(Page::Season(series.id, season.number)));
 
-            let episodes = service
-                .episodes(s.id)
-                .filter(|e| e.season == season.number)
-                .count();
-
-            seasons = seasons.push(
-                column![
-                    title,
-                    button(text(format!("{} Episode(s)", episodes)))
-                        .style(theme::Button::Primary)
-                        .on_press(Message::Navigate(Page::Season(s.id, season.number)))
-                ]
-                .spacing(GAP),
-            );
+            seasons =
+                seasons.push(column![title, season_info(service, series, season)].spacing(GAP));
         }
 
-        let info = text(format!("{} episode(s)", episodes.count()));
-        let content = column![top, actions(s), info, seasons].spacing(GAP);
-        content.spacing(GAP).padding(GAP)
+        let info = match episodes.count() {
+            0 => text(format!("No episodes")),
+            1 => text(format!("One episode")),
+            count => text(format!("{count} episodes")),
+        };
+
+        let mut content = column![].spacing(GAP).padding(GAP);
+
+        content = content.push(top);
+        content = content.push(actions(series));
+        content = content.push(info);
+
+        if let Some(overview) = &series.overview {
+            content = content.push(text(overview));
+        }
+
+        content = content.push(seasons);
+        content
     }
 }
 
 /// Generate buttons which perform actions on the given series.
-pub(crate) fn actions(s: &model::Series) -> Row<'static, Message> {
+pub(crate) fn actions(s: &Series) -> Row<'static, Message> {
     let mut row = row![].spacing(GAP);
 
     if s.tracked {
@@ -84,31 +86,90 @@ pub(crate) fn actions(s: &model::Series) -> Row<'static, Message> {
         );
     }
 
+    row = row.push(
+        button(text("Refresh").size(ACTION_SIZE))
+            .style(theme::Button::Positive)
+            .on_press(Message::RefreshSeries(s.id)),
+    );
+
+    row = row.push(
+        button(text("Remove").size(ACTION_SIZE))
+            .style(theme::Button::Destructive)
+            .on_press(Message::RemoveSeries(s.id)),
+    );
+
     row
 }
 
+/// Render season banner.
+pub(crate) fn season_info(
+    service: &Service,
+    series: &Series,
+    season: &Season,
+) -> Column<'static, Message> {
+    let mut total = 0;
+    let mut watched = 0;
+
+    for episode in service
+        .episodes(series.id)
+        .filter(|e| e.season == season.number)
+    {
+        total += 1;
+        watched += usize::from(service.watch_count(episode.id) != 0);
+    }
+
+    let mut actions = row![].spacing(GAP);
+
+    if watched < total {
+        actions = actions.push(
+            button(text("Watch remaining").size(ACTION_SIZE))
+                .style(theme::Button::Primary)
+                .on_press(Message::WatchRemainingSeason(series.id, season.number)),
+        );
+    }
+
+    let mut info = column![].spacing(GAP);
+
+    let plural = match total {
+        1 => "episode",
+        _ => "episodes",
+    };
+
+    let percentage = if let Some(p) = (watched * 100).checked_div(total) {
+        format!("{p}%")
+    } else {
+        String::from("0%")
+    };
+
+    info = info.push(text(format!(
+        "Watched {watched} out of {total} {plural} ({percentage})"
+    )));
+
+    column![actions, info].spacing(GAP)
+}
+
 /// Prepare assets needed for banner.
-pub(crate) fn prepare_banner(assets: &mut Assets, s: &crate::model::Series) {
+pub(crate) fn prepare_banner(assets: &mut Assets, s: &Series) {
     assets.mark([s.banner.unwrap_or(s.poster)]);
 }
 
 /// Render a banner for the series.
-pub(crate) fn banner<I>(
-    assets: &Assets,
-    s: &crate::model::Series,
-    extra: I,
-) -> Column<'static, Message>
+pub(crate) fn banner<I>(assets: &Assets, series: &Series, extra: I) -> Column<'static, Message>
 where
     I: IntoIterator,
     I::Item: Into<Element<'static, Message>>,
 {
-    let handle = match assets.image(&s.banner.unwrap_or(s.poster)) {
+    let handle = match assets.image(&series.banner.unwrap_or(series.poster)) {
         Some(handle) => handle,
         None => assets.missing_banner(),
     };
 
     let banner = image(handle);
-    let title = text(&s.title).size(TITLE_SIZE);
+
+    let title = button(text(&series.title).size(TITLE_SIZE))
+        .padding(0)
+        .style(theme::Button::Text)
+        .on_press(Message::Navigate(Page::Series(series.id)));
 
     let mut column = column![banner, title];
 

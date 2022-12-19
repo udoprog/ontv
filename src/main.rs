@@ -10,16 +10,18 @@ mod utils;
 use std::time::Duration;
 
 use anyhow::Result;
+use iced::alignment::Horizontal;
 use iced::theme::{self, Theme};
-use iced::widget::{button, column, container, row, scrollable, text};
+use iced::widget::{button, column, container, row, scrollable, text, Space, Text};
 use iced::{Alignment, Application, Command, Element, Length, Settings};
 use iced_native::image::Handle;
+use params::WARNING_COLOR;
 use utils::Singleton;
 
 use crate::assets::Assets;
 use crate::message::{Message, Page, ThemeType};
 use crate::model::Image;
-use crate::params::{CONTAINER_WIDTH, GAP, GAP2, SPACE};
+use crate::params::{CONTAINER_WIDTH, GAP, GAP2, NOTICE_SIZE, SPACE, SPACE2, SUB_MENU_SIZE};
 use crate::service::Service;
 use crate::utils::Timeout;
 
@@ -36,9 +38,9 @@ struct Main {
     dashboard: page::dashboard::Dashboard,
     settings: page::settings::Settings,
     search: page::search::Search,
-    series: page::series::Series,
+    series: page::series::State,
     series_list: page::series_list::SeriesList,
-    season: page::season::Season,
+    season: page::season::State,
     loading: bool,
     save_timeout: Timeout,
     /// Image loader future being run.
@@ -65,9 +67,9 @@ impl Application for Main {
             dashboard: page::dashboard::Dashboard::default(),
             settings: flags.settings,
             search: page::search::Search::default(),
-            series: page::series::Series::default(),
+            series: page::series::State::default(),
             series_list: page::series_list::SeriesList::default(),
-            season: page::season::Season::default(),
+            season: page::season::State::default(),
             save_timeout: Timeout::default(),
             image_loader: Singleton::default(),
             assets: Assets::new(),
@@ -126,22 +128,34 @@ impl Application for Main {
                     .update(&mut self.service, &mut self.assets, message)
             }
             Message::SeriesDownloadToTrack(data) => {
-                let load = self.handle_image_loading();
+                self.loading = false;
                 let command = self
                     .service
                     .insert_new_series(data)
                     .map(|f| Command::perform(f, Message::from));
-                Command::batch(command.into_iter().chain([load]))
+                Command::batch(command)
             }
-            Message::SeriesRemoved => {
+            Message::SeriesEdited => {
                 self.loading = false;
                 Command::none()
+            }
+            Message::RefreshSeries(id) => {
+                self.loading = true;
+
+                if let Some(future) = self.service.refresh_series(id) {
+                    Command::perform(future, |result| match result {
+                        Ok(new_data) => Message::SeriesDownloadToTrack(new_data),
+                        Err(e) => Message::error(e),
+                    })
+                } else {
+                    Command::none()
+                }
             }
             Message::RemoveSeries(id) => {
                 self.loading = true;
 
                 Command::perform(self.service.remove_series(id), |result| match result {
-                    Ok(()) => Message::SeriesRemoved,
+                    Ok(()) => Message::SeriesEdited,
                     Err(e) => Message::error(e),
                 })
             }
@@ -154,12 +168,25 @@ impl Application for Main {
 
                     Command::perform(action, translate)
                 } else {
+                    self.loading = true;
+
                     let translate = |result| match result {
                         Ok(data) => Message::SeriesDownloadToTrack(data),
                         Err(e) => Message::error(e),
                     };
 
                     Command::perform(self.service.add_series_by_remote(id), translate)
+                }
+            }
+            Message::WatchRemainingSeason(series, season) => {
+                let timestamp = chrono::Utc::now();
+
+                match self
+                    .service
+                    .watch_remaining_season(series, season, timestamp)
+                {
+                    Some(future) => Command::perform(future, Message::from),
+                    None => Command::none(),
                 }
             }
             Message::Watch(series, episode) => {
@@ -203,15 +230,11 @@ impl Application for Main {
     }
 
     fn view(&self) -> Element<Message> {
-        if self.loading {
-            return row![text("Loading")]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into();
-        }
-
-        let menu_item = |at: &Page, title: &'static str, page: Page| {
-            let current = button(title).width(Length::Fill).style(theme::Button::Text);
+        let menu_item = |at: &Page, title: Text<'static>, page: Page| {
+            let current = button(title)
+                .padding(0)
+                .style(theme::Button::Text)
+                .width(Length::Fill);
 
             if *at == page {
                 current
@@ -220,17 +243,41 @@ impl Application for Main {
             }
         };
 
-        let menu = column![
-            menu_item(&self.page, "Dashboard", Page::Dashboard),
-            menu_item(&self.page, "Search", Page::Search),
-            menu_item(&self.page, "Series", Page::SeriesList),
-            menu_item(&self.page, "Settings", Page::Settings),
-        ]
-        .spacing(SPACE)
-        .padding(GAP)
-        .max_width(140);
+        let mut menu = column![].spacing(SPACE).padding(GAP).max_width(140);
 
-        let content = row![menu,]
+        menu = menu.push(menu_item(&self.page, text("Dashboard"), Page::Dashboard));
+        menu = menu.push(menu_item(&self.page, text("Search"), Page::Search));
+        menu = menu.push(menu_item(&self.page, text("Series"), Page::SeriesList));
+
+        if let Page::Series(id) | Page::Season(id, _) = self.page {
+            if let Some(series) = self.service.series(id) {
+                menu = menu.push(row![
+                    Space::new(Length::Units(SPACE), Length::Shrink),
+                    menu_item(
+                        &self.page,
+                        text(&series.title).size(SUB_MENU_SIZE),
+                        Page::Series(id)
+                    )
+                ]);
+            }
+
+            for season in self.service.seasons(id) {
+                let title = season.title();
+
+                menu = menu.push(row![
+                    Space::new(Length::Units(SPACE2), Length::Shrink),
+                    menu_item(
+                        &self.page,
+                        title.size(SUB_MENU_SIZE),
+                        Page::Season(id, season.number),
+                    )
+                ]);
+            }
+        }
+
+        menu = menu.push(menu_item(&self.page, text("Settings"), Page::Settings));
+
+        let content = row![menu]
             .spacing(GAP2)
             .width(Length::Fill)
             .height(Length::Fill);
@@ -250,7 +297,24 @@ impl Application for Main {
                 .align_items(Alignment::Center),
         ));
 
-        container(content)
+        let mut window = column![];
+
+        if self.loading {
+            window = window.push(
+                row![text("Loading")
+                    .width(Length::Fill)
+                    .size(NOTICE_SIZE)
+                    .horizontal_alignment(Horizontal::Center)
+                    .style(theme::Text::Color(WARNING_COLOR))]
+                .width(Length::Fill)
+                .align_items(Alignment::Center)
+                .padding(GAP),
+            );
+        }
+
+        window = window.push(content);
+
+        container(window)
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x()

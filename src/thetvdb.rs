@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::model::{
-    Episode, Image, RemoteEpisodeId, RemoteSeriesId, SearchSeries, Series, SeriesId,
+    Episode, Image, RemoteEpisodeId, RemoteSeriesId, SearchSeries, SeasonNumber, Series, SeriesId,
 };
 
 const BASE_URL: &str = "https://api.thetvdb.com";
@@ -175,6 +175,7 @@ impl Client {
         return Ok(Series {
             id: new_id,
             title: value.series_name.to_owned(),
+            overview: value.overview,
             banner,
             poster,
             fanart,
@@ -191,6 +192,7 @@ impl Client {
             added: String,
             banner: Option<String>,
             fanart: Option<String>,
+            #[serde(default)]
             overview: Option<String>,
             poster: String,
             series_name: String,
@@ -229,7 +231,11 @@ impl Client {
                     overview: row.overview.filter(|o| !o.is_empty()),
                     absolute_number: row.absolute_number,
                     // NB: thetvdb.com uses season 0 as specials season.
-                    season: row.aired_season.filter(|n| *n != 0),
+                    season: match row.aired_season {
+                        Some(0) => SeasonNumber::Specials,
+                        Some(number) => SeasonNumber::Number(number),
+                        None => SeasonNumber::Unknown,
+                    },
                     number: row.aired_episode_number,
                     aired: row.first_aired,
                     filename,
