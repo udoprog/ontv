@@ -4,6 +4,7 @@ mod raw16;
 #[cfg(test)]
 mod tests;
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use anyhow::{bail, ensure, Context, Result};
@@ -32,6 +33,16 @@ pub(crate) enum RemoteId {
 #[serde(rename_all = "kebab-case", tag = "remote")]
 pub(crate) enum RemoteSeriesId {
     TheTvDb { id: SeriesId },
+}
+
+impl fmt::Display for RemoteSeriesId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RemoteSeriesId::TheTvDb { id } => {
+                write!(f, "thetvdb.com (series id: {id})")
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -87,11 +98,81 @@ pub(crate) struct Series {
     /// Locally known last modified timestamp.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) last_modified: Option<DateTime<Utc>>,
+    /// Last sync time for each remote.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        with = "btree_as_vec"
+    )]
+    pub(crate) last_sync: BTreeMap<RemoteSeriesId, DateTime<Utc>>,
 }
 
 #[inline]
 fn is_false(b: &bool) -> bool {
     !*b
+}
+
+mod btree_as_vec {
+    use std::collections::BTreeMap;
+    use std::fmt;
+
+    use serde::de;
+    use serde::ser;
+    use serde::ser::SerializeSeq;
+
+    pub(crate) fn serialize<S, K, V>(
+        value: &BTreeMap<K, V>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+        K: ser::Serialize,
+        V: ser::Serialize,
+    {
+        let mut serializer = serializer.serialize_seq(Some(value.len()))?;
+
+        for (key, value) in value {
+            serializer.serialize_element(&(key, value))?;
+        }
+
+        serializer.end()
+    }
+
+    pub(crate) fn deserialize<'de, S, K, V>(deserializer: S) -> Result<BTreeMap<K, V>, S::Error>
+    where
+        S: de::Deserializer<'de>,
+        K: Ord + de::Deserialize<'de>,
+        V: de::Deserialize<'de>,
+    {
+        return deserializer.deserialize_seq(Visitor(BTreeMap::new()));
+    }
+
+    impl<'de, K, V> de::Visitor<'de> for Visitor<K, V>
+    where
+        K: Ord + de::Deserialize<'de>,
+        V: de::Deserialize<'de>,
+    {
+        type Value = BTreeMap<K, V>;
+
+        #[inline]
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "expected sequence")
+        }
+
+        #[inline]
+        fn visit_seq<A>(mut self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: de::SeqAccess<'de>,
+        {
+            while let Some(element) = seq.next_element::<(K, V)>()? {
+                self.0.insert(element.0, element.1);
+            }
+
+            Ok(self.0)
+        }
+    }
+
+    struct Visitor<K, V>(BTreeMap<K, V>);
 }
 
 /// A season in a series.

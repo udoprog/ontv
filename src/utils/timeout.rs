@@ -1,8 +1,16 @@
-use iced_futures::MaybeSend;
-use iced_native::command::Action;
+use std::future::Future;
 
 use std::time::Duration;
 use tokio::sync::oneshot;
+
+/// The state of a timeout.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum TimedOut {
+    /// Timeout timed out.
+    TimedOut,
+    /// Timeout was cancelled.
+    Cancelled,
+}
 
 /// Timeout running the given future.
 #[derive(Default)]
@@ -13,20 +21,17 @@ pub(crate) struct Timeout {
 
 impl Timeout {
     /// Set a new timeout.
-    pub(crate) fn set<T, O>(&mut self, duration: Duration, output: T) -> Action<O>
-    where
-        T: MaybeSend + 'static + FnOnce(bool) -> O,
-    {
+    pub(crate) fn set(&mut self, duration: Duration) -> impl Future<Output = TimedOut> {
         let (tx, rx) = oneshot::channel();
         self.tx = Some(tx);
 
-        Action::Future(Box::pin(async move {
+        async move {
             let sleep = tokio::time::sleep(duration);
 
             tokio::select! {
-                _ = rx => output(false),
-                _ = sleep => output(true),
+                _ = rx => TimedOut::Cancelled,
+                _ = sleep => TimedOut::TimedOut,
             }
-        }))
+        }
     }
 }

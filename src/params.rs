@@ -1,4 +1,5 @@
-use iced::widget::{Column, Container};
+use chrono::Duration;
+use iced::widget::{Column, Container, Text};
 use iced::{Color, Element};
 
 use crate::message::Message;
@@ -55,6 +56,35 @@ where
     }
 
     container
+}
+
+/// Convert a chrono duration into something that is pretty to display.
+pub(crate) fn duration_display(d: Duration) -> Text<'static> {
+    let seconds = d.num_seconds();
+
+    if seconds > 0 {
+        let seconds = seconds.unsigned_abs();
+
+        match seconds {
+            1 => Text::new("one second ago"),
+            n if n >= 60 => match seconds / 60 {
+                1 => Text::new("one minute ago"),
+                n => Text::new(format!("{n} minutes ago")),
+            },
+            n => Text::new(format!("{n} seconds ago")),
+        }
+    } else {
+        let seconds = seconds.unsigned_abs();
+
+        match seconds {
+            1 => Text::new("in one second"),
+            n if n >= 60 => match seconds / 60 {
+                1 => Text::new("in one minute"),
+                n => Text::new(format!("in {n} minutes")),
+            },
+            n => Text::new(format!("in {n} seconds")),
+        }
+    }
 }
 
 pub(crate) mod style {

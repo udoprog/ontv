@@ -17,14 +17,14 @@ pub(crate) enum M {
 
 /// The state for the settings page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct Settings {
+pub(crate) struct State {
     #[serde(default)]
     pub(crate) theme: ThemeType,
     #[serde(default)]
     pub(crate) thetvdb_legacy_apikey: String,
 }
 
-impl Default for Settings {
+impl Default for State {
     #[inline]
     fn default() -> Self {
         Self {
@@ -34,7 +34,7 @@ impl Default for Settings {
     }
 }
 
-impl Settings {
+impl State {
     /// Prepare data that is needed for the view.
     pub(crate) fn prepare(&mut self, _: &Service, _: &mut Assets) {}
 

@@ -17,11 +17,11 @@ pub(crate) enum M {
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SeriesList {
+pub(crate) struct State {
     filter: String,
 }
 
-impl SeriesList {
+impl State {
     /// Prepare the view.
     pub(crate) fn prepare(&mut self, service: &Service, assets: &mut Assets) {
         let images = service.all_series().map(|s| s.poster).collect::<Vec<_>>();

@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Error, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use iced_native::image::Handle;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ use crate::model::{
     Episode, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season, SeasonNumber, Series,
     Watched,
 };
-use crate::page::settings::Settings;
+use crate::page::settings::State;
 use crate::thetvdb::Client;
 
 /// Data encapsulating a newly added series.
@@ -49,24 +49,56 @@ pub(crate) struct PendingRef<'a> {
     pub(crate) episode: &'a Episode,
 }
 
+#[derive(Clone, Copy, fixed_map::Key)]
+enum Change {
+    Watched,
+    Pending,
+    Series,
+    Remotes,
+    Queue,
+}
+
 #[derive(Default)]
 struct Changes {
-    watched: bool,
-    pending: bool,
-    series: bool,
-    remotes: bool,
+    // Set of changes to apply to database.
+    set: fixed_map::Set<Change>,
+    // Series removed.
     remove: HashSet<Uuid>,
+    // Series added.
     add: HashSet<Uuid>,
 }
 
 impl Changes {
     fn has_changes(&self) -> bool {
-        self.watched
-            || self.pending
-            || self.series
-            || self.remotes
-            || !self.remove.is_empty()
-            || !self.add.is_empty()
+        !self.set.is_empty() || !self.remove.is_empty() || !self.add.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub(crate) struct Queued {
+    // Series to download.
+    pub(crate) series_id: Uuid,
+    // Remote to download.
+    pub(crate) remote_id: RemoteSeriesId,
+    // Scheduled timestamp.
+    pub(crate) scheduled: DateTime<Utc>,
+}
+
+/// Queue of scheduled actions.
+#[derive(Default)]
+struct Queue {
+    // Pending series to download.
+    pending: HashSet<(Uuid, RemoteSeriesId)>,
+    // An item in the download queue.
+    data: Vec<Queued>,
+}
+impl Queue {
+    /// Remove the given series from the queue.
+    fn remove_series(&mut self, series_id: Uuid) -> bool {
+        let old = self.pending.len() + self.data.len();
+        self.pending.retain(|p| p.0 != series_id);
+        self.data.retain(|q| q.series_id != series_id);
+        old != self.pending.len() + self.data.len()
     }
 }
 
@@ -110,6 +142,8 @@ struct Database {
     pending: Vec<Pending>,
     /// Keeping track of changes to be saved.
     changes: Changes,
+    /// Download queue.
+    queue: Queue,
 }
 
 struct Paths {
@@ -119,6 +153,8 @@ struct Paths {
     config: Box<Path>,
     /// Path where remote mappings are stored.
     remotes: Box<Path>,
+    /// Path where download queue is stored.
+    queue: Box<Path>,
     /// Images configuration directory.
     images: Box<Path>,
     /// Path where series are stored.
@@ -144,7 +180,7 @@ pub struct Service {
 
 impl Service {
     /// Construct and setup in-memory state of
-    pub(crate) fn new() -> Result<(Self, Settings)> {
+    pub(crate) fn new() -> Result<(Self, State)> {
         let dirs = directories_next::ProjectDirs::from("se.tedro", "setbac", "OnTV")
             .context("missing project dirs")?;
 
@@ -152,6 +188,7 @@ impl Service {
             lock: tokio::sync::Mutex::new(()),
             config: dirs.config_dir().join("config.json").into(),
             remotes: dirs.config_dir().join("remotes.json").into(),
+            queue: dirs.config_dir().join("queue.json").into(),
             series: dirs.config_dir().join("series.json").into(),
             watched: dirs.config_dir().join("watched.json").into(),
             pending: dirs.config_dir().join("pending.json").into(),
@@ -203,6 +240,11 @@ impl Service {
         self.db.watched.iter()
     }
 
+    /// Get download queue.
+    pub(crate) fn queue(&self) -> &[Queued] {
+        &self.db.queue.data
+    }
+
     /// Test if episode is watched.
     pub(crate) fn watch_count(&self, episode_id: Uuid) -> usize {
         self.db
@@ -249,6 +291,102 @@ impl Service {
         self.db.changes.has_changes()
     }
 
+    /// Find updates that need to be performed.
+    pub(crate) fn find_updates(
+        &mut self,
+        mut now: DateTime<Utc>,
+    ) -> impl Future<Output = Result<Vec<Queued>>> {
+        // Cache series updates for 6 hours.
+        const CACHE_TIME: i64 = 3600 * 6;
+
+        let mut interests = Vec::new();
+
+        for s in &mut self.db.series.data {
+            // Ignore series which are no longer tracked.
+            if !s.tracked {
+                continue;
+            }
+
+            // Note: to avoid an update loop. If this is missing the user can
+            // manually try to refresh the series.
+            let Some(last_modified) = s.last_modified else {
+                continue;
+            };
+
+            for remote_id in &s.remote_ids {
+                // Reduce the number of API requests by ensuring we don't check
+                // for updates more than each CACHE_TIME interval.
+                if let Some(last_sync) = s.last_sync.get(&remote_id) {
+                    if now.signed_duration_since(*last_sync).num_seconds() < CACHE_TIME {
+                        continue;
+                    }
+                }
+
+                if s.tracked && !self.db.queue.pending.contains(&(s.id, *remote_id)) {
+                    interests.push((s.id, last_modified, *remote_id));
+                    s.last_sync.insert(*remote_id, now);
+                    self.db.changes.set.insert(Change::Series);
+                }
+            }
+        }
+
+        let client = self.client.clone();
+
+        async move {
+            let mut queue = Vec::new();
+
+            for (series_id, last_modified, remote_id) in interests {
+                log::trace!("{series_id}/{remote_id:?}: checking for updates (last_modified: {last_modified})");
+
+                match remote_id {
+                    RemoteSeriesId::TheTvDb { id } => {
+                        let Some(update) = client.series_last_modified(id).await? else {
+                            continue;
+                        };
+
+                        log::trace!("{series_id}/{remote_id:?}: last modified: {update}");
+
+                        if last_modified >= update {
+                            continue;
+                        }
+                    }
+                }
+
+                queue.push(Queued {
+                    series_id,
+                    remote_id,
+                    scheduled: now,
+                });
+
+                now += Duration::minutes(1);
+            }
+
+            Ok(queue)
+        }
+    }
+
+    /// Add updates to download to the queue.
+    pub(crate) fn add_to_queue(&mut self, update: Vec<Queued>) {
+        if update.is_empty() {
+            return;
+        }
+
+        self.db.changes.set.insert(Change::Queue);
+
+        for d in update {
+            let added = self.db.queue.pending.insert((d.series_id, d.remote_id));
+
+            if added {
+                self.db.queue.data.push(d);
+            }
+        }
+
+        self.db
+            .queue
+            .data
+            .sort_by(|a, b| b.scheduled.cmp(&a.scheduled));
+    }
+
     /// Mark an episode as watched at the given timestamp.
     pub(crate) fn watch_remaining_season(
         &mut self,
@@ -282,7 +420,7 @@ impl Service {
             });
 
             *self.db.watch_counts.entry(episode.id).or_default() += 1;
-            self.db.changes.watched = true;
+            self.db.changes.set.insert(Change::Watched);
             last = Some(episode.id);
         }
 
@@ -303,7 +441,7 @@ impl Service {
         });
 
         *self.db.watch_counts.entry(episode).or_default() += 1;
-        self.db.changes.watched = true;
+        self.db.changes.set.insert(Change::Watched);
         self.setup_pending(series, Some(episode))
     }
 
@@ -321,7 +459,7 @@ impl Service {
             }
         }
 
-        self.db.changes.pending = true;
+        self.db.changes.set.insert(Change::Pending);
 
         let Some(episode) = it.find(|e| e.has_aired(&now)) else {
             self.db.pending.retain(|p| p.series != series_id);
@@ -341,7 +479,7 @@ impl Service {
 
     /// Select the next pending episode to use for a show.
     pub(crate) fn select_pending(&mut self, series_id: Uuid, episode_id: Uuid, now: DateTime<Utc>) {
-        self.db.changes.pending = true;
+        self.db.changes.set.insert(Change::Pending);
 
         // Try to modify in-place.
         if let Some(pending) = self
@@ -383,8 +521,8 @@ impl Service {
             timestamp: now,
         });
 
-        self.db.changes.watched = true;
-        self.db.changes.pending = true;
+        self.db.changes.set.insert(Change::Watched);
+        self.db.changes.set.insert(Change::Pending);
     }
 
     /// Remove all watches of the given episode.
@@ -421,9 +559,9 @@ impl Service {
             let _ = self.db.watch_counts.remove(&id);
         }
 
-        self.db.changes.watched = true;
+        self.db.changes.set.insert(Change::Watched);
         self.db.pending.retain(|p| p.series != series);
-        self.db.changes.pending = true;
+        self.db.changes.set.insert(Change::Pending);
 
         let Some(episodes) = self.db.episodes.get(&series) else {
             return;
@@ -447,7 +585,7 @@ impl Service {
     fn setup_pending(&mut self, series: Uuid, episode: Option<Uuid>) {
         // Remove any pending episodes for the given series.
         self.db.pending.retain(|p| p.series != series);
-        self.db.changes.pending = true;
+        self.db.changes.set.insert(Change::Pending);
         let now = Utc::now();
         self.populate_pending(&now, series, episode);
     }
@@ -456,9 +594,23 @@ impl Service {
     pub(crate) fn save_changes(&mut self) -> impl Future<Output = Result<()>> {
         let changes = std::mem::take(&mut self.db.changes);
 
-        let watched = changes.watched.then(|| self.db.watched.clone());
-        let pending = changes.pending.then(|| self.db.pending.clone());
-        let series = changes.series.then(|| self.db.series.data.clone());
+        let watched = changes
+            .set
+            .contains(Change::Watched)
+            .then(|| self.db.watched.clone());
+        let pending = changes
+            .set
+            .contains(Change::Pending)
+            .then(|| self.db.pending.clone());
+        let series = changes
+            .set
+            .contains(Change::Series)
+            .then(|| self.db.series.data.clone());
+        let queue = changes
+            .set
+            .contains(Change::Queue)
+            .then(|| self.db.queue.data.clone());
+
         let remove_series = changes.remove;
         let mut add_series = Vec::with_capacity(changes.add.len());
 
@@ -474,7 +626,7 @@ impl Service {
             add_series.push((id, episodes.clone(), seasons.clone()));
         }
 
-        let remotes = if changes.remotes {
+        let remotes = if changes.set.contains(Change::Remotes) {
             let mut remotes =
                 Vec::with_capacity(&self.db.remote_series.len() + self.db.remote_episodes.len());
 
@@ -510,6 +662,10 @@ impl Service {
 
             if let Some(remotes) = remotes {
                 save_array("remotes", &paths.remotes, remotes).await?;
+            }
+
+            if let Some(queue) = queue {
+                save_array("queue", &paths.queue, queue).await?;
             }
 
             for series_id in remove_series {
@@ -578,7 +734,7 @@ impl Service {
     }
 
     /// Load configuration file.
-    pub(crate) fn save_config(&mut self, settings: Settings) -> impl Future<Output = Message> {
+    pub(crate) fn save_config(&mut self, settings: State) -> impl Future<Output = Message> {
         self.client.set_api_key(&settings.thetvdb_legacy_apikey);
         let paths = self.paths.clone();
 
@@ -611,9 +767,14 @@ impl Service {
         let _ = self.db.series.remove(&series_id);
         let _ = self.db.episodes.remove(&series_id);
         let _ = self.db.seasons.remove(&series_id);
-        self.db.changes.series = true;
+        self.db.changes.set.insert(Change::Series);
+        self.db.changes.set.insert(Change::Queue);
         self.db.changes.add.remove(&series_id);
         self.db.changes.remove.insert(series_id);
+
+        if self.db.queue.remove_series(series_id) {
+            self.db.changes.set.insert(Change::Queue);
+        }
     }
 
     /// Enable tracking of the series with the given id.
@@ -689,7 +850,7 @@ impl Service {
         };
 
         series.tracked = true;
-        self.db.changes.series = true;
+        self.db.changes.set.insert(Change::Series);
         self.setup_pending(series_id, None);
         true
     }
@@ -698,11 +859,15 @@ impl Service {
     pub(crate) fn untrack(&mut self, series_id: Uuid) {
         if let Some(s) = self.db.series.get_mut(&series_id) {
             s.tracked = false;
-            self.db.changes.series = true;
+            self.db.changes.set.insert(Change::Series);
+
+            if self.db.queue.remove_series(series_id) {
+                self.db.changes.set.insert(Change::Queue);
+            }
         }
 
         self.db.pending.retain(|p| p.series != series_id);
-        self.db.changes.pending = true;
+        self.db.changes.set.insert(Change::Pending);
     }
 
     /// Insert a new tracked song.
@@ -739,11 +904,11 @@ impl Service {
             self.db.pending.retain(|p| p.series != series_id);
             let now = Utc::now();
             self.populate_pending(&now, series_id, None);
-            self.db.changes.pending = true;
+            self.db.changes.set.insert(Change::Pending);
         }
 
-        self.db.changes.series = true;
-        self.db.changes.remotes = true;
+        self.db.changes.set.insert(Change::Series);
+        self.db.changes.set.insert(Change::Remotes);
         self.db.changes.remove.remove(&series_id);
         self.db.changes.add.insert(series_id);
     }
@@ -760,7 +925,7 @@ impl Service {
 }
 
 /// Load configuration file.
-pub(crate) fn load_config(path: &Path) -> Result<Option<Settings>> {
+pub(crate) fn load_config(path: &Path) -> Result<Option<State>> {
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -771,7 +936,7 @@ pub(crate) fn load_config(path: &Path) -> Result<Option<Settings>> {
 }
 
 /// Save configuration file.
-pub(crate) async fn save_config(path: &Path, state: &Settings) -> Result<()> {
+pub(crate) async fn save_config(path: &Path, state: &State) -> Result<()> {
     use tokio::fs;
 
     let bytes = serde_json::to_vec_pretty(state)?;
@@ -844,6 +1009,14 @@ fn load_database(paths: &Paths) -> Result<Database> {
         }
     }
 
+    if let Some(queue) = load_array::<Queued>(&paths.queue)? {
+        for d in &queue {
+            db.queue.pending.insert((d.series_id, d.remote_id));
+        }
+
+        db.queue.data = queue;
+    }
+
     if let Some(series) = load_series(&paths.series)? {
         for s in series {
             for &id in &s.remote_ids {
@@ -904,33 +1077,53 @@ async fn remove_file(what: &'static str, path: &Path) -> Result<()> {
 }
 
 /// Save series to the given path.
-async fn save_array<I>(what: &'static str, path: &Path, data: I) -> Result<()>
+fn save_array<I>(what: &'static str, path: &Path, data: I) -> impl Future<Output = Result<()>>
 where
-    I: IntoIterator,
+    I: 'static + Send + IntoIterator,
     I::Item: Serialize,
 {
-    use tokio::fs;
-    use tokio::io::AsyncWriteExt;
+    use std::fs;
+    use std::io::Write;
 
     log::debug!("saving {what}: {}", path.display());
 
-    if let Some(d) = path.parent() {
-        if !matches!(fs::metadata(d).await, Ok(m) if m.is_dir()) {
-            fs::create_dir_all(d).await?;
+    let path = path.to_owned();
+
+    let task = tokio::spawn(async move {
+        let Some(dir) = path.parent() else {
+            anyhow::bail!("{what}: missing parent directory: {}", path.display());
+        };
+
+        if !matches!(fs::metadata(dir), Ok(m) if m.is_dir()) {
+            fs::create_dir_all(dir)?;
         }
+
+        let mut f = tempfile::NamedTempFile::new_in(dir)?;
+
+        log::trace!("writing {what}: {}", f.path().display());
+
+        for line in data {
+            serde_json::to_writer(&mut f, &line)?;
+            f.write_all(&[b'\n'])?;
+        }
+
+        f.flush()?;
+        let (_, temp_path) = f.keep()?;
+
+        log::trace!(
+            "rename {what}: {} -> {}",
+            temp_path.display(),
+            path.display()
+        );
+
+        fs::rename(temp_path, path)?;
+        Ok(())
+    });
+
+    async move {
+        let output: Result<()> = task.await?;
+        output
     }
-
-    let mut f = fs::File::create(path).await?;
-    let mut line = Vec::new();
-
-    for episode in data {
-        line.clear();
-        serde_json::to_writer(&mut line, &episode)?;
-        line.push(b'\n');
-        f.write_all(&line).await?;
-    }
-
-    Ok(())
 }
 
 /// Load all episodes found on the given paths.

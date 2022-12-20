@@ -1,6 +1,6 @@
 use iced::alignment::Horizontal;
 use iced::theme;
-use iced::widget::{button, column, image, row, text, vertical_space, Column};
+use iced::widget::{button, column, container, image, row, text, vertical_space, Column};
 use iced::{Alignment, Length};
 
 use crate::assets::Assets;
@@ -11,9 +11,9 @@ use crate::service::{PendingRef, Service};
 
 /// The state for the settings page.
 #[derive(Default)]
-pub(crate) struct Dashboard {}
+pub(crate) struct State {}
 
-impl Dashboard {
+impl State {
     /// Prepare data that is needed for the view.
     pub(crate) fn prepare(&mut self, service: &Service, assets: &mut Assets) {
         assets.mark(service.pending().rev().take(5).map(|p| p.series.poster));
@@ -108,24 +108,27 @@ impl Dashboard {
                 .on_press(Message::Navigate(Page::Series(series.id)));
 
             pending = pending.push(
-                column![
+                container(
                     column![
-                        row![series_name, season_name].spacing(SPACE),
-                        image,
-                        actions,
+                        column![
+                            row![series_name, season_name].spacing(SPACE),
+                            image,
+                            actions,
+                        ]
+                        .width(Length::Fill)
+                        .align_items(Alignment::Center)
+                        .spacing(SPACE),
+                        column![
+                            episode_info.horizontal_alignment(Horizontal::Center),
+                            episode_aired,
+                        ]
+                        .align_items(Alignment::Center)
+                        .spacing(SPACE),
                     ]
-                    .width(Length::Fill)
+                    .spacing(GAP)
                     .align_items(Alignment::Center)
-                    .spacing(SPACE),
-                    column![
-                        episode_info.horizontal_alignment(Horizontal::Center),
-                        episode_aired,
-                    ]
-                    .align_items(Alignment::Center)
-                    .spacing(SPACE),
-                ]
-                .spacing(GAP)
-                .align_items(Alignment::Center)
+                    .width(Length::Fill),
+                )
                 .width(Length::FillPortion(1)),
             );
         }

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -194,6 +195,7 @@ impl Client {
             remote_ids: Vec::from([RemoteSeriesId::TheTvDb { id }]),
             tracked: true,
             last_modified,
+            last_sync: BTreeMap::new(),
         });
 
         #[derive(Deserialize)]

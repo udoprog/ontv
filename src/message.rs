@@ -7,7 +7,8 @@ use uuid::Uuid;
 
 use crate::model::{Image, RemoteSeriesId, SeasonNumber};
 use crate::page;
-use crate::service::NewSeries;
+use crate::service::{NewSeries, Queued};
+use crate::utils::TimedOut;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Page {
@@ -17,6 +18,7 @@ pub(crate) enum Page {
     Series(Uuid),
     Settings,
     Season(Uuid, SeasonNumber),
+    Downloads,
 }
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,11 +74,15 @@ pub(crate) enum Message {
     /// Error during operation.
     Error(ErrorMessage),
     /// Actually save configuration.
-    SaveConfig(bool),
+    SaveConfig(TimedOut),
+    /// Save database changes.
+    SaveDatabase(TimedOut),
+    /// Check for updates.
+    CheckForUpdates(TimedOut),
+    /// Update download queue with the given items.
+    UpdateDownloadQueue(Vec<Queued>),
     /// Configuration saved and whether it was successful or not.
     SavedConfig,
-    /// Save database changes.
-    SaveDatabase(bool),
     /// Database was saved.
     SavedDatabase,
     /// Request to navigate to the specified page.

@@ -25,13 +25,13 @@ pub(crate) enum M {
 
 /// The state for the settings page.
 #[derive(Default)]
-pub(crate) struct Search {
+pub(crate) struct State {
     text: String,
     series: Vec<SearchSeries>,
     page: usize,
 }
 
-impl Search {
+impl State {
     /// Prepare data that is needed for the view.
     pub(crate) fn prepare(&mut self, _: &Service, assets: &mut Assets) {
         assets.mark(

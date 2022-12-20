@@ -10,6 +10,7 @@ mod utils;
 use std::time::Duration;
 
 use anyhow::Result;
+use chrono::Utc;
 use iced::alignment::Horizontal;
 use iced::theme::{self, Theme};
 use iced::widget::{
@@ -25,7 +26,10 @@ use crate::message::{Message, Page, ThemeType};
 use crate::model::Image;
 use crate::params::{GAP, GAP2, HALF_GAP, SPACE, SUB_MENU_SIZE};
 use crate::service::Service;
-use crate::utils::Timeout;
+use crate::utils::{TimedOut, Timeout};
+
+// Check for remote updates every 60 seconds.
+const UPDATE_TIMEOUT: u64 = 60;
 
 pub fn main() -> Result<()> {
     pretty_env_logger::init();
@@ -37,15 +41,20 @@ pub fn main() -> Result<()> {
 struct Main {
     service: Service,
     page: Page,
-    dashboard: page::dashboard::Dashboard,
-    settings: page::settings::Settings,
-    search: page::search::Search,
+    dashboard: page::dashboard::State,
+    settings: page::settings::State,
+    search: page::search::State,
     series: page::series::State,
-    series_list: page::series_list::SeriesList,
+    series_list: page::series_list::State,
     season: page::season::State,
+    queue: page::queue::State,
     loading: bool,
+    // Timeout before configuration changes are saved to the filesystem.
     save_timeout: Timeout,
+    // Timeout before database changes are saved to the filesystem.
     database_timeout: Timeout,
+    // Timeout to populate the update queue.
+    update_timeout: Timeout,
     /// Image loader future being run.
     image_loader: Singleton,
     assets: Assets,
@@ -53,7 +62,7 @@ struct Main {
 
 struct Flags {
     service: Service,
-    settings: page::settings::Settings,
+    settings: page::settings::State,
 }
 
 impl Application for Main {
@@ -67,21 +76,24 @@ impl Application for Main {
             service: flags.service,
             page: Page::Dashboard,
             loading: false,
-            dashboard: page::dashboard::Dashboard::default(),
+            dashboard: page::dashboard::State::default(),
             settings: flags.settings,
-            search: page::search::Search::default(),
+            search: page::search::State::default(),
             series: page::series::State::default(),
-            series_list: page::series_list::SeriesList::default(),
+            series_list: page::series_list::State::default(),
             season: page::season::State::default(),
+            queue: page::queue::State::default(),
             save_timeout: Timeout::default(),
             database_timeout: Timeout::default(),
+            update_timeout: Timeout::default(),
             image_loader: Singleton::default(),
             assets: Assets::new(),
         };
 
         this.prepare();
-        let command = this.handle_image_loading();
-        (this, command)
+        let a = this.handle_image_loading();
+        let b = Command::perform(async { TimedOut::TimedOut }, Message::CheckForUpdates);
+        (this, Command::batch([a, b]))
     }
 
     #[inline]
@@ -92,155 +104,182 @@ impl Application for Main {
     fn update(&mut self, message: Message) -> Command<Self::Message> {
         log::trace!("{message:?}");
 
-        let command = match message {
-            Message::Noop => {
-                return Command::none();
-            }
-            Message::Error(error) => {
-                log::error!("error: {error}");
-                self.loading = false;
-                Command::none()
-            }
-            Message::SaveConfig(timed_out) => {
-                if timed_out {
-                    self.loading = true;
-                    Command::perform(self.service.save_config(self.settings.clone()), |m| m)
-                } else {
-                    Command::none()
-                }
-            }
-            Message::SavedConfig => {
-                self.loading = false;
-                Command::none()
-            }
-            Message::SaveDatabase(timed_out) => {
-                // To avoid a cancellation loop we need to return here.
-                if !timed_out {
+        let command =
+            match message {
+                Message::Noop => {
                     return Command::none();
                 }
+                Message::Error(error) => {
+                    log::error!("error: {error}");
+                    self.loading = false;
+                    Command::none()
+                }
+                Message::SaveConfig(timed_out) => match timed_out {
+                    TimedOut::Cancelled => Command::none(),
+                    TimedOut::TimedOut => {
+                        self.loading = true;
+                        Command::perform(self.service.save_config(self.settings.clone()), |m| m)
+                    }
+                },
+                Message::SaveDatabase(timed_out) => {
+                    // To avoid a cancellation loop we need to return here.
+                    if !matches!(timed_out, TimedOut::TimedOut) {
+                        return Command::none();
+                    }
 
-                self.loading = true;
-
-                Command::perform(self.service.save_changes(), |result| match result {
-                    Ok(()) => Message::SavedDatabase,
-                    Err(error) => Message::error(error),
-                })
-            }
-            Message::SavedDatabase => {
-                self.loading = false;
-                Command::none()
-            }
-            Message::Navigate(page) => {
-                self.assets.clear();
-                self.page = page;
-                Command::none()
-            }
-            Message::Settings(message) => {
-                if self.settings.update(message) {
-                    Command::single(
-                        self.save_timeout
-                            .set(Duration::from_secs(2), Message::SaveConfig),
-                    )
-                } else {
                     self.loading = true;
-                    Command::perform(self.service.save_config(self.settings.clone()), |m| m)
-                }
-            }
-            Message::Search(message) => {
-                self.search
-                    .update(&mut self.service, &mut self.assets, message)
-            }
-            Message::SeriesList(message) => self.series_list.update(message),
-            Message::SeriesDownloadToTrack(data) => {
-                self.service.insert_new_series(data);
-                Command::none()
-            }
-            Message::RefreshSeries(id) => {
-                if let Some(future) = self.service.refresh_series(id) {
-                    Command::perform(future, |result| match result {
-                        Ok(new_data) => Message::SeriesDownloadToTrack(new_data),
-                        Err(e) => Message::error(e),
+
+                    Command::perform(self.service.save_changes(), |result| match result {
+                        Ok(()) => Message::SavedDatabase,
+                        Err(error) => Message::error(error),
                     })
-                } else {
-                    Command::none()
                 }
-            }
-            Message::RemoveSeries(id) => {
-                self.service.remove_series(id);
-                Command::none()
-            }
-            Message::AddSeriesByRemote(id) => {
-                if self.service.set_tracked_by_remote(id) {
-                    Command::none()
-                } else {
-                    let translate = |result| match result {
-                        Ok(data) => Message::SeriesDownloadToTrack(data),
-                        Err(e) => Message::error(e),
-                    };
+                Message::CheckForUpdates(timed_out) => {
+                    match timed_out {
+                        TimedOut::TimedOut => {
+                            let now = Utc::now();
 
-                    Command::perform(self.service.download_series_by_remote(id), translate)
-                }
-            }
-            Message::Watch(series, episode) => {
-                let timestamp = chrono::Utc::now();
-                self.service.watch(series, episode, timestamp);
-                Command::none()
-            }
-            Message::Skip(series, episode) => {
-                let timestamp = chrono::Utc::now();
-                self.service.skip(series, episode, timestamp);
-                Command::none()
-            }
-            Message::SelectPending(series, episode) => {
-                let timestamp = chrono::Utc::now();
-                self.service.select_pending(series, episode, timestamp);
-                Command::none()
-            }
-            Message::RemoveEpisodeWatches(series, episode) => {
-                let timestamp = chrono::Utc::now();
-                self.service
-                    .remove_episode_watches(series, episode, timestamp);
-                Command::none()
-            }
-            Message::RemoveSeasonWatches(series, season) => {
-                let timestamp = chrono::Utc::now();
-                self.service
-                    .remove_season_watches(series, season, timestamp);
-                Command::none()
-            }
-            Message::WatchRemainingSeason(series, season) => {
-                let timestamp = chrono::Utc::now();
-                self.service
-                    .watch_remaining_season(series, season, timestamp);
-                Command::none()
-            }
-            Message::Track(id) => {
-                self.service.track(id);
-                Command::none()
-            }
-            Message::Untrack(id) => {
-                self.service.untrack(id);
-                Command::none()
-            }
-            Message::ImagesLoaded(loaded) => {
-                match loaded {
-                    Ok(loaded) => {
-                        self.assets.insert_images(loaded);
-                    }
-                    Err(error) => {
-                        log::error!("error loading images: {error}");
+                            let a = Command::perform(self.service.find_updates(now), |output| {
+                                match output {
+                                    Ok(update) => Message::UpdateDownloadQueue(update),
+                                    Err(error) => Message::error(error),
+                                }
+                            });
+
+                            // Schedule next update.
+                            let b = Command::perform(
+                                self.update_timeout.set(Duration::from_secs(UPDATE_TIMEOUT)),
+                                Message::CheckForUpdates,
+                            );
+
+                            Command::batch([a, b])
+                        }
+                        TimedOut::Cancelled => {
+                            // Someone else has already scheduled the next update, so do nothing.
+                            Command::none()
+                        }
                     }
                 }
+                Message::UpdateDownloadQueue(queue) => {
+                    self.service.add_to_queue(queue);
+                    Command::none()
+                }
+                Message::SavedConfig => {
+                    self.loading = false;
+                    Command::none()
+                }
+                Message::SavedDatabase => {
+                    self.loading = false;
+                    Command::none()
+                }
+                Message::Navigate(page) => {
+                    self.assets.clear();
+                    self.page = page;
+                    Command::none()
+                }
+                Message::Settings(message) => {
+                    if self.settings.update(message) {
+                        Command::perform(
+                            self.save_timeout.set(Duration::from_secs(2)),
+                            Message::SaveConfig,
+                        )
+                    } else {
+                        self.loading = true;
+                        Command::perform(self.service.save_config(self.settings.clone()), |m| m)
+                    }
+                }
+                Message::Search(message) => {
+                    self.search
+                        .update(&mut self.service, &mut self.assets, message)
+                }
+                Message::SeriesList(message) => self.series_list.update(message),
+                Message::SeriesDownloadToTrack(data) => {
+                    self.service.insert_new_series(data);
+                    Command::none()
+                }
+                Message::RefreshSeries(id) => {
+                    if let Some(future) = self.service.refresh_series(id) {
+                        Command::perform(future, |result| match result {
+                            Ok(new_data) => Message::SeriesDownloadToTrack(new_data),
+                            Err(e) => Message::error(e),
+                        })
+                    } else {
+                        Command::none()
+                    }
+                }
+                Message::RemoveSeries(id) => {
+                    self.service.remove_series(id);
+                    Command::none()
+                }
+                Message::AddSeriesByRemote(id) => {
+                    if self.service.set_tracked_by_remote(id) {
+                        Command::none()
+                    } else {
+                        let translate = |result| match result {
+                            Ok(data) => Message::SeriesDownloadToTrack(data),
+                            Err(e) => Message::error(e),
+                        };
 
-                self.image_loader.clear();
-                return self.handle_image_loading();
-            }
-        };
+                        Command::perform(self.service.download_series_by_remote(id), translate)
+                    }
+                }
+                Message::Watch(series, episode) => {
+                    let now = Utc::now();
+                    self.service.watch(series, episode, now);
+                    Command::none()
+                }
+                Message::Skip(series, episode) => {
+                    let now = Utc::now();
+                    self.service.skip(series, episode, now);
+                    Command::none()
+                }
+                Message::SelectPending(series, episode) => {
+                    let now = Utc::now();
+                    self.service.select_pending(series, episode, now);
+                    Command::none()
+                }
+                Message::RemoveEpisodeWatches(series, episode) => {
+                    let now = Utc::now();
+                    self.service.remove_episode_watches(series, episode, now);
+                    Command::none()
+                }
+                Message::RemoveSeasonWatches(series, season) => {
+                    let now = Utc::now();
+                    self.service.remove_season_watches(series, season, now);
+                    Command::none()
+                }
+                Message::WatchRemainingSeason(series, season) => {
+                    let now = Utc::now();
+                    self.service.watch_remaining_season(series, season, now);
+                    Command::none()
+                }
+                Message::Track(id) => {
+                    self.service.track(id);
+                    Command::none()
+                }
+                Message::Untrack(id) => {
+                    self.service.untrack(id);
+                    Command::none()
+                }
+                Message::ImagesLoaded(loaded) => {
+                    match loaded {
+                        Ok(loaded) => {
+                            self.assets.insert_images(loaded);
+                        }
+                        Err(error) => {
+                            log::error!("error loading images: {error}");
+                        }
+                    }
+
+                    self.image_loader.clear();
+                    return self.handle_image_loading();
+                }
+            };
 
         let save_database = if self.service.has_changes() {
-            Command::single(
-                self.database_timeout
-                    .set(Duration::from_secs(5), Message::SaveDatabase),
+            Command::perform(
+                self.database_timeout.set(Duration::from_secs(5)),
+                Message::SaveDatabase,
             )
         } else {
             Command::none()
@@ -293,6 +332,18 @@ impl Application for Main {
 
         menu = menu.push(menu_item(&self.page, text("Settings"), Page::Settings));
 
+        // Build queue element.
+        {
+            let count = self.service.queue().len();
+
+            let text = match count {
+                0 => text("Queue"),
+                n => text(format!("Queue ({n})")),
+            };
+
+            menu = menu.push(menu_item(&self.page, text, Page::Downloads));
+        }
+
         let content = row![menu]
             .spacing(GAP2)
             .width(Length::Fill)
@@ -305,6 +356,7 @@ impl Application for Main {
             Page::Series(id) => self.series.view(&self.service, &self.assets, id),
             Page::Settings => self.settings.view(&self.assets),
             Page::Season(id, season) => self.season.view(&self.service, &self.assets, id, season),
+            Page::Downloads => self.queue.view(&self.service),
         };
 
         let content = content.push(scrollable(page.width(Length::Fill)));
@@ -363,6 +415,9 @@ impl Main {
             Page::Season(id, season) => {
                 self.season
                     .prepare(&self.service, &mut self.assets, id, season);
+            }
+            Page::Downloads => {
+                self.queue.prepare(&self.service, &mut self.assets);
             }
         }
 

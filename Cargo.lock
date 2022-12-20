@@ -751,6 +751,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "fixed-map"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73331920d6374428079f729d2489e4816d73c1c8082cc4a0b0ab6b97a30f2338"
+dependencies = [
+ "fixed-map-derive",
+ "hashbrown",
+ "serde",
+]
+
+[[package]]
+name = "fixed-map-derive"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a330664e1ede17baf80f8eb7c9d3945bf613dc4b2680402343751dc9c737081a"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "flate2"
 version = "1.0.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1933,6 +1955,7 @@ dependencies = [
  "bytes",
  "chrono",
  "directories-next",
+ "fixed-map",
  "iced",
  "iced_futures",
  "iced_native",
@@ -1942,6 +1965,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "twox-hash",
  "uuid",
