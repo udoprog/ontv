@@ -1,13 +1,13 @@
 use iced::theme;
 use iced::widget::{button, column, image, row, text, Column, Row};
-use iced::{Alignment, Element, Length};
+use iced::{Alignment, Length};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::assets::Assets;
 use crate::message::{Message, Page};
 use crate::model::{Season, Series};
-use crate::params::{ACTION_SIZE, GAP, GAP2, SUBTITLE_SIZE, TITLE_SIZE};
+use crate::params::{centered, style, ACTION_SIZE, GAP, GAP2, SPACE, SUBTITLE_SIZE, TITLE_SIZE};
 use crate::service::Service;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -17,7 +17,7 @@ impl State {
     /// Prepare data that is needed for the view.
     pub(crate) fn prepare(&mut self, service: &Service, assets: &mut Assets, id: Uuid) {
         if let Some(s) = service.series(id) {
-            prepare_banner(assets, s);
+            prepare_series_banner(assets, s);
         }
     }
 
@@ -31,11 +31,9 @@ impl State {
             return column![text("no series")];
         };
 
-        let top = banner::<[Element<'static, Message>; 0]>(assets, series, []);
+        let top = series_banner(assets, series).spacing(GAP);
 
-        let episodes = service.episodes(series.id);
-
-        let mut seasons = column![].spacing(GAP2);
+        let mut seasons = column![];
 
         for season in service.seasons(series.id) {
             let title = button(season.title().size(SUBTITLE_SIZE))
@@ -43,34 +41,41 @@ impl State {
                 .style(theme::Button::Text)
                 .on_press(Message::Navigate(Page::Season(series.id, season.number)));
 
-            seasons =
-                seasons.push(column![title, season_info(service, series, season)].spacing(GAP));
+            seasons = seasons.push(
+                centered(
+                    column![
+                        title,
+                        season_info(service, series, season)
+                            .spacing(GAP)
+                            .width(Length::Fill)
+                    ]
+                    .spacing(GAP),
+                    Some(style::weak),
+                )
+                .padding(GAP),
+            );
         }
 
-        let info = match episodes.count() {
+        let info = match service.episodes(series.id).count() {
             0 => text(format!("No episodes")),
             1 => text(format!("One episode")),
             count => text(format!("{count} episodes")),
         };
 
-        let mut content = column![].spacing(GAP).padding(GAP);
-
-        content = content.push(top);
-        content = content.push(actions(series));
-        content = content.push(info);
+        let mut header = column![top, actions(series).spacing(SPACE), info,];
 
         if let Some(overview) = &series.overview {
-            content = content.push(text(overview));
+            header = header.push(text(overview));
         }
 
-        content = content.push(seasons);
-        content
+        let header = centered(header.spacing(GAP), None).padding(GAP);
+        column![header, seasons.spacing(GAP2)].spacing(GAP2)
     }
 }
 
 /// Generate buttons which perform actions on the given series.
 pub(crate) fn actions(s: &Series) -> Row<'static, Message> {
-    let mut row = row![].spacing(GAP);
+    let mut row = row![];
 
     if s.tracked {
         row = row.push(
@@ -118,7 +123,7 @@ pub(crate) fn season_info(
         watched += usize::from(service.watch_count(episode.id) != 0);
     }
 
-    let mut actions = row![].spacing(GAP);
+    let mut actions = row![].spacing(SPACE);
 
     if watched < total {
         actions = actions.push(
@@ -136,8 +141,6 @@ pub(crate) fn season_info(
         );
     }
 
-    let mut info = column![].spacing(GAP);
-
     let plural = match total {
         1 => "episode",
         _ => "episodes",
@@ -149,24 +152,20 @@ pub(crate) fn season_info(
         String::from("0%")
     };
 
-    info = info.push(text(format!(
+    let info = text(format!(
         "Watched {watched} out of {total} {plural} ({percentage})"
-    )));
+    ));
 
-    column![actions, info].spacing(GAP)
+    column![actions, info]
 }
 
 /// Prepare assets needed for banner.
-pub(crate) fn prepare_banner(assets: &mut Assets, s: &Series) {
+pub(crate) fn prepare_series_banner(assets: &mut Assets, s: &Series) {
     assets.mark([s.banner.unwrap_or(s.poster)]);
 }
 
 /// Render a banner for the series.
-pub(crate) fn banner<I>(assets: &Assets, series: &Series, extra: I) -> Column<'static, Message>
-where
-    I: IntoIterator,
-    I::Item: Into<Element<'static, Message>>,
-{
+pub(crate) fn series_banner(assets: &Assets, series: &Series) -> Column<'static, Message> {
     let handle = match assets.image(&series.banner.unwrap_or(series.poster)) {
         Some(handle) => handle,
         None => assets.missing_banner(),
@@ -179,14 +178,7 @@ where
         .style(theme::Button::Text)
         .on_press(Message::Navigate(Page::Series(series.id)));
 
-    let mut column = column![banner, title];
-
-    for e in extra {
-        column = column.push(e);
-    }
-
-    column
+    column![banner, title]
         .width(Length::Fill)
-        .spacing(GAP)
         .align_items(Alignment::Center)
 }

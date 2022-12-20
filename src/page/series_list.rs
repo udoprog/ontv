@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::assets::Assets;
 use crate::message::{Message, Page};
-use crate::params::{GAP, SUBTITLE_SIZE};
+use crate::params::{centered, style, GAP, GAP2, SPACE, SUBTITLE_SIZE};
 use crate::service::Service;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -19,7 +19,7 @@ impl SeriesList {
     }
 
     pub(crate) fn view(&self, service: &Service, assets: &Assets) -> Column<'static, Message> {
-        let mut series = column![].spacing(GAP);
+        let mut series = column![];
 
         for s in service.all_series() {
             let handle = match assets.image(&s.poster) {
@@ -31,26 +31,39 @@ impl SeriesList {
 
             let episodes = service.episodes(s.id);
 
-            let actions = crate::page::series::actions(s);
+            let actions = crate::page::series::actions(s).spacing(SPACE);
 
             let title = button(text(&s.title).size(SUBTITLE_SIZE))
                 .padding(0)
                 .style(theme::Button::Text)
                 .on_press(Message::Navigate(Page::Series(s.id)));
 
-            let mut content = column![].width(Length::Fill).spacing(GAP);
+            let mut content = column![].width(Length::Fill);
 
-            content = content.push(title);
-            content = content.push(text(format!("{} episode(s)", episodes.count())));
-            content = content.push(actions);
+            content = content.push(
+                column![
+                    title,
+                    text(format!("{} episode(s)", episodes.count())),
+                    actions,
+                ]
+                .spacing(SPACE),
+            );
 
             if let Some(overview) = &s.overview {
                 content = content.push(text(overview));
             }
 
-            series = series.push(row![graphic, content].width(Length::Fill).spacing(GAP));
+            series = series.push(
+                centered(
+                    row![graphic, content.spacing(GAP)]
+                        .spacing(GAP)
+                        .width(Length::Fill),
+                    Some(style::weak),
+                )
+                .padding(GAP),
+            );
         }
 
-        column![series].spacing(GAP).padding(GAP)
+        series.spacing(GAP2)
     }
 }

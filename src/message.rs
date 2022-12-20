@@ -95,6 +95,10 @@ pub(crate) enum Message {
     AddSeriesByRemote(RemoteSeriesId),
     /// Mark the given series / episode as watched.
     Watch(Uuid, Uuid),
+    /// Skip an episode.
+    Skip(Uuid, Uuid),
+    /// Explicitly select the next pending episode.
+    SelectPending(Uuid, Uuid),
     /// Remove all watches.
     RemoveEpisodeWatches(Uuid, Uuid),
     /// Weatch the remainder of all unwatched episodes in the specified season.

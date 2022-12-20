@@ -37,9 +37,9 @@ impl fmt::Debug for NewSeries {
 /// A pending thing to watch.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub(crate) struct Pending {
-    series: Uuid,
-    episode: Uuid,
-    timestamp: DateTime<Utc>,
+    pub(crate) series: Uuid,
+    pub(crate) episode: Uuid,
+    pub(crate) timestamp: DateTime<Utc>,
 }
 
 /// A pending thing to watch.
@@ -178,12 +178,21 @@ impl Service {
     }
 
     /// Test if episode is watched.
-    pub(crate) fn watch_count(&self, episode: Uuid) -> usize {
+    pub(crate) fn watch_count(&self, episode_id: Uuid) -> usize {
         self.db
             .watch_counts
-            .get(&episode)
+            .get(&episode_id)
             .copied()
             .unwrap_or_default()
+    }
+
+    /// Get the pending episode for the given series.
+    pub(crate) fn get_pending(&self, series_id: Uuid) -> Option<&Pending> {
+        self.db
+            .pending
+            .iter()
+            .filter(|p| p.series == series_id)
+            .next()
     }
 
     /// Return list of pending episodes.
@@ -192,6 +201,7 @@ impl Service {
             let series = self.db.series.get(&p.series)?;
             let episodes = self.db.episodes.get(&p.series)?;
             let episode = episodes.iter().find(|e| e.id == p.episode)?;
+
             Some(PendingRef { series, episode })
         })
     }
@@ -234,6 +244,7 @@ impl Service {
             });
 
             *self.db.watch_counts.entry(episode.id).or_default() += 1;
+            self.db.changes.watched = true;
             last = Some(episode.id);
         }
 
@@ -254,7 +265,75 @@ impl Service {
         });
 
         *self.db.watch_counts.entry(episode).or_default() += 1;
+        self.db.changes.watched = true;
         self.setup_pending(series, Some(episode))
+    }
+
+    /// Skip an episode.
+    pub(crate) fn skip(&mut self, series_id: Uuid, episode_id: Uuid, timestamp: DateTime<Utc>) {
+        let Some(episodes) = self.db.episodes.get(&series_id) else {
+            return;
+        };
+
+        let mut it = episodes.iter();
+
+        while let Some(episode) = it.next() {
+            if episode.id == episode_id {
+                break;
+            }
+        }
+
+        let Some(episode) = it.next() else {
+            return;
+        };
+
+        let mut changed = false;
+
+        for pending in self
+            .db
+            .pending
+            .iter_mut()
+            .filter(|p| p.episode == episode_id)
+        {
+            pending.episode = episode.id;
+            pending.timestamp = timestamp;
+            changed = true;
+            break;
+        }
+
+        self.db.changes.pending |= changed;
+    }
+
+    /// Select the next pending episode to use for a show.
+    pub(crate) fn select_pending(
+        &mut self,
+        series_id: Uuid,
+        episode_id: Uuid,
+        timestamp: DateTime<Utc>,
+    ) {
+        self.db.changes.pending = true;
+
+        // Try to modify in-place.
+        if let Some(pending) = self
+            .db
+            .pending
+            .iter_mut()
+            .filter(|p| p.series == series_id)
+            .next()
+        {
+            pending.episode = episode_id;
+            pending.timestamp = timestamp;
+        } else {
+            self.db.pending.push(Pending {
+                series: series_id,
+                episode: episode_id,
+                timestamp,
+            });
+        }
+
+        self.db
+            .pending
+            .sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
     }
 
     /// Remove all watches of the given episode.
@@ -335,10 +414,9 @@ impl Service {
     fn setup_pending(&mut self, series: Uuid, episode: Option<Uuid>) {
         // Remove any pending episodes for the given series.
         self.db.pending.retain(|p| p.series != series);
+        self.db.changes.pending = true;
         let now = Utc::now();
         self.populate_pending(&now, series, episode);
-        self.db.changes.watched = true;
-        self.db.changes.pending = true;
     }
 
     /// Save changes made.
@@ -443,7 +521,7 @@ impl Service {
         } else {
             // Find the first episode which is *not* in our watch history.
             while let Some(e) = it.peek() {
-                if self.watch_count(e.id) > 0 {
+                if self.watch_count(e.id) == 0 {
                     break;
                 }
 
@@ -578,22 +656,26 @@ impl Service {
     }
 
     /// Set the given show as tracked.
-    pub(crate) fn track(&mut self, id: Uuid) -> bool {
-        let Some(series) = self.db.series.get_mut(&id) else {
+    pub(crate) fn track(&mut self, series_id: Uuid) -> bool {
+        let Some(series) = self.db.series.get_mut(&series_id) else {
             return false;
         };
 
         series.tracked = true;
         self.db.changes.series = true;
+        self.setup_pending(series_id, None);
         true
     }
 
     /// Disable tracking of the series with the given id.
-    pub(crate) fn untrack(&mut self, id: Uuid) {
-        if let Some(s) = self.db.series.get_mut(&id) {
+    pub(crate) fn untrack(&mut self, series_id: Uuid) {
+        if let Some(s) = self.db.series.get_mut(&series_id) {
             s.tracked = false;
             self.db.changes.series = true;
         }
+
+        self.db.pending.retain(|p| p.series != series_id);
+        self.db.changes.pending = true;
     }
 
     /// Insert a new tracked song.

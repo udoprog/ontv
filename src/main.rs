@@ -23,7 +23,7 @@ use utils::Singleton;
 use crate::assets::Assets;
 use crate::message::{Message, Page, ThemeType};
 use crate::model::Image;
-use crate::params::{CONTAINER_WIDTH, GAP, GAP2, SPACE, SPACE2, SUB_MENU_SIZE};
+use crate::params::{GAP, GAP2, SPACE, SPACE2, SUB_MENU_SIZE};
 use crate::service::Service;
 use crate::utils::Timeout;
 
@@ -185,6 +185,16 @@ impl Application for Main {
                 self.service.watch(series, episode, timestamp);
                 Command::none()
             }
+            Message::Skip(series, episode) => {
+                let timestamp = chrono::Utc::now();
+                self.service.skip(series, episode, timestamp);
+                Command::none()
+            }
+            Message::SelectPending(series, episode) => {
+                let timestamp = chrono::Utc::now();
+                self.service.select_pending(series, episode, timestamp);
+                Command::none()
+            }
             Message::RemoveEpisodeWatches(series, episode) => {
                 let timestamp = chrono::Utc::now();
                 self.service
@@ -301,11 +311,7 @@ impl Application for Main {
             Page::Season(id, season) => self.season.view(&self.service, &self.assets, id, season),
         };
 
-        let content = content.push(scrollable(
-            column![container(page.width(Length::Fill)).max_width(CONTAINER_WIDTH)]
-                .width(Length::Fill)
-                .align_items(Alignment::Center),
-        ));
+        let content = content.push(scrollable(page.width(Length::Fill)));
 
         let mut window = column![];
 
@@ -328,8 +334,6 @@ impl Application for Main {
         container(window)
             .width(Length::Fill)
             .height(Length::Fill)
-            .center_x()
-            .center_y()
             .into()
     }
 

@@ -5,7 +5,7 @@ use iced::{Command, Length};
 use crate::assets::Assets;
 use crate::message::Message;
 use crate::model::{RemoteSeriesId, SearchSeries};
-use crate::params::{ACTION_SIZE, GAP, GAP2, SPACE};
+use crate::params::{default_container, ACTION_SIZE, GAP, GAP2, SPACE};
 use crate::service::Service;
 
 const PER_PAGE: usize = 5;
@@ -85,12 +85,12 @@ impl Search {
 
     /// Generate the view for the settings page.
     pub(crate) fn view(&self, service: &Service, assets: &Assets) -> Column<'static, Message> {
-        let mut results = column![].spacing(GAP2).padding(GAP);
+        let mut results = column![].spacing(GAP2).padding(GAP2);
 
         for series in self.series.iter().skip(self.page * PER_PAGE).take(PER_PAGE) {
             let handle = match assets.image(&series.poster) {
                 Some(handle) => handle,
-                None => assets.missing_banner(),
+                None => assets.missing_poster(),
             };
 
             let id = RemoteSeriesId::TheTvDb { id: series.id };
@@ -112,14 +112,15 @@ impl Search {
                 .unwrap_or_default();
 
             results = results.push(
-                column![
-                    row![
-                        image(handle).height(Length::Units(100)),
-                        column![text(&series.name).size(24), text(overview),].spacing(SPACE)
+                column![row![
+                    image(handle).height(Length::Units(200)),
+                    column![
+                        column![text(&series.name).size(24), track].spacing(SPACE),
+                        text(overview),
                     ]
-                    .spacing(GAP),
-                    track,
+                    .spacing(GAP)
                 ]
+                .spacing(GAP),]
                 .spacing(GAP),
             );
         }
@@ -148,8 +149,8 @@ impl Search {
                 next
             ]
             .align_items(Alignment::Center)
-            .spacing(GAP)
-            .padding(GAP);
+            .spacing(SPACE)
+            .padding(SPACE);
         }
 
         let query = text_input("Query...", &self.text, |value| {
@@ -165,8 +166,10 @@ impl Search {
             submit
         };
 
-        column![text("Search"), row![query, submit,], results, pages,]
+        let page = column![text("Search"), row![query, submit,], results, pages]
             .spacing(GAP)
-            .padding(GAP)
+            .padding(GAP);
+
+        default_container(page)
     }
 }

@@ -8,7 +8,8 @@ use uuid::Uuid;
 use crate::assets::Assets;
 use crate::message::Message;
 use crate::model::SeasonNumber;
-use crate::params::{ACTION_SIZE, GAP, GAP2, SPACE, SUBTITLE_SIZE, WARNING_COLOR};
+use crate::page::series::{prepare_series_banner, season_info, series_banner};
+use crate::params::{centered, style, ACTION_SIZE, GAP, GAP2, SPACE, SUBTITLE_SIZE, WARNING_COLOR};
 use crate::service::Service;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -24,7 +25,7 @@ impl State {
         season: SeasonNumber,
     ) {
         if let Some(s) = service.series(id) {
-            crate::page::series::prepare_banner(assets, s);
+            prepare_series_banner(assets, s);
 
             for e in service.episodes(id).filter(|e| e.season == season) {
                 assets.mark(e.filename);
@@ -37,20 +38,20 @@ impl State {
         &self,
         service: &Service,
         assets: &Assets,
-        id: Uuid,
+        series_id: Uuid,
         season: SeasonNumber,
     ) -> Column<'static, Message> {
-        let Some(series) = service.series(id) else {
+        let Some(series) = service.series(series_id) else {
             return column![text("no such series")];
         };
 
-        let Some(season) = service.seasons(id).find(|s| s.number == season) else {
+        let Some(season) = service.seasons(series_id).find(|s| s.number == season) else {
             return column![text("no such season")];
         };
 
-        let top = crate::page::series::season_info(service, series, season);
-
         let mut episodes = column![];
+
+        let pending = service.get_pending(series_id).map(|p| p.episode);
 
         for episode in service
             .episodes(series.id)
@@ -76,7 +77,7 @@ impl State {
                 .filter(|w| w.episode == episode.id)
                 .collect::<Vec<_>>();
 
-            let mut actions = row![].spacing(GAP);
+            let mut actions = row![].spacing(SPACE);
 
             let watch_text = match &watched[..] {
                 [] => text("First watch"),
@@ -86,7 +87,7 @@ impl State {
             actions = actions.push(
                 button(watch_text.size(ACTION_SIZE))
                     .style(theme::Button::Positive)
-                    .on_press(Message::Watch(id, episode.id)),
+                    .on_press(Message::Watch(series_id, episode.id)),
             );
 
             if !watched.is_empty() {
@@ -98,13 +99,19 @@ impl State {
                 actions = actions.push(
                     button(remove_watch_text.size(ACTION_SIZE))
                         .style(theme::Button::Destructive)
-                        .on_press(Message::RemoveEpisodeWatches(id, episode.id)),
+                        .on_press(Message::RemoveEpisodeWatches(series_id, episode.id)),
                 );
             }
 
-            let mut info = column![name].spacing(GAP);
+            if pending != Some(episode.id) {
+                actions = actions.push(
+                    button(text("Set next episode").size(ACTION_SIZE))
+                        .style(theme::Button::Destructive)
+                        .on_press(Message::SelectPending(series_id, episode.id)),
+                );
+            }
 
-            let mut show_info = row![].spacing(GAP);
+            let mut show_info = row![].spacing(SPACE);
 
             if let Some(air_date) = episode.aired {
                 show_info = show_info.push(text(format!("Aired: {}", air_date)).size(ACTION_SIZE));
@@ -122,26 +129,35 @@ impl State {
 
             show_info = show_info.push(watched.size(ACTION_SIZE));
 
-            info = info.push(actions).push(show_info).push(overview);
+            let info_top = column![name, actions, show_info].spacing(SPACE);
+            let info = column![info_top, overview];
+
+            let image = container(image(screencap))
+                .max_width(200)
+                .max_height(200)
+                .align_x(Horizontal::Center);
+
+            let image = column![image,];
 
             episodes = episodes.push(
-                row![
-                    container(image(screencap))
-                        .width(Length::Units(140))
-                        .max_height(140)
-                        .align_x(Horizontal::Center),
-                    info,
-                ]
-                .spacing(GAP),
+                centered(
+                    row![image, info.width(Length::Fill).spacing(GAP)].spacing(GAP),
+                    Some(style::weak),
+                )
+                .padding(GAP),
             );
         }
 
         let season_title = season.title().size(SUBTITLE_SIZE);
 
-        let banner = crate::page::series::banner(assets, series, [season_title]);
+        let banner = series_banner(assets, series)
+            .push(season_title)
+            .spacing(GAP);
 
-        column![banner, top, episodes.spacing(GAP2)]
-            .spacing(GAP)
-            .padding(GAP)
+        let top = season_info(service, series, season).spacing(GAP);
+
+        let header = centered(column![banner, top].spacing(GAP), None).padding(GAP);
+
+        column![header, episodes.spacing(GAP2)].spacing(GAP)
     }
 }

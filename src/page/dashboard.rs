@@ -1,12 +1,12 @@
 use iced::alignment::Horizontal;
 use iced::theme;
-use iced::widget::{button, column, container, image, row, text, Column};
+use iced::widget::{button, column, container, image, row, text, vertical_space, Column};
 use iced::{Alignment, Length};
 
 use crate::assets::Assets;
 use crate::message::{Message, Page};
 use crate::model::SeasonNumber;
-use crate::params::{ACTION_SIZE, GAP, GAP2, SCREENCAP_HEIGHT, SMALL_SIZE, SPACE};
+use crate::params::{centered, style, ACTION_SIZE, GAP, SCREENCAP_HEIGHT, SMALL_SIZE, SPACE};
 use crate::service::{PendingRef, Service};
 
 /// The state for the settings page.
@@ -27,31 +27,34 @@ impl Dashboard {
 
     /// Generate the view for the settings page.
     pub(crate) fn view(&self, service: &Service, assets: &Assets) -> Column<'static, Message> {
-        let mut pending = row![].spacing(GAP2);
+        let mut pending = row![];
 
-        for PendingRef { series, episode } in service.pending().rev().take(5) {
+        for PendingRef {
+            series, episode, ..
+        } in service.pending().rev().take(5)
+        {
             let mut actions = row![].spacing(SPACE);
 
             actions = actions.push(
                 button(
-                    text("Watch")
+                    text("W")
                         .horizontal_alignment(Horizontal::Center)
                         .size(ACTION_SIZE),
                 )
                 .style(theme::Button::Positive)
                 .on_press(Message::Watch(series.id, episode.id))
-                .width(Length::FillPortion(1)),
+                .width(Length::Units(36)),
             );
 
             actions = actions.push(
                 button(
-                    text("Skip")
+                    text("S")
                         .horizontal_alignment(Horizontal::Center)
                         .size(ACTION_SIZE),
                 )
                 .style(theme::Button::Positive)
                 .on_press(Message::Skip(series.id, episode.id))
-                .width(Length::FillPortion(1)),
+                .width(Length::Units(36)),
             );
 
             actions = actions.push(
@@ -62,7 +65,7 @@ impl Dashboard {
                 )
                 .style(theme::Button::Primary)
                 .on_press(Message::Navigate(Page::Series(series.id)))
-                .width(Length::FillPortion(1)),
+                .width(Length::FillPortion(2)),
             );
 
             actions = actions.push(
@@ -73,7 +76,7 @@ impl Dashboard {
                 )
                 .style(theme::Button::Primary)
                 .on_press(Message::Navigate(Page::Season(series.id, episode.season)))
-                .width(Length::FillPortion(1)),
+                .width(Length::FillPortion(2)),
             );
 
             let handle = match episode.filename.and_then(|handle| assets.image(&handle)) {
@@ -81,13 +84,13 @@ impl Dashboard {
                 None => assets.missing_screencap(),
             };
 
-            let mut episode_info = row![].spacing(GAP);
-
             let episode_number = match episode.season {
                 SeasonNumber::Number(number) => text(format!("{}x{}", number, episode.number)),
                 SeasonNumber::Unknown => text(format!("{} (No Season)", episode.number)),
                 SeasonNumber::Specials => text(format!("Special {}", episode.number)),
             };
+
+            let mut episode_info = row![];
 
             if let Some(name) = &episode.name {
                 episode_info = episode_info.push(text(name));
@@ -105,11 +108,14 @@ impl Dashboard {
                     episode_info,
                 ]
                 .align_items(Alignment::Center)
-                .spacing(GAP)
+                .spacing(SPACE)
                 .width(Length::FillPortion(1)),
             );
         }
 
-        column![pending].padding(GAP2)
+        column![
+            vertical_space(Length::Units(GAP)),
+            centered(pending.spacing(GAP).padding(GAP), Some(style::weak)),
+        ]
     }
 }
