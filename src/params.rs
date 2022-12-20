@@ -47,7 +47,6 @@ where
     use iced::Length;
 
     let content = container(content).max_width(CONTAINER_WIDTH);
-
     let mut container = container(content)
         .align_x(Horizontal::Center)
         .width(Length::Fill);

@@ -6,7 +6,9 @@ use iced::{Alignment, Length};
 use crate::assets::Assets;
 use crate::message::{Message, Page};
 use crate::model::SeasonNumber;
-use crate::params::{centered, style, ACTION_SIZE, GAP, SCREENCAP_HEIGHT, SMALL_SIZE, SPACE};
+use crate::params::{
+    centered, style, ACTION_SIZE, GAP, SCREENCAP_HEIGHT, SMALL_SIZE, SPACE, SUBTITLE_SIZE,
+};
 use crate::service::{PendingRef, Service};
 
 /// The state for the settings page.
@@ -84,16 +86,31 @@ impl Dashboard {
                 None => assets.missing_screencap(),
             };
 
-            let episode_number = match episode.season {
-                SeasonNumber::Number(number) => text(format!("{}x{}", number, episode.number)),
-                SeasonNumber::Unknown => text(format!("{} (No Season)", episode.number)),
-                SeasonNumber::Specials => text(format!("Special {}", episode.number)),
+            let mut episode_number = match episode.season {
+                SeasonNumber::Number(number) => format!("{}x{}", number, episode.number),
+                SeasonNumber::Unknown => format!("{}", episode.number),
+                SeasonNumber::Specials => format!("Special {}", episode.number),
             };
 
-            let mut episode_info = row![];
+            if let Some(number) = episode.absolute_number {
+                use std::fmt::Write;
+                write!(episode_number, " ({number})").unwrap();
+            }
 
-            if let Some(name) = &episode.name {
-                episode_info = episode_info.push(text(name));
+            let mut episode_aired = row![];
+
+            let episode_info = if let Some(name) = &episode.name {
+                text(format!("{episode_number}: {name}"))
+            } else {
+                text(episode_number)
+            };
+
+            if let Some(air_date) = &episode.aired {
+                episode_aired = episode_aired.push(
+                    text(format!("Aired: {air_date}"))
+                        .horizontal_alignment(Horizontal::Center)
+                        .size(SMALL_SIZE),
+                );
             }
 
             pending = pending.push(
@@ -104,18 +121,35 @@ impl Dashboard {
                         actions,
                     ]
                     .spacing(SPACE),
-                    episode_number,
-                    episode_info,
+                    column![
+                        episode_info.horizontal_alignment(Horizontal::Center),
+                        episode_aired,
+                    ]
+                    .align_items(Alignment::Center)
+                    .spacing(SPACE),
                 ]
+                .spacing(GAP)
                 .align_items(Alignment::Center)
-                .spacing(SPACE)
                 .width(Length::FillPortion(1)),
             );
         }
 
+        let up_next_title = text("Up next...")
+            .horizontal_alignment(Horizontal::Left)
+            .width(Length::Fill)
+            .size(SUBTITLE_SIZE);
+        let scheduled_title = text("Scheduled...")
+            .horizontal_alignment(Horizontal::Left)
+            .width(Length::Fill)
+            .size(SUBTITLE_SIZE);
+
         column![
-            vertical_space(Length::Units(GAP)),
-            centered(pending.spacing(GAP).padding(GAP), Some(style::weak)),
+            vertical_space(Length::Shrink),
+            centered(up_next_title, None),
+            centered(pending.padding(GAP).spacing(GAP), Some(style::weak)),
+            centered(scheduled_title, None),
+            vertical_space(Length::Shrink),
         ]
+        .spacing(GAP)
     }
 }

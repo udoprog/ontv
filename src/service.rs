@@ -201,7 +201,6 @@ impl Service {
             let series = self.db.series.get(&p.series)?;
             let episodes = self.db.episodes.get(&p.series)?;
             let episode = episodes.iter().find(|e| e.id == p.episode)?;
-
             Some(PendingRef { series, episode })
         })
     }
@@ -270,7 +269,7 @@ impl Service {
     }
 
     /// Skip an episode.
-    pub(crate) fn skip(&mut self, series_id: Uuid, episode_id: Uuid, timestamp: DateTime<Utc>) {
+    pub(crate) fn skip(&mut self, series_id: Uuid, episode_id: Uuid, now: DateTime<Utc>) {
         let Some(episodes) = self.db.episodes.get(&series_id) else {
             return;
         };
@@ -283,11 +282,12 @@ impl Service {
             }
         }
 
-        let Some(episode) = it.next() else {
+        self.db.changes.pending = true;
+
+        let Some(episode) = it.find(|e| e.has_aired(&now)) else {
+            self.db.pending.retain(|p| p.series != series_id);
             return;
         };
-
-        let mut changed = false;
 
         for pending in self
             .db
@@ -296,21 +296,12 @@ impl Service {
             .filter(|p| p.episode == episode_id)
         {
             pending.episode = episode.id;
-            pending.timestamp = timestamp;
-            changed = true;
-            break;
+            pending.timestamp = now;
         }
-
-        self.db.changes.pending |= changed;
     }
 
     /// Select the next pending episode to use for a show.
-    pub(crate) fn select_pending(
-        &mut self,
-        series_id: Uuid,
-        episode_id: Uuid,
-        timestamp: DateTime<Utc>,
-    ) {
+    pub(crate) fn select_pending(&mut self, series_id: Uuid, episode_id: Uuid, now: DateTime<Utc>) {
         self.db.changes.pending = true;
 
         // Try to modify in-place.
@@ -322,12 +313,12 @@ impl Service {
             .next()
         {
             pending.episode = episode_id;
-            pending.timestamp = timestamp;
+            pending.timestamp = now;
         } else {
             self.db.pending.push(Pending {
                 series: series_id,
                 episode: episode_id,
-                timestamp,
+                timestamp: now,
             });
         }
 
@@ -339,18 +330,18 @@ impl Service {
     /// Remove all watches of the given episode.
     pub(crate) fn remove_episode_watches(
         &mut self,
-        series: Uuid,
-        episode: Uuid,
-        timestamp: DateTime<Utc>,
+        series_id: Uuid,
+        episode_id: Uuid,
+        now: DateTime<Utc>,
     ) {
-        self.db.watched.retain(|w| w.episode != episode);
-        let _ = self.db.watch_counts.remove(&episode);
-        self.db.pending.retain(|p| p.series != series);
+        self.db.watched.retain(|w| w.episode != episode_id);
+        let _ = self.db.watch_counts.remove(&episode_id);
+        self.db.pending.retain(|p| p.series != series_id);
 
         self.db.pending.push(Pending {
-            series,
-            episode,
-            timestamp,
+            series: series_id,
+            episode: episode_id,
+            timestamp: now,
         });
 
         self.db.changes.watched = true;
@@ -362,7 +353,7 @@ impl Service {
         &mut self,
         series: Uuid,
         season: SeasonNumber,
-        timestamp: DateTime<Utc>,
+        now: DateTime<Utc>,
     ) {
         let mut removed = Vec::new();
 
@@ -401,11 +392,14 @@ impl Service {
 
         // Find the first episode matching the given season and make that the
         // pending episode.
-        if let Some(episode) = episodes.iter().find(|e| e.season == season) {
+        if let Some(episode) = episodes
+            .iter()
+            .find(|e| e.season == season && e.has_aired(&now))
+        {
             self.db.pending.push(Pending {
                 series,
                 episode: episode.id,
-                timestamp,
+                timestamp: now,
             });
         }
     }
@@ -530,19 +524,13 @@ impl Service {
         }
 
         // Mark the first episode (that has aired).
-        while let Some(e) = it.next() {
-            if !e.has_aired(now) {
-                break;
-            }
-
+        if let Some(e) = it.find(|e| e.has_aired(now)) {
             // Mark the next episode in the show as pending.
             self.db.pending.push(Pending {
                 series,
                 episode: e.id,
                 timestamp: *now,
             });
-
-            break;
         }
 
         self.db
