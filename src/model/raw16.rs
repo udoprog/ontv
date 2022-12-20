@@ -62,38 +62,12 @@ impl fmt::Debug for Raw16 {
 }
 
 impl<'de> de::Deserialize<'de> for Raw16 {
+    #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        return deserializer.deserialize_bytes(Visitor);
-
-        struct Visitor;
-
-        impl<'de> de::Visitor<'de> for Visitor {
-            type Value = Raw16;
-
-            #[inline]
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "an identifier")
-            }
-
-            #[inline]
-            fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(Raw16::from_string(v))
-            }
-
-            #[inline]
-            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(Raw16::from_string(v))
-            }
-        }
+        deserializer.deserialize_str(Visitor)
     }
 }
 
@@ -104,5 +78,45 @@ impl ser::Serialize for Raw16 {
         S: serde::Serializer,
     {
         serializer.collect_str(self)
+    }
+}
+
+struct Visitor;
+
+impl<'de> de::Visitor<'de> for Visitor {
+    type Value = Raw16;
+
+    #[inline]
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "an identifier")
+    }
+
+    #[inline]
+    fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(Raw16::from_string(v))
+    }
+
+    #[inline]
+    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(Raw16::from_string(v))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Raw16;
+
+    #[test]
+    fn test_raw16() {
+        let id = Raw16::from_string(b"foobarbaz");
+        assert_eq!(id.to_string(), "foobarbaz");
+        let id = Raw16::from_string("foobarbaz");
+        assert_eq!(id.to_string(), "foobarbaz");
     }
 }

@@ -16,7 +16,7 @@ use iced::theme::{self, Theme};
 use iced::widget::{
     button, column, container, horizontal_rule, row, scrollable, text, Button, Space,
 };
-use iced::{Alignment, Application, Command, Element, Length, Settings};
+use iced::{window, Alignment, Application, Command, Element, Length, Settings};
 use iced_native::image::Handle;
 use params::ACTION_SIZE;
 use utils::Singleton;
@@ -49,8 +49,6 @@ struct Main {
     season: page::season::State,
     queue: page::queue::State,
     loading: bool,
-    // Timeout before configuration changes are saved to the filesystem.
-    save_timeout: Timeout,
     // Timeout before database changes are saved to the filesystem.
     database_timeout: Timeout,
     // Timeout to populate the update queue.
@@ -58,6 +56,10 @@ struct Main {
     /// Image loader future being run.
     image_loader: Singleton,
     assets: Assets,
+    // Exit after save has been completed.
+    exit_after_save: bool,
+    // Should exit.
+    should_exit: bool,
 }
 
 struct Flags {
@@ -83,11 +85,12 @@ impl Application for Main {
             series_list: page::series_list::State::default(),
             season: page::season::State::default(),
             queue: page::queue::State::default(),
-            save_timeout: Timeout::default(),
             database_timeout: Timeout::default(),
             update_timeout: Timeout::default(),
             image_loader: Singleton::default(),
             assets: Assets::new(),
+            exit_after_save: false,
+            should_exit: false,
         };
 
         this.prepare();
@@ -102,10 +105,38 @@ impl Application for Main {
     }
 
     fn update(&mut self, message: Message) -> Command<Self::Message> {
-        log::trace!("{message:?}");
+        if log::log_enabled!(log::Level::Trace) && !matches!(message, Message::EventOccurred(..)) {
+            log::trace!("{message:?}");
+        }
 
         let command =
             match message {
+                Message::EventOccurred(event) => {
+                    match event {
+                        iced::Event::Window(window) => match window {
+                            window::Event::CloseRequested => {
+                                self.exit_after_save = true;
+
+                                if self.database_timeout.is_set() {
+                                    self.database_timeout.clear();
+                                } else {
+                                    self.should_exit = true;
+                                }
+                            }
+                            _ => {}
+                        },
+                        _ => {}
+                    }
+
+                    return Command::none();
+                }
+                Message::Settings(message) => self.settings.update(&mut self.service, message),
+                Message::Search(message) => {
+                    self.search
+                        .update(&mut self.service, &mut self.assets, message)
+                }
+                Message::SeriesList(message) => self.series_list.update(message),
+                Message::Series(message) => self.series.update(message),
                 Message::Noop => {
                     return Command::none();
                 }
@@ -114,25 +145,27 @@ impl Application for Main {
                     self.loading = false;
                     Command::none()
                 }
-                Message::SaveConfig(timed_out) => match timed_out {
-                    TimedOut::Cancelled => Command::none(),
-                    TimedOut::TimedOut => {
-                        self.loading = true;
-                        Command::perform(self.service.save_config(self.settings.clone()), |m| m)
-                    }
-                },
-                Message::SaveDatabase(timed_out) => {
+                Message::Save(timed_out) => {
                     // To avoid a cancellation loop we need to return here.
-                    if !matches!(timed_out, TimedOut::TimedOut) {
+                    if !matches!(timed_out, TimedOut::TimedOut) && !self.exit_after_save {
                         return Command::none();
                     }
 
+                    self.database_timeout.clear();
                     self.loading = true;
 
                     Command::perform(self.service.save_changes(), |result| match result {
-                        Ok(()) => Message::SavedDatabase,
+                        Ok(()) => Message::Saved,
                         Err(error) => Message::error(error),
                     })
+                }
+                Message::Saved => {
+                    if self.exit_after_save {
+                        self.should_exit = true;
+                    }
+
+                    self.loading = false;
+                    Command::none()
                 }
                 Message::CheckForUpdates(timed_out) => {
                     match timed_out {
@@ -164,35 +197,11 @@ impl Application for Main {
                     self.service.add_to_queue(queue);
                     Command::none()
                 }
-                Message::SavedConfig => {
-                    self.loading = false;
-                    Command::none()
-                }
-                Message::SavedDatabase => {
-                    self.loading = false;
-                    Command::none()
-                }
                 Message::Navigate(page) => {
                     self.assets.clear();
                     self.page = page;
                     Command::none()
                 }
-                Message::Settings(message) => {
-                    if self.settings.update(message) {
-                        Command::perform(
-                            self.save_timeout.set(Duration::from_secs(2)),
-                            Message::SaveConfig,
-                        )
-                    } else {
-                        self.loading = true;
-                        Command::perform(self.service.save_config(self.settings.clone()), |m| m)
-                    }
-                }
-                Message::Search(message) => {
-                    self.search
-                        .update(&mut self.service, &mut self.assets, message)
-                }
-                Message::SeriesList(message) => self.series_list.update(message),
                 Message::SeriesDownloadToTrack(data) => {
                     self.service.insert_new_series(data);
                     Command::none()
@@ -276,10 +285,10 @@ impl Application for Main {
                 }
             };
 
-        let save_database = if self.service.has_changes() {
+        let save_database = if self.service.has_changes() && !self.exit_after_save {
             Command::perform(
                 self.database_timeout.set(Duration::from_secs(5)),
-                Message::SaveDatabase,
+                Message::Save,
             )
         } else {
             Command::none()
@@ -287,6 +296,16 @@ impl Application for Main {
 
         self.prepare();
         Command::batch([self.handle_image_loading(), save_database, command])
+    }
+
+    #[inline]
+    fn subscription(&self) -> iced::Subscription<Self::Message> {
+        iced_native::subscription::events().map(Message::EventOccurred)
+    }
+
+    #[inline]
+    fn should_exit(&self) -> bool {
+        self.should_exit
     }
 
     fn view(&self) -> Element<Message> {

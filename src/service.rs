@@ -4,14 +4,13 @@ use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{anyhow, bail, Context, Error, Result};
 use chrono::{DateTime, Duration, Utc};
 use iced_native::image::Handle;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::message::Message;
 use crate::model::{
     Episode, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season, SeasonNumber, Series,
     Watched,
@@ -51,10 +50,17 @@ pub(crate) struct PendingRef<'a> {
 
 #[derive(Clone, Copy, fixed_map::Key)]
 enum Change {
+    // Configuration file has changed.
+    Config,
+    // Watched list has changed.
     Watched,
+    // Pending list has changed.
     Pending,
+    // Series list has changed.
     Series,
+    // Remotes list has changed.
     Remotes,
+    // Task queue has changed.
     Queue,
 }
 
@@ -130,11 +136,19 @@ impl SeriesDatabase {
 
 #[derive(Default)]
 struct Database {
+    /// Application configuration.
+    config: State,
+    /// Remote series.
     remote_series: BTreeMap<RemoteSeriesId, Uuid>,
+    /// Remote episodes.
     remote_episodes: BTreeMap<RemoteEpisodeId, Uuid>,
+    /// Series database.
     series: SeriesDatabase,
+    /// Episodes collection.
     episodes: HashMap<Uuid, Vec<Episode>>,
+    /// Seasons collection.
     seasons: HashMap<Uuid, Vec<Season>>,
+    /// Watched list.
     watched: Vec<Watched>,
     /// Temporary set of watched episodes and its corresponding watch count.
     watch_counts: HashMap<Uuid, usize>,
@@ -336,7 +350,7 @@ impl Service {
             let mut queue = Vec::new();
 
             for (series_id, last_modified, remote_id) in interests {
-                log::trace!("{series_id}/{remote_id:?}: checking for updates (last_modified: {last_modified})");
+                log::trace!("{series_id}/{remote_id}: checking for updates (last_modified: {last_modified})");
 
                 match remote_id {
                     RemoteSeriesId::TheTvDb { id } => {
@@ -349,6 +363,10 @@ impl Service {
                         if last_modified >= update {
                             continue;
                         }
+                    }
+                    // Nothing to do with the IMDB remote.
+                    RemoteSeriesId::Imdb { .. } => {
+                        continue;
                     }
                 }
 
@@ -594,18 +612,26 @@ impl Service {
     pub(crate) fn save_changes(&mut self) -> impl Future<Output = Result<()>> {
         let changes = std::mem::take(&mut self.db.changes);
 
+        let config = changes
+            .set
+            .contains(Change::Config)
+            .then(|| self.db.config.clone());
+
         let watched = changes
             .set
             .contains(Change::Watched)
             .then(|| self.db.watched.clone());
+
         let pending = changes
             .set
             .contains(Change::Pending)
             .then(|| self.db.pending.clone());
+
         let series = changes
             .set
             .contains(Change::Series)
             .then(|| self.db.series.data.clone());
+
         let queue = changes
             .set
             .contains(Change::Queue)
@@ -648,6 +674,10 @@ impl Service {
         async move {
             let guard = paths.lock.lock().await;
 
+            if let Some(config) = config {
+                save_pretty("config", &paths.config, config).await?;
+            }
+
             if let Some(series) = series {
                 save_array("series", &paths.series, series).await?;
             }
@@ -684,7 +714,6 @@ impl Service {
                 let _ = tokio::try_join!(a, b)?;
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             drop(guard);
             Ok(())
         }
@@ -734,16 +763,10 @@ impl Service {
     }
 
     /// Load configuration file.
-    pub(crate) fn save_config(&mut self, settings: State) -> impl Future<Output = Message> {
-        self.client.set_api_key(&settings.thetvdb_legacy_apikey);
-        let paths = self.paths.clone();
-
-        async move {
-            match save_config(&paths.config, &settings).await {
-                Ok(()) => Message::SavedConfig,
-                Err(e) => Message::error(e),
-            }
-        }
+    pub(crate) fn set_config(&mut self, config: State) {
+        self.client.set_api_key(&config.thetvdb_legacy_apikey);
+        self.db.config = config;
+        self.db.changes.set.insert(Change::Config);
     }
 
     /// Check if series is tracked.
@@ -820,6 +843,9 @@ impl Service {
                     let (series, episodes) = tokio::try_join!(series, episodes)?;
                     let seasons = episodes_into_seasons(&episodes);
                     (series, episodes, seasons)
+                }
+                RemoteSeriesId::Imdb { .. } => {
+                    bail!("cannot download series data from imdb")
                 }
             };
 
@@ -933,23 +959,6 @@ pub(crate) fn load_config(path: &Path) -> Result<Option<State>> {
     };
 
     Ok(serde_json::from_slice(&bytes)?)
-}
-
-/// Save configuration file.
-pub(crate) async fn save_config(path: &Path, state: &State) -> Result<()> {
-    use tokio::fs;
-
-    let bytes = serde_json::to_vec_pretty(state)?;
-
-    if let Some(d) = path.parent() {
-        if !matches!(fs::metadata(d).await, Ok(m) if m.is_dir()) {
-            log::info!("creating directory: {}", d.display());
-            fs::create_dir_all(d).await?;
-        }
-    }
-
-    fs::write(path, bytes).await?;
-    Ok(())
 }
 
 /// Ensure that the given image IDs are in the in-memory and filesystem image
@@ -1074,6 +1083,53 @@ async fn remove_file(what: &'static str, path: &Path) -> Result<()> {
     log::trace!("{what}: removing: {}", path.display());
     let _ = tokio::fs::remove_file(path);
     Ok(())
+}
+
+/// Save series to the given path.
+fn save_pretty<I>(what: &'static str, path: &Path, data: I) -> impl Future<Output = Result<()>>
+where
+    I: 'static + Send + Serialize,
+{
+    use std::fs;
+    use std::io::Write;
+
+    log::debug!("saving {what}: {}", path.display());
+
+    let path = path.to_owned();
+
+    let task = tokio::spawn(async move {
+        let Some(dir) = path.parent() else {
+            anyhow::bail!("{what}: missing parent directory: {}", path.display());
+        };
+
+        if !matches!(fs::metadata(dir), Ok(m) if m.is_dir()) {
+            fs::create_dir_all(dir)?;
+        }
+
+        let mut f = tempfile::NamedTempFile::new_in(dir)?;
+
+        log::trace!("writing {what}: {}", f.path().display());
+
+        serde_json::to_writer_pretty(&mut f, &data)?;
+        f.write_all(&[b'\n'])?;
+
+        f.flush()?;
+        let (_, temp_path) = f.keep()?;
+
+        log::trace!(
+            "rename {what}: {} -> {}",
+            temp_path.display(),
+            path.display()
+        );
+
+        fs::rename(temp_path, path)?;
+        Ok(())
+    });
+
+    async move {
+        let output: Result<()> = task.await?;
+        output
+    }
 }
 
 /// Save series to the given path.

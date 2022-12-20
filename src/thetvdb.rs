@@ -12,7 +12,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::model::{
-    Episode, Image, RemoteEpisodeId, RemoteSeriesId, SearchSeries, SeasonNumber, Series, SeriesId,
+    Episode, Image, Raw16, RemoteEpisodeId, RemoteSeriesId, SearchSeries, SeasonNumber, Series,
+    SeriesId,
 };
 
 const BASE_URL: &str = "https://api.thetvdb.com";
@@ -164,7 +165,7 @@ impl Client {
 
         if log::log_enabled!(log::Level::Trace) {
             let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
-            log::trace!("{raw}");
+            log::trace!("series: {raw}");
         }
 
         let value: Value = serde_json::from_slice::<Data<_>>(&bytes)?.data;
@@ -185,6 +186,14 @@ impl Client {
 
         let poster = Image::parse_banner(&value.poster).context("poster image")?;
 
+        let mut remote_ids = Vec::from([RemoteSeriesId::TheTvDb { id }]);
+
+        if let Some(imdb_id) = value.imdb_id.filter(|id| !id.is_empty()) {
+            remote_ids.push(RemoteSeriesId::Imdb {
+                id: Raw16::from_string(&imdb_id),
+            });
+        }
+
         return Ok(Series {
             id: new_id,
             title: value.series_name.to_owned(),
@@ -192,7 +201,7 @@ impl Client {
             banner,
             poster,
             fanart,
-            remote_ids: Vec::from([RemoteSeriesId::TheTvDb { id }]),
+            remote_ids,
             tracked: true,
             last_modified,
             last_sync: BTreeMap::new(),
@@ -215,6 +224,8 @@ impl Client {
             airs_day_of_week: Option<String>,
             #[serde(default)]
             airs_time: Option<String>,
+            #[serde(default)]
+            imdb_id: Option<String>,
         }
     }
 
@@ -303,7 +314,7 @@ impl Client {
 
         if log::log_enabled!(log::Level::Trace) {
             let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
-            log::trace!("{raw}");
+            log::trace!("paged: {raw}");
         }
 
         let mut data: DataLinks<Vec<serde_json::Value>> = serde_json::from_slice(&bytes)?;

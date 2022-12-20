@@ -1,4 +1,5 @@
 use iced::widget::{column, radio, text, text_input, Column};
+use iced::Command;
 use serde::{Deserialize, Serialize};
 
 use crate::assets::Assets;
@@ -39,17 +40,18 @@ impl State {
     pub(crate) fn prepare(&mut self, _: &Service, _: &mut Assets) {}
 
     /// Handle theme change.
-    pub(crate) fn update(&mut self, message: M) -> bool {
+    pub(crate) fn update(&mut self, service: &mut Service, message: M) -> Command<Message> {
         match message {
             M::ThemeChanged(theme) => {
                 self.theme = theme;
-                false
             }
             M::ThetvdbLegacyApiChanged(string) => {
                 self.thetvdb_legacy_apikey = string;
-                true
             }
         }
+
+        service.set_config(self.clone());
+        Command::none()
     }
 
     /// Generate the view for the settings page.

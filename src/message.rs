@@ -68,31 +68,31 @@ impl fmt::Display for ErrorMessage {
 
 #[derive(Default, Debug, Clone)]
 pub(crate) enum Message {
-    /// Do nothing.
-    #[default]
-    Noop,
-    /// Error during operation.
-    Error(ErrorMessage),
-    /// Actually save configuration.
-    SaveConfig(TimedOut),
-    /// Save database changes.
-    SaveDatabase(TimedOut),
-    /// Check for updates.
-    CheckForUpdates(TimedOut),
-    /// Update download queue with the given items.
-    UpdateDownloadQueue(Vec<Queued>),
-    /// Configuration saved and whether it was successful or not.
-    SavedConfig,
-    /// Database was saved.
-    SavedDatabase,
-    /// Request to navigate to the specified page.
-    Navigate(Page),
+    /// Platform-specific events.
+    EventOccurred(iced_native::Event),
     /// Setting-specific messages.
     Settings(page::settings::M),
     /// Search-specific messages.
     Search(page::search::M),
     /// SeriesList-specific messages.
     SeriesList(page::series_list::M),
+    /// Series-specific messages.
+    Series(page::series::M),
+    /// Do nothing.
+    #[default]
+    Noop,
+    /// Error during operation.
+    Error(ErrorMessage),
+    /// Save application changes.
+    Save(TimedOut),
+    /// Application state was saved.
+    Saved,
+    /// Check for updates.
+    CheckForUpdates(TimedOut),
+    /// Update download queue with the given items.
+    UpdateDownloadQueue(Vec<Queued>),
+    /// Request to navigate to the specified page.
+    Navigate(Page),
     /// Series tracked.
     SeriesDownloadToTrack(NewSeries),
     /// Refresh series data.

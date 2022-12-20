@@ -115,3 +115,18 @@ impl ser::Serialize for Hex16 {
         serializer.collect_str(self)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Hex16;
+
+    #[test]
+    fn test_hex16() {
+        let id = Hex16::from(0x61d78641a649a);
+        assert_eq!(id.to_string(), "61d78641a649a");
+        let id = Hex16::from_hex(b"61d78641a649a").unwrap();
+        assert_eq!(id.to_string(), "61d78641a649a");
+        let id = Hex16::from_hex("61d78641a649a").unwrap();
+        assert_eq!(id.to_string(), "61d78641a649a");
+    }
+}

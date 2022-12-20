@@ -1,14 +1,19 @@
-use iced::theme;
 use iced::widget::{button, column, image, row, text, Column, Row};
+use iced::{theme, Command};
 use iced::{Alignment, Length};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::assets::Assets;
 use crate::message::{Message, Page};
-use crate::model::{Season, Series};
+use crate::model::{RemoteSeriesId, Season, Series};
 use crate::params::{centered, style, ACTION_SIZE, GAP, GAP2, SPACE, SUBTITLE_SIZE, TITLE_SIZE};
 use crate::service::Service;
+
+#[derive(Debug, Clone)]
+pub(crate) enum M {
+    OpenRemote(RemoteSeriesId),
+}
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub(crate) struct State;
@@ -21,6 +26,27 @@ impl State {
         }
     }
 
+    /// Handle series messages.
+    pub(crate) fn update(&mut self, message: M) -> Command<Message> {
+        match message {
+            M::OpenRemote(remote_id) => {
+                let url = match remote_id {
+                    RemoteSeriesId::TheTvDb { id } => {
+                        format!("https://thetvdb.com/search?query={id}")
+                    }
+                    RemoteSeriesId::Imdb { id } => {
+                        format!("https://www.imdb.com/title/{id}/")
+                    }
+                };
+
+                let _ = webbrowser::open_browser(webbrowser::Browser::Default, &url);
+            }
+        }
+
+        Command::none()
+    }
+
+    /// Render view of series.
     pub(crate) fn view(
         &self,
         service: &Service,
@@ -31,7 +57,21 @@ impl State {
             return column![text("no series")];
         };
 
-        let top = series_banner(assets, series).spacing(GAP);
+        let mut top = series_banner(assets, series);
+
+        if !series.remote_ids.is_empty() {
+            let mut remotes = row![];
+
+            for remote_id in &series.remote_ids {
+                remotes = remotes.push(
+                    button(text(remote_id.to_string()))
+                        .style(theme::Button::Text)
+                        .on_press(Message::Series(M::OpenRemote(*remote_id))),
+                );
+            }
+
+            top = top.push(remotes.spacing(SPACE));
+        }
 
         let mut seasons = column![];
 
@@ -62,7 +102,7 @@ impl State {
             count => text(format!("{count} episodes")),
         };
 
-        let mut header = column![top, actions(series).spacing(SPACE), info,];
+        let mut header = column![top.spacing(GAP), actions(series).spacing(SPACE), info,];
 
         if let Some(overview) = &series.overview {
             header = header.push(text(overview));

@@ -1,9 +1,6 @@
 mod hex16;
 mod raw16;
 
-#[cfg(test)]
-mod tests;
-
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -33,13 +30,17 @@ pub(crate) enum RemoteId {
 #[serde(rename_all = "kebab-case", tag = "remote")]
 pub(crate) enum RemoteSeriesId {
     TheTvDb { id: SeriesId },
+    Imdb { id: Raw16 },
 }
 
 impl fmt::Display for RemoteSeriesId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RemoteSeriesId::TheTvDb { id } => {
-                write!(f, "thetvdb.com (series id: {id})")
+                write!(f, "thetvdb.com ({id})")
+            }
+            RemoteSeriesId::Imdb { id } => {
+                write!(f, "imdb.com ({id})")
             }
         }
     }

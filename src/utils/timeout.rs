@@ -20,6 +20,16 @@ pub(crate) struct Timeout {
 }
 
 impl Timeout {
+    /// Clear timeout.
+    pub(crate) fn clear(&mut self) {
+        self.tx = None;
+    }
+
+    /// Test if timeout is set.
+    pub(crate) fn is_set(&self) -> bool {
+        self.tx.is_some()
+    }
+
     /// Set a new timeout.
     pub(crate) fn set(&mut self, duration: Duration) -> impl Future<Output = TimedOut> {
         let (tx, rx) = oneshot::channel();
