@@ -36,7 +36,7 @@ impl State {
         let mut seasons = column![];
 
         for season in service.seasons(series.id) {
-            let title = button(season.title().size(SUBTITLE_SIZE))
+            let title = button(season.number.title().size(SUBTITLE_SIZE))
                 .padding(0)
                 .style(theme::Button::Text)
                 .on_press(Message::Navigate(Page::Season(series.id, season.number)));
@@ -49,7 +49,7 @@ impl State {
                             .spacing(GAP)
                             .width(Length::Fill)
                     ]
-                    .spacing(GAP),
+                    .spacing(SPACE),
                     Some(style::weak),
                 )
                 .padding(GAP),
@@ -112,17 +112,7 @@ pub(crate) fn season_info(
     series: &Series,
     season: &Season,
 ) -> Column<'static, Message> {
-    let mut total = 0;
-    let mut watched = 0;
-
-    for episode in service
-        .episodes(series.id)
-        .filter(|e| e.season == season.number)
-    {
-        total += 1;
-        watched += usize::from(service.watch_count(episode.id) != 0);
-    }
-
+    let (watched, total) = service.season_watched(series.id, season.number);
     let mut actions = row![].spacing(SPACE);
 
     if watched < total {

@@ -71,10 +71,36 @@ impl Changes {
 }
 
 #[derive(Default)]
+struct SeriesDatabase {
+    data: Vec<Series>,
+    by_id: HashMap<Uuid, usize>,
+}
+
+impl SeriesDatabase {
+    /// Get a series immutably.
+    fn get(&self, id: &Uuid) -> Option<&Series> {
+        let &index = self.by_id.get(id)?;
+        self.data.get(index)
+    }
+
+    /// Get a series mutably.
+    fn get_mut(&mut self, id: &Uuid) -> Option<&mut Series> {
+        let &index = self.by_id.get(id)?;
+        self.data.get_mut(index)
+    }
+
+    /// Remove the series by the given identifier.
+    fn remove(&mut self, id: &Uuid) -> Option<Series> {
+        let index = self.by_id.remove(id)?;
+        Some(self.data.remove(index))
+    }
+}
+
+#[derive(Default)]
 struct Database {
     remote_series: BTreeMap<RemoteSeriesId, Uuid>,
     remote_episodes: BTreeMap<RemoteEpisodeId, Uuid>,
-    series: BTreeMap<Uuid, Series>,
+    series: SeriesDatabase,
     episodes: HashMap<Uuid, Vec<Episode>>,
     seasons: HashMap<Uuid, Vec<Season>>,
     watched: Vec<Watched>,
@@ -159,7 +185,7 @@ impl Service {
 
     /// Get list of series.
     pub(crate) fn all_series(&self) -> impl Iterator<Item = &Series> {
-        self.db.series.values()
+        self.db.series.data.iter()
     }
 
     /// Iterator over available episodes.
@@ -184,6 +210,19 @@ impl Service {
             .get(&episode_id)
             .copied()
             .unwrap_or_default()
+    }
+
+    /// Get season summary statistics.
+    pub(crate) fn season_watched(&self, series_id: Uuid, season: SeasonNumber) -> (usize, usize) {
+        let mut total = 0;
+        let mut watched = 0;
+
+        for episode in self.episodes(series_id).filter(|e| e.season == season) {
+            total += 1;
+            watched += usize::from(self.watch_count(episode.id) != 0);
+        }
+
+        (watched, total)
     }
 
     /// Get the pending episode for the given series.
@@ -419,7 +458,7 @@ impl Service {
 
         let watched = changes.watched.then(|| self.db.watched.clone());
         let pending = changes.pending.then(|| self.db.pending.clone());
-        let series = changes.series.then(|| self.db.series.clone());
+        let series = changes.series.then(|| self.db.series.data.clone());
         let remove_series = changes.remove;
         let mut add_series = Vec::with_capacity(changes.add.len());
 
@@ -458,7 +497,7 @@ impl Service {
             let guard = paths.lock.lock().await;
 
             if let Some(series) = series {
-                save_array("series", &paths.series, series.values()).await?;
+                save_array("series", &paths.series, series).await?;
             }
 
             if let Some(watched) = watched {
@@ -681,9 +720,19 @@ impl Service {
         }
 
         self.db.episodes.insert(series_id, data.episodes.clone());
-
         self.db.seasons.insert(series_id, data.seasons.clone());
-        self.db.series.insert(series_id, data.series);
+
+        if let Some(current) = self.db.series.get_mut(&data.series.id) {
+            *current = data.series;
+        } else {
+            self.db.series.data.push(data.series);
+            self.db.series.data.sort_by(|a, b| a.title.cmp(&b.title));
+            self.db.series.by_id.clear();
+
+            for (index, s) in self.db.series.data.iter().enumerate() {
+                self.db.series.by_id.insert(s.id, index);
+            }
+        }
 
         if data.refresh_pending {
             // Remove any pending episodes for the given series.
@@ -801,7 +850,9 @@ fn load_database(paths: &Paths) -> Result<Database> {
                 db.remote_series.insert(id, s.id);
             }
 
-            db.series.insert(s.id, s);
+            let len = db.series.data.len();
+            db.series.by_id.insert(s.id, len);
+            db.series.data.push(s);
         }
     }
 

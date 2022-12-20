@@ -120,6 +120,26 @@ pub enum SeasonNumber {
     Unknown,
 }
 
+impl SeasonNumber {
+    /// Build season title.
+    pub(crate) fn title(&self) -> Text<'static> {
+        match self {
+            SeasonNumber::Number(number) => text(format!("Season {}", number)),
+            SeasonNumber::Specials => text("Specials"),
+            SeasonNumber::Unknown => text("N/A"),
+        }
+    }
+
+    /// Build season title.
+    pub(crate) fn short(&self) -> Text<'static> {
+        match self {
+            SeasonNumber::Number(number) => text(format!("S{}", number)),
+            SeasonNumber::Specials => text("S"),
+            SeasonNumber::Unknown => text("N/A"),
+        }
+    }
+}
+
 /// A season in a series.
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -127,17 +147,6 @@ pub struct Season {
     /// The number of the season.
     #[serde(default)]
     pub(crate) number: SeasonNumber,
-}
-
-impl Season {
-    /// Build season title.
-    pub(crate) fn title(&self) -> Text<'static> {
-        match self.number {
-            SeasonNumber::Number(number) => text(format!("Season {}", number)),
-            SeasonNumber::Specials => text("Specials"),
-            SeasonNumber::Unknown => text("No season"),
-        }
-    }
 }
 
 /// An episode in a series.

@@ -1,14 +1,12 @@
 use iced::alignment::Horizontal;
 use iced::theme;
-use iced::widget::{button, column, container, image, row, text, vertical_space, Column};
+use iced::widget::{button, column, image, row, text, vertical_space, Column};
 use iced::{Alignment, Length};
 
 use crate::assets::Assets;
 use crate::message::{Message, Page};
 use crate::model::SeasonNumber;
-use crate::params::{
-    centered, style, ACTION_SIZE, GAP, SCREENCAP_HEIGHT, SMALL_SIZE, SPACE, SUBTITLE_SIZE,
-};
+use crate::params::{centered, style, ACTION_SIZE, GAP, SMALL_SIZE, SPACE, SUBTITLE_SIZE};
 use crate::service::{PendingRef, Service};
 
 /// The state for the settings page.
@@ -18,13 +16,7 @@ pub(crate) struct Dashboard {}
 impl Dashboard {
     /// Prepare data that is needed for the view.
     pub(crate) fn prepare(&mut self, service: &Service, assets: &mut Assets) {
-        assets.mark(
-            service
-                .pending()
-                .rev()
-                .take(5)
-                .flat_map(|p| p.episode.filename),
-        );
+        assets.mark(service.pending().rev().take(5).map(|p| p.series.poster));
     }
 
     /// Generate the view for the settings page.
@@ -39,51 +31,29 @@ impl Dashboard {
 
             actions = actions.push(
                 button(
-                    text("W")
+                    text("Mark")
                         .horizontal_alignment(Horizontal::Center)
                         .size(ACTION_SIZE),
                 )
                 .style(theme::Button::Positive)
                 .on_press(Message::Watch(series.id, episode.id))
-                .width(Length::Units(36)),
+                .width(Length::FillPortion(2)),
             );
 
             actions = actions.push(
                 button(
-                    text("S")
+                    text("Skip")
                         .horizontal_alignment(Horizontal::Center)
                         .size(ACTION_SIZE),
                 )
-                .style(theme::Button::Positive)
+                .style(theme::Button::Secondary)
                 .on_press(Message::Skip(series.id, episode.id))
-                .width(Length::Units(36)),
-            );
-
-            actions = actions.push(
-                button(
-                    text("Series")
-                        .horizontal_alignment(Horizontal::Center)
-                        .size(ACTION_SIZE),
-                )
-                .style(theme::Button::Primary)
-                .on_press(Message::Navigate(Page::Series(series.id)))
                 .width(Length::FillPortion(2)),
             );
 
-            actions = actions.push(
-                button(
-                    text("Season")
-                        .horizontal_alignment(Horizontal::Center)
-                        .size(ACTION_SIZE),
-                )
-                .style(theme::Button::Primary)
-                .on_press(Message::Navigate(Page::Season(series.id, episode.season)))
-                .width(Length::FillPortion(2)),
-            );
-
-            let handle = match episode.filename.and_then(|handle| assets.image(&handle)) {
+            let handle = match assets.image(&series.poster) {
                 Some(handle) => handle,
-                None => assets.missing_screencap(),
+                None => assets.missing_poster(),
             };
 
             let mut episode_number = match episode.season {
@@ -113,13 +83,39 @@ impl Dashboard {
                 );
             }
 
+            let series_name = button(
+                text(&series.title)
+                    .horizontal_alignment(Horizontal::Center)
+                    .size(ACTION_SIZE),
+            )
+            .style(theme::Button::Text)
+            .on_press(Message::Navigate(Page::Series(series.id)));
+
+            let season_name = button(
+                episode
+                    .season
+                    .short()
+                    .horizontal_alignment(Horizontal::Center)
+                    .size(ACTION_SIZE),
+            )
+            .style(theme::Button::Text)
+            .on_press(Message::Navigate(Page::Season(series.id, episode.season)));
+
+            let image = button(image(handle).width(Length::Fill))
+                .width(Length::Fill)
+                .padding(0)
+                .style(theme::Button::Text)
+                .on_press(Message::Navigate(Page::Series(series.id)));
+
             pending = pending.push(
                 column![
-                    text(&series.title).size(SMALL_SIZE),
                     column![
-                        container(image(handle)).max_height(SCREENCAP_HEIGHT),
+                        row![series_name, season_name].spacing(SPACE),
+                        image,
                         actions,
                     ]
+                    .width(Length::Fill)
+                    .align_items(Alignment::Center)
                     .spacing(SPACE),
                     column![
                         episode_info.horizontal_alignment(Horizontal::Center),

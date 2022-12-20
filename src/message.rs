@@ -85,6 +85,8 @@ pub(crate) enum Message {
     Settings(page::settings::M),
     /// Search-specific messages.
     Search(page::search::M),
+    /// SeriesList-specific messages.
+    SeriesList(page::series_list::M),
     /// Series tracked.
     SeriesDownloadToTrack(NewSeries),
     /// Refresh series data.

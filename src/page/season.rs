@@ -105,9 +105,13 @@ impl State {
 
             if pending != Some(episode.id) {
                 actions = actions.push(
-                    button(text("Set next episode").size(ACTION_SIZE))
-                        .style(theme::Button::Destructive)
+                    button(text("Make next episode").size(ACTION_SIZE))
+                        .style(theme::Button::Secondary)
                         .on_press(Message::SelectPending(series_id, episode.id)),
+                );
+            } else {
+                actions = actions.push(
+                    button(text("Next episode").size(ACTION_SIZE)).style(theme::Button::Secondary),
                 );
             }
 
@@ -148,7 +152,7 @@ impl State {
             );
         }
 
-        let season_title = season.title().size(SUBTITLE_SIZE);
+        let season_title = season.number.title().size(SUBTITLE_SIZE);
 
         let banner = series_banner(assets, series)
             .push(season_title)

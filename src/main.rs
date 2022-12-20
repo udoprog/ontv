@@ -13,7 +13,7 @@ use anyhow::Result;
 use iced::alignment::Horizontal;
 use iced::theme::{self, Theme};
 use iced::widget::{
-    button, column, container, horizontal_rule, row, scrollable, text, Space, Text,
+    button, column, container, horizontal_rule, row, scrollable, text, Button, Space,
 };
 use iced::{Alignment, Application, Command, Element, Length, Settings};
 use iced_native::image::Handle;
@@ -23,7 +23,7 @@ use utils::Singleton;
 use crate::assets::Assets;
 use crate::message::{Message, Page, ThemeType};
 use crate::model::Image;
-use crate::params::{GAP, GAP2, SPACE, SPACE2, SUB_MENU_SIZE};
+use crate::params::{GAP, GAP2, HALF_GAP, SPACE, SUB_MENU_SIZE};
 use crate::service::Service;
 use crate::utils::Timeout;
 
@@ -150,6 +150,7 @@ impl Application for Main {
                 self.search
                     .update(&mut self.service, &mut self.assets, message)
             }
+            Message::SeriesList(message) => self.series_list.update(message),
             Message::SeriesDownloadToTrack(data) => {
                 self.service.insert_new_series(data);
                 Command::none()
@@ -250,49 +251,44 @@ impl Application for Main {
     }
 
     fn view(&self) -> Element<Message> {
-        let menu_item = |at: &Page, title: Text<'static>, page: Page| {
-            let current = button(title)
-                .padding(0)
-                .style(theme::Button::Text)
-                .width(Length::Fill);
-
-            if *at == page {
-                current
-            } else {
-                current.on_press(Message::Navigate(page))
-            }
-        };
-
-        let mut menu = column![].spacing(SPACE).padding(GAP).max_width(140);
+        let mut menu = column![].spacing(HALF_GAP).padding(GAP).max_width(200);
 
         menu = menu.push(menu_item(&self.page, text("Dashboard"), Page::Dashboard));
         menu = menu.push(menu_item(&self.page, text("Search"), Page::Search));
         menu = menu.push(menu_item(&self.page, text("Series"), Page::SeriesList));
 
-        if let Page::Series(id) | Page::Season(id, _) = self.page {
-            if let Some(series) = self.service.series(id) {
-                menu = menu.push(row![
+        if let Page::Series(series_id) | Page::Season(series_id, _) = self.page {
+            let mut sub_menu = column![];
+
+            if let Some(series) = self.service.series(series_id) {
+                sub_menu = sub_menu.push(row![
                     Space::new(Length::Units(SPACE), Length::Shrink),
                     menu_item(
                         &self.page,
                         text(&series.title).size(SUB_MENU_SIZE),
-                        Page::Series(id)
+                        Page::Series(series_id)
                     )
                 ]);
             }
 
-            for season in self.service.seasons(id) {
-                let title = season.title();
+            for season in self.service.seasons(series_id) {
+                let title = season.number.title();
+                let (watched, total) = self.service.season_watched(series_id, season.number);
 
-                menu = menu.push(row![
-                    Space::new(Length::Units(SPACE2), Length::Shrink),
-                    menu_item(
-                        &self.page,
-                        title.size(SUB_MENU_SIZE),
-                        Page::Season(id, season.number),
-                    )
+                let mut title = row![title.size(SUB_MENU_SIZE)];
+
+                if let Some(p) = watched.saturating_mul(100).checked_div(total) {
+                    title = title
+                        .push(text(format!(" - {p}% ({watched}/{total})")).size(SUB_MENU_SIZE));
+                }
+
+                sub_menu = sub_menu.push(row![
+                    Space::new(Length::Units(HALF_GAP), Length::Shrink),
+                    menu_item(&self.page, title, Page::Season(series_id, season.number),)
                 ]);
             }
+
+            menu = menu.push(sub_menu.spacing(SPACE));
         }
 
         menu = menu.push(menu_item(&self.page, text("Settings"), Page::Settings));
@@ -396,5 +392,22 @@ impl Main {
 
         let future = self.image_loader.set(self.service.load_image(id));
         Command::perform(future, translate)
+    }
+}
+
+/// Helper for building menu items.
+fn menu_item<E>(at: &Page, element: E, page: Page) -> Button<'static, Message>
+where
+    Element<'static, Message>: From<E>,
+{
+    let current = button(element)
+        .padding(0)
+        .style(theme::Button::Text)
+        .width(Length::Fill);
+
+    if *at == page {
+        current
+    } else {
+        current.on_press(Message::Navigate(page))
     }
 }
