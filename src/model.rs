@@ -300,14 +300,17 @@ impl Image {
                     bail!("{input}: missing extension");
                 };
 
-                let Some((series_id, suffix)) = rest.split_once('-') else {
-                    bail!("{input}: missing suffix");
+                let format = ImageFormat::parse(ext)?;
+
+                let kind = if let Some((series_id, suffix)) = rest.split_once('-') {
+                    let series_id = series_id.parse()?;
+                    let suffix = Raw16::from_string(suffix);
+                    ImageKind::GraphicalSuffixed(series_id, suffix)
+                } else {
+                    let id = Hex16::from_hex(rest).context("bad hex")?;
+                    ImageKind::Graphical(id)
                 };
 
-                let series_id = series_id.parse()?;
-                let suffix = Raw16::from_string(suffix);
-                let format = ImageFormat::parse(ext)?;
-                let kind = ImageKind::Graphical(series_id, suffix);
                 (kind, format)
             }
             (Some("fanart"), Some("original"), Some(name), None, None, None) => {
@@ -428,7 +431,8 @@ pub(crate) enum ImageKind {
     V4(u64, ArtKind, Hex16),
     Banner(Hex16),
     BannerSuffixed(u64, Raw16),
-    Graphical(u64, Raw16),
+    Graphical(Hex16),
+    GraphicalSuffixed(u64, Raw16),
     Fanart(Hex16),
     FanartSuffixed(u64, Raw16),
     ScreenCap(u64, Hex16),
@@ -453,7 +457,10 @@ impl fmt::Display for Image {
             ImageKind::BannerSuffixed(series_id, suffix) => {
                 write!(f, "/banners/posters/{series_id}-{suffix}.{format}")
             }
-            ImageKind::Graphical(series_id, suffix) => {
+            ImageKind::Graphical(id) => {
+                write!(f, "/banners/graphical/{id}.{format}")
+            }
+            ImageKind::GraphicalSuffixed(series_id, suffix) => {
                 write!(f, "/banners/graphical/{series_id}-{suffix}.{format}")
             }
             ImageKind::Fanart(id) => {

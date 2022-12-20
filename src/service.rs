@@ -87,6 +87,8 @@ struct Database {
 }
 
 struct Paths {
+    /// Mutex to avoid clobbering the filesystem with multiple concurrent writes - but only from the same application.
+    lock: tokio::sync::Mutex<()>,
     /// Path to configuration file.
     config: Box<Path>,
     /// Path where remote mappings are stored.
@@ -121,6 +123,7 @@ impl Service {
             .context("missing project dirs")?;
 
         let paths = Paths {
+            lock: tokio::sync::Mutex::new(()),
             config: dirs.config_dir().join("config.json").into(),
             remotes: dirs.config_dir().join("remotes.json").into(),
             series: dirs.config_dir().join("series.json").into(),
@@ -254,6 +257,80 @@ impl Service {
         self.setup_pending(series, Some(episode))
     }
 
+    /// Remove all watches of the given episode.
+    pub(crate) fn remove_episode_watches(
+        &mut self,
+        series: Uuid,
+        episode: Uuid,
+        timestamp: DateTime<Utc>,
+    ) {
+        self.db.watched.retain(|w| w.episode != episode);
+        let _ = self.db.watch_counts.remove(&episode);
+        self.db.pending.retain(|p| p.series != series);
+
+        self.db.pending.push(Pending {
+            series,
+            episode,
+            timestamp,
+        });
+
+        self.db.changes.watched = true;
+        self.db.changes.pending = true;
+    }
+
+    /// Remove all watches of the given episode.
+    pub(crate) fn remove_season_watches(
+        &mut self,
+        series: Uuid,
+        season: SeasonNumber,
+        timestamp: DateTime<Utc>,
+    ) {
+        let mut removed = Vec::new();
+
+        self.db.watched.retain(|w| {
+            if w.series != series {
+                return true;
+            };
+
+            let Some(episodes) = self.db.episodes.get(&w.series) else {
+                return true;
+            };
+
+            let Some(episode) = episodes.iter().find(|e| e.id == w.episode) else {
+                return true;
+            };
+
+            if episode.season == season {
+                removed.push(episode.id);
+                false
+            } else {
+                true
+            }
+        });
+
+        for id in removed {
+            let _ = self.db.watch_counts.remove(&id);
+        }
+
+        self.db.changes.watched = true;
+        self.db.pending.retain(|p| p.series != series);
+        self.db.changes.pending = true;
+
+        let Some(episodes) = self.db.episodes.get(&series) else {
+            return;
+        };
+
+        // Find the first episode matching the given season and make that the
+        // pending episode.
+        if let Some(episode) = episodes.iter().find(|e| e.season == season) {
+            self.db.pending.push(Pending {
+                series,
+                episode: episode.id,
+                timestamp,
+            });
+        }
+    }
+
     /// Set up next pending episode.
     fn setup_pending(&mut self, series: Uuid, episode: Option<Uuid>) {
         // Remove any pending episodes for the given series.
@@ -306,6 +383,8 @@ impl Service {
         let paths = self.paths.clone();
 
         async move {
+            let guard = paths.lock.lock().await;
+
             if let Some(series) = series {
                 save_array("series", &paths.series, series.values()).await?;
             }
@@ -338,6 +417,8 @@ impl Service {
                 let _ = tokio::try_join!(a, b)?;
             }
 
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            drop(guard);
             Ok(())
         }
     }
@@ -689,7 +770,9 @@ fn load_series(path: &Path) -> Result<Option<Vec<Series>>> {
         Err(e) => return Err(e.into()),
     };
 
-    Ok(Some(load_array_from_reader(f)?))
+    Ok(Some(
+        load_array_from_reader(f).with_context(|| anyhow!("{}", path.display()))?,
+    ))
 }
 
 /// Remove the given file.
@@ -767,8 +850,9 @@ where
             continue;
         };
 
-        let f = std::fs::File::open(path)?;
-        output.push((id, load_array_from_reader(f)?));
+        let f = std::fs::File::open(&path)?;
+        let array = load_array_from_reader(f).with_context(|| anyhow!("{}", path.display()))?;
+        output.push((id, array));
     }
 
     Ok(Some(output))

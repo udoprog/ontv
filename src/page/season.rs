@@ -76,7 +76,7 @@ impl State {
                 .filter(|w| w.episode == episode.id)
                 .collect::<Vec<_>>();
 
-            let mut actions = row![];
+            let mut actions = row![].spacing(GAP);
 
             let watch_text = match &watched[..] {
                 [] => text("First watch"),
@@ -88,6 +88,19 @@ impl State {
                     .style(theme::Button::Positive)
                     .on_press(Message::Watch(id, episode.id)),
             );
+
+            if !watched.is_empty() {
+                let remove_watch_text = match &watched[..] {
+                    [_] => text("Remove watch"),
+                    _ => text("Remove all watches"),
+                };
+
+                actions = actions.push(
+                    button(remove_watch_text.size(ACTION_SIZE))
+                        .style(theme::Button::Destructive)
+                        .on_press(Message::RemoveEpisodeWatches(id, episode.id)),
+                );
+            }
 
             let mut info = column![name].spacing(GAP);
 

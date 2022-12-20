@@ -128,6 +128,14 @@ pub(crate) fn season_info(
         );
     }
 
+    if watched != 0 {
+        actions = actions.push(
+            button(text("Remove watches").size(ACTION_SIZE))
+                .style(theme::Button::Destructive)
+                .on_press(Message::RemoveSeasonWatches(series.id, season.number)),
+        );
+    }
+
     let mut info = column![].spacing(GAP);
 
     let plural = match total {

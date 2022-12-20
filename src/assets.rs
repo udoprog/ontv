@@ -4,12 +4,14 @@ use iced_native::image::Handle;
 
 use crate::model::Image;
 
+static MISSING_POSTER: &[u8] = include_bytes!("../assets/missing_poster.png");
 static MISSING_BANNER: &[u8] = include_bytes!("../assets/missing_banner.png");
 static MISSING_SCRENCAP: &[u8] = include_bytes!("../assets/missing_screencap.png");
 
 /// Keeping track of assets that needs to be stored in-memory or loaded from the
 /// filesystem.
 pub(crate) struct Assets {
+    missing_poster: Handle,
     missing_banner: Handle,
     missing_screencap: Handle,
     /// Set to clear image cache on next commit.
@@ -26,10 +28,12 @@ pub(crate) struct Assets {
 
 impl Assets {
     pub(crate) fn new() -> Self {
+        let missing_poster = Handle::from_memory(MISSING_POSTER);
         let missing_banner = Handle::from_memory(MISSING_BANNER);
         let missing_screencap = Handle::from_memory(MISSING_SCRENCAP);
 
         Self {
+            missing_poster,
             missing_banner,
             missing_screencap,
             clear: false,
@@ -101,6 +105,11 @@ impl Assets {
         for (id, handle) in loaded {
             self.images.insert(id, handle);
         }
+    }
+
+    /// Get a placeholder image for a missing poster.
+    pub(crate) fn missing_poster(&self) -> Handle {
+        self.missing_poster.clone()
     }
 
     /// Get an image, will return the default handle if the given image doesn't exist.

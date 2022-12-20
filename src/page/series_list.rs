@@ -24,7 +24,7 @@ impl SeriesList {
         for s in service.all_series() {
             let handle = match assets.image(&s.poster) {
                 Some(handle) => handle,
-                None => assets.missing_banner(),
+                None => assets.missing_poster(),
             };
 
             let graphic = image(handle).height(Length::Units(200));

@@ -95,8 +95,12 @@ pub(crate) enum Message {
     AddSeriesByRemote(RemoteSeriesId),
     /// Mark the given series / episode as watched.
     Watch(Uuid, Uuid),
+    /// Remove all watches.
+    RemoveEpisodeWatches(Uuid, Uuid),
     /// Weatch the remainder of all unwatched episodes in the specified season.
     WatchRemainingSeason(Uuid, SeasonNumber),
+    /// Remove all matching season watches.
+    RemoveSeasonWatches(Uuid, SeasonNumber),
     /// Start tracking the series with the given ID.
     Track(Uuid),
     /// Stop tracking the given show.

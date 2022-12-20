@@ -85,14 +85,6 @@ impl Search {
 
     /// Generate the view for the settings page.
     pub(crate) fn view(&self, service: &Service, assets: &Assets) -> Column<'static, Message> {
-        let submit = button("Search");
-
-        let submit = if !self.text.is_empty() {
-            submit.on_press(Message::Search(M::Search))
-        } else {
-            submit
-        };
-
         let mut results = column![].spacing(GAP2).padding(GAP);
 
         for series in self.series.iter().skip(self.page * PER_PAGE).take(PER_PAGE) {
@@ -160,18 +152,21 @@ impl Search {
             .padding(GAP);
         }
 
-        column![
-            text("Search"),
-            row![
-                text_input("Query...", &self.text, |value| Message::Search(M::Change(
-                    value
-                ))),
-                submit,
-            ],
-            results,
-            pages,
-        ]
-        .spacing(GAP)
-        .padding(GAP)
+        let query = text_input("Query...", &self.text, |value| {
+            Message::Search(M::Change(value))
+        })
+        .on_submit(Message::Search(M::Search));
+
+        let submit = button("Search");
+
+        let submit = if !self.text.is_empty() {
+            submit.on_press(Message::Search(M::Search))
+        } else {
+            submit
+        };
+
+        column![text("Search"), row![query, submit,], results, pages,]
+            .spacing(GAP)
+            .padding(GAP)
     }
 }

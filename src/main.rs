@@ -12,16 +12,18 @@ use std::time::Duration;
 use anyhow::Result;
 use iced::alignment::Horizontal;
 use iced::theme::{self, Theme};
-use iced::widget::{button, column, container, row, scrollable, text, Space, Text};
+use iced::widget::{
+    button, column, container, horizontal_rule, row, scrollable, text, Space, Text,
+};
 use iced::{Alignment, Application, Command, Element, Length, Settings};
 use iced_native::image::Handle;
-use params::WARNING_COLOR;
+use params::ACTION_SIZE;
 use utils::Singleton;
 
 use crate::assets::Assets;
 use crate::message::{Message, Page, ThemeType};
 use crate::model::Image;
-use crate::params::{CONTAINER_WIDTH, GAP, GAP2, NOTICE_SIZE, SPACE, SPACE2, SUB_MENU_SIZE};
+use crate::params::{CONTAINER_WIDTH, GAP, GAP2, SPACE, SPACE2, SUB_MENU_SIZE};
 use crate::service::Service;
 use crate::utils::Timeout;
 
@@ -178,15 +180,27 @@ impl Application for Main {
                     Command::perform(self.service.download_series_by_remote(id), translate)
                 }
             }
+            Message::Watch(series, episode) => {
+                let timestamp = chrono::Utc::now();
+                self.service.watch(series, episode, timestamp);
+                Command::none()
+            }
+            Message::RemoveEpisodeWatches(series, episode) => {
+                let timestamp = chrono::Utc::now();
+                self.service
+                    .remove_episode_watches(series, episode, timestamp);
+                Command::none()
+            }
+            Message::RemoveSeasonWatches(series, season) => {
+                let timestamp = chrono::Utc::now();
+                self.service
+                    .remove_season_watches(series, season, timestamp);
+                Command::none()
+            }
             Message::WatchRemainingSeason(series, season) => {
                 let timestamp = chrono::Utc::now();
                 self.service
                     .watch_remaining_season(series, season, timestamp);
-                Command::none()
-            }
-            Message::Watch(series, episode) => {
-                let timestamp = chrono::Utc::now();
-                self.service.watch(series, episode, timestamp);
                 Command::none()
             }
             Message::Track(id) => {
@@ -295,20 +309,21 @@ impl Application for Main {
 
         let mut window = column![];
 
+        window = window.push(content);
+
         if self.loading {
+            window = window.push(horizontal_rule(1));
             window = window.push(
-                row![text("Loading")
+                row![text("Saving...")
                     .width(Length::Fill)
-                    .size(NOTICE_SIZE)
-                    .horizontal_alignment(Horizontal::Center)
-                    .style(theme::Text::Color(WARNING_COLOR))]
+                    .size(ACTION_SIZE)
+                    .horizontal_alignment(Horizontal::Left)]
                 .width(Length::Fill)
+                .height(Length::Shrink)
                 .align_items(Alignment::Center)
                 .padding(GAP),
             );
         }
-
-        window = window.push(content);
 
         container(window)
             .width(Length::Fill)

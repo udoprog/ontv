@@ -1,3 +1,4 @@
+use iced::alignment::Horizontal;
 use iced::theme;
 use iced::widget::{button, column, container, image, row, text, Column};
 use iced::{Alignment, Length};
@@ -5,7 +6,7 @@ use iced::{Alignment, Length};
 use crate::assets::Assets;
 use crate::message::{Message, Page};
 use crate::model::SeasonNumber;
-use crate::params::{ACTION_SIZE, GAP, GAP2, SCREENCAP_HEIGHT, SPACE};
+use crate::params::{ACTION_SIZE, GAP, GAP2, SCREENCAP_HEIGHT, SMALL_SIZE, SPACE};
 use crate::service::{PendingRef, Service};
 
 /// The state for the settings page.
@@ -32,21 +33,47 @@ impl Dashboard {
             let mut actions = row![].spacing(SPACE);
 
             actions = actions.push(
-                button(text("Show").size(ACTION_SIZE))
-                    .style(theme::Button::Primary)
-                    .on_press(Message::Navigate(Page::Series(series.id))),
+                button(
+                    text("Watch")
+                        .horizontal_alignment(Horizontal::Center)
+                        .size(ACTION_SIZE),
+                )
+                .style(theme::Button::Positive)
+                .on_press(Message::Watch(series.id, episode.id))
+                .width(Length::FillPortion(1)),
             );
 
             actions = actions.push(
-                button(text("Season").size(ACTION_SIZE))
-                    .style(theme::Button::Primary)
-                    .on_press(Message::Navigate(Page::Season(series.id, episode.season))),
+                button(
+                    text("Skip")
+                        .horizontal_alignment(Horizontal::Center)
+                        .size(ACTION_SIZE),
+                )
+                .style(theme::Button::Positive)
+                .on_press(Message::Skip(series.id, episode.id))
+                .width(Length::FillPortion(1)),
             );
 
             actions = actions.push(
-                button(text("Watch").size(ACTION_SIZE))
-                    .style(theme::Button::Positive)
-                    .on_press(Message::Watch(series.id, episode.id)),
+                button(
+                    text("Series")
+                        .horizontal_alignment(Horizontal::Center)
+                        .size(ACTION_SIZE),
+                )
+                .style(theme::Button::Primary)
+                .on_press(Message::Navigate(Page::Series(series.id)))
+                .width(Length::FillPortion(1)),
+            );
+
+            actions = actions.push(
+                button(
+                    text("Season")
+                        .horizontal_alignment(Horizontal::Center)
+                        .size(ACTION_SIZE),
+                )
+                .style(theme::Button::Primary)
+                .on_press(Message::Navigate(Page::Season(series.id, episode.season)))
+                .width(Length::FillPortion(1)),
             );
 
             let handle = match episode.filename.and_then(|handle| assets.image(&handle)) {
@@ -56,13 +83,11 @@ impl Dashboard {
 
             let mut episode_info = row![].spacing(GAP);
 
-            let name = match episode.season {
+            let episode_number = match episode.season {
                 SeasonNumber::Number(number) => text(format!("{}x{}", number, episode.number)),
                 SeasonNumber::Unknown => text(format!("{} (No Season)", episode.number)),
                 SeasonNumber::Specials => text(format!("Special {}", episode.number)),
             };
-
-            episode_info = episode_info.push(name);
 
             if let Some(name) = &episode.name {
                 episode_info = episode_info.push(text(name));
@@ -70,17 +95,17 @@ impl Dashboard {
 
             pending = pending.push(
                 column![
+                    text(&series.title).size(SMALL_SIZE),
                     column![
                         container(image(handle)).max_height(SCREENCAP_HEIGHT),
-                        actions
+                        actions,
                     ]
-                    .align_items(Alignment::Start)
-                    .spacing(GAP),
-                    text(&series.title),
+                    .spacing(SPACE),
+                    episode_number,
                     episode_info,
                 ]
                 .align_items(Alignment::Center)
-                .spacing(GAP2)
+                .spacing(GAP)
                 .width(Length::FillPortion(1)),
             );
         }

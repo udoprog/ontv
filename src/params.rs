@@ -5,13 +5,13 @@ pub(crate) const GAP2: u16 = GAP * 2;
 pub(crate) const SPACE: u16 = GAP / 2;
 pub(crate) const SPACE2: u16 = GAP;
 
+pub(crate) const SMALL_SIZE: u16 = 14;
 pub(crate) const TITLE_SIZE: u16 = 32;
 pub(crate) const SUBTITLE_SIZE: u16 = 24;
 pub(crate) const ACTION_SIZE: u16 = 16;
 pub(crate) const SUB_MENU_SIZE: u16 = 16;
-pub(crate) const NOTICE_SIZE: u16 = 24;
 
-pub(crate) const CONTAINER_WIDTH: u32 = 800;
+pub(crate) const CONTAINER_WIDTH: u32 = 1200;
 pub(crate) const SCREENCAP_HEIGHT: u32 = 225;
 
 /// Warning color.
