@@ -84,6 +84,9 @@ pub(crate) struct Series {
     /// Indicates if the series is tracked or not, in that it will receive updates.
     #[serde(default, skip_serializing_if = "is_false")]
     pub(crate) tracked: bool,
+    /// Locally known last modified timestamp.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) last_modified: Option<DateTime<Utc>>,
 }
 
 #[inline]

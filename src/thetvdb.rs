@@ -4,8 +4,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use bytes::Bytes;
-use chrono::NaiveDate;
-use reqwest::{Method, RequestBuilder, Response, Url};
+use chrono::{DateTime, NaiveDate, Utc};
+use reqwest::{header, Method, RequestBuilder, Response, Url};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -139,6 +139,17 @@ impl Client {
         Ok(self.request(method, segments).bearer_auth(&token))
     }
 
+    /// Get last modified timestamp of a series.
+    pub(crate) async fn series_last_modified(&self, id: SeriesId) -> Result<Option<DateTime<Utc>>> {
+        let res = self
+            .request_with_auth(Method::HEAD, &["series", &id.to_string()])
+            .await?
+            .send()
+            .await?;
+
+        Ok(parse_last_modified(&res).context("last-modified header")?)
+    }
+
     /// Download series information.
     pub(crate) async fn series(&self, id: SeriesId, new_id: Uuid) -> Result<Series> {
         let res = self
@@ -147,6 +158,7 @@ impl Client {
             .send()
             .await?;
 
+        let last_modified = parse_last_modified(&res).context("last-modified header")?;
         let bytes: Bytes = handle_res(res).await?;
 
         if log::log_enabled!(log::Level::Trace) {
@@ -181,6 +193,7 @@ impl Client {
             fanart,
             remote_ids: Vec::from([RemoteSeriesId::TheTvDb { id }]),
             tracked: true,
+            last_modified,
         });
 
         #[derive(Deserialize)]
@@ -383,6 +396,17 @@ impl Client {
         let res = self.client.get(url).send().await?;
         Ok(res.bytes().await?.to_vec())
     }
+}
+
+/// Parse out last modified header if present.
+fn parse_last_modified(res: &Response) -> Result<Option<DateTime<Utc>>> {
+    let Some(last_modified) = res.headers().get(header::LAST_MODIFIED) else {
+        return Ok(None);
+    };
+
+    let last_modified = DateTime::parse_from_rfc2822(last_modified.to_str()?)?;
+    let last_modified = last_modified.naive_utc();
+    Ok(Some(DateTime::from_utc(last_modified, Utc)))
 }
 
 /// Handle converting response to JSON.
