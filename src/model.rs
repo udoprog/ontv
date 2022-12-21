@@ -4,7 +4,7 @@ mod raw16;
 use std::collections::BTreeMap;
 use std::fmt;
 
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use chrono::{DateTime, NaiveDate, Utc};
 use iced::widget::{text, Text};
 use serde::{Deserialize, Serialize};
@@ -12,6 +12,33 @@ use uuid::Uuid;
 
 pub(crate) use self::hex16::Hex16;
 pub(crate) use self::raw16::Raw16;
+
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ThemeType {
+    #[default]
+    Light,
+    Dark,
+}
+
+/// The state for the settings page.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct Config {
+    #[serde(default)]
+    pub(crate) theme: ThemeType,
+    #[serde(default)]
+    pub(crate) thetvdb_legacy_apikey: String,
+}
+
+impl Default for Config {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            theme: ThemeType::Dark,
+            thetvdb_legacy_apikey: String::new(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "type")]
@@ -286,7 +313,7 @@ impl ImageFormat {
         match input {
             "jpg" => Ok(ImageFormat::Jpg),
             _ => {
-                bail!("{input}: unsupported image format")
+                bail!("unsupported image format")
             }
         }
     }
@@ -320,143 +347,93 @@ impl Image {
             "{input}: missing `banners`"
         );
 
-        Self::parse_banner_it(input, it)
+        Self::parse_banner_it(it).with_context(|| anyhow!("bad image: {input}"))
     }
 
     /// Parse without expecting a `banners` prefix.
     #[inline]
     pub(crate) fn parse_banner(input: &str) -> Result<Self> {
-        Self::parse_banner_it(input, input.split('/'))
+        Self::parse_banner_it(input.split('/')).with_context(|| anyhow!("bad image: {input}"))
     }
 
-    fn parse_banner_it<'a, I>(input: &'a str, mut it: I) -> Result<Self>
+    fn parse_banner_it<'a, I>(mut it: I) -> Result<Self>
     where
-        I: Iterator<Item = &'a str>,
+        I: DoubleEndedIterator<Item = &'a str>,
     {
-        let (kind, format) = match (
-            it.next(),
-            it.next(),
-            it.next(),
-            it.next(),
-            it.next(),
-            it.next(),
-        ) {
-            (Some("images"), Some("missing"), Some(name), None, None, None) => {
-                let Some(("series", ext)) = name.split_once('.') else {
-                    bail!("{input}: missing extension");
-                };
+        use arrayvec::ArrayVec;
 
-                let format = ImageFormat::parse(ext)?;
-                (ImageKind::Missing, format)
+        let rest = it.next_back().context("missing last component")?;
+
+        let Some((rest, ext)) = rest.split_once('.') else {
+            bail!("missing extension");
+        };
+
+        let format = ImageFormat::parse(ext)?;
+
+        let mut array = ArrayVec::<_, 6>::new();
+
+        for part in it {
+            array.try_push(part).map_err(|e| anyhow!("{e}"))?;
+        }
+
+        array.try_push(rest).map_err(|e| anyhow!("{e}"))?;
+
+        let kind = match &array[..] {
+            // blank/77092.jpg
+            &["blank", series_id] => ImageKind::Blank(series_id.parse()?),
+            // images/missing/series.jpg
+            &["images", "missing", "series"] => ImageKind::Missing,
+            &["v4", "series", series_id, kind, rest] => {
+                let kind = ArtKind::parse(kind)?;
+                let id = Hex16::from_hex(rest).context("bad id")?;
+                ImageKind::V4(series_id.parse()?, kind, id)
             }
-            (Some("v4"), Some("series"), Some(series_id), Some(kind), Some(name), None) => {
-                let Some((id, ext)) = name.split_once('.') else {
-                    bail!("{input}: missing extension");
-                };
-
+            &["series", series_id, kind, id] => {
                 let series_id = series_id.parse()?;
-                let format = ImageFormat::parse(ext)?;
                 let kind = ArtKind::parse(kind)?;
                 let id = Hex16::from_hex(id).context("bad id")?;
-                (ImageKind::V4(series_id, kind, id), format)
+                ImageKind::Legacy(series_id, kind, id)
             }
-            (Some("series"), Some(series_id), Some(kind), Some(name), None, None) => {
-                let Some((id, ext)) = name.split_once('.') else {
-                    bail!("{input}: missing extension");
-                };
-
-                let series_id = series_id.parse()?;
-                let format = ImageFormat::parse(ext)?;
-                let kind = ArtKind::parse(kind)?;
-                let id = Hex16::from_hex(id).context("bad id")?;
-                (ImageKind::Legacy(series_id, kind, id), format)
-            }
-            (Some("posters"), Some(name), None, None, None, None) => {
-                let Some((rest, ext)) = name.split_once('.') else {
-                    bail!("{input}: missing extension");
-                };
-
-                let format = ImageFormat::parse(ext)?;
-
-                let kind = if let Some((series_id, suffix)) = rest.split_once('-') {
+            &["posters", rest] => {
+                if let Some((series_id, suffix)) = rest.split_once('-') {
                     let series_id = series_id.parse()?;
                     let suffix = Raw16::from_string(suffix);
                     ImageKind::BannerSuffixed(series_id, suffix)
                 } else {
                     let id = Hex16::from_hex(rest).context("bad id")?;
                     ImageKind::Banner(id)
-                };
-
-                (kind, format)
+                }
             }
-            (Some("graphical"), Some(name), None, None, None, None) => {
-                let Some((rest, ext)) = name.split_once('.') else {
-                    bail!("{input}: missing extension");
-                };
-
-                let format = ImageFormat::parse(ext)?;
-
-                let kind = if let Some((series_id, suffix)) = rest.split_once('-') {
+            &["graphical", rest] => {
+                if let Some((series_id, suffix)) = rest.split_once('-') {
                     let series_id = series_id.parse()?;
                     let suffix = Raw16::from_string(suffix);
                     ImageKind::GraphicalSuffixed(series_id, suffix)
                 } else {
                     let id = Hex16::from_hex(rest).context("bad hex")?;
                     ImageKind::Graphical(id)
-                };
-
-                (kind, format)
+                }
             }
-            (Some("fanart"), Some("original"), Some(name), None, None, None) => {
-                let Some((rest, ext)) = name.split_once('.') else {
-                    bail!("{input}: missing extension");
-                };
-
-                let format = ImageFormat::parse(ext)?;
-
-                let kind = if let Some((series_id, suffix)) = rest.split_once('-') {
+            &["fanart", "original", rest] => {
+                if let Some((series_id, suffix)) = rest.split_once('-') {
                     let series_id = series_id.parse()?;
                     let suffix = Raw16::from_string(suffix);
                     ImageKind::FanartSuffixed(series_id, suffix)
                 } else {
                     let id = Hex16::from_hex(rest).context("bad hex")?;
                     ImageKind::Fanart(id)
-                };
-
-                (kind, format)
+                }
             }
             // Example: v4/episode/8538342/screencap/63887bf74c84e.jpg
-            (
-                Some("v4"),
-                Some("episode"),
-                Some(episode_id),
-                Some("screencap"),
-                Some(name),
-                None,
-            ) => {
-                let Some((name, ext)) = name.split_once('.') else {
-                    bail!("{input}: missing extension");
-                };
-
-                let format = ImageFormat::parse(ext)?;
-                let episode_id = episode_id.parse()?;
-                let id = Hex16::from_hex(name).context("bad id")?;
-                let kind = ImageKind::ScreenCap(episode_id, id);
-                (kind, format)
+            &["v4", "episode", episode_id, "screencap", rest] => {
+                let id = Hex16::from_hex(rest).context("bad id")?;
+                ImageKind::ScreenCap(episode_id.parse()?, id)
             }
-            (Some("episodes"), Some(episode_id), Some(name), None, None, None) => {
-                let Some((image_id, ext)) = name.split_once('.') else {
-                    bail!("{input}: missing extension");
-                };
-
-                let format = ImageFormat::parse(ext)?;
-                let episode_id = episode_id.parse()?;
-                let image_id = image_id.parse()?;
-                let kind = ImageKind::Episodes(episode_id, image_id);
-                (kind, format)
+            &["episodes", episode_id, rest] => {
+                ImageKind::Episodes(episode_id.parse()?, rest.parse()?)
             }
             _ => {
-                bail!("{input}: unsupported image");
+                bail!("unsupported image");
             }
         };
 
@@ -500,7 +477,7 @@ impl ArtKind {
             "backgrounds" => Ok(ArtKind::Backgrounds),
             "episodes" => Ok(ArtKind::Episodes),
             _ => {
-                bail!("{input}: unsupported art kind")
+                bail!("unsupported art kind")
             }
         }
     }
@@ -531,6 +508,7 @@ pub(crate) enum ImageKind {
     FanartSuffixed(u64, Raw16),
     ScreenCap(u64, Hex16),
     Episodes(u32, u32),
+    Blank(u32),
     Missing,
 }
 
@@ -572,6 +550,9 @@ impl fmt::Display for Image {
             ImageKind::Episodes(episode_id, image_id) => {
                 write!(f, "/banners/episodes/{episode_id}/{image_id}.{format}")
             }
+            ImageKind::Blank(series_id) => {
+                write!(f, "/banners/blank/{series_id}.{format}")
+            }
             ImageKind::Missing => {
                 write!(f, "/banners/images/missing/series.jpg")
             }
@@ -583,6 +564,7 @@ impl fmt::Display for Image {
 pub(crate) struct SearchSeries {
     pub(crate) id: SeriesId,
     pub(crate) name: String,
-    pub(crate) poster: Image,
+    pub(crate) poster: Option<Image>,
     pub(crate) overview: Option<String>,
+    pub(crate) first_aired: Option<NaiveDate>,
 }

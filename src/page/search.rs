@@ -1,11 +1,13 @@
-use iced::widget::{button, column, image, row, text, text_input, Column};
+use iced::widget::{button, column, image, row, text, text_input, Column, Row};
 use iced::{theme, Alignment};
 use iced::{Command, Length};
 
 use crate::assets::Assets;
 use crate::message::Message;
 use crate::model::{RemoteSeriesId, SearchSeries};
-use crate::params::{default_container, ACTION_SIZE, GAP, GAP2, SPACE};
+use crate::params::{
+    default_container, ACTION_SIZE, GAP, GAP2, POSTER_HEIGHT, SMALL_SIZE, SPACE, TITLE_SIZE,
+};
 use crate::service::Service;
 
 const PER_PAGE: usize = 5;
@@ -37,9 +39,9 @@ impl State {
         assets.mark(
             self.series
                 .iter()
-                .map(|s| s.poster)
                 .skip(self.page * PER_PAGE)
-                .take(PER_PAGE),
+                .take(PER_PAGE)
+                .flat_map(|s| s.poster),
         );
     }
 
@@ -59,12 +61,10 @@ impl State {
 
                 let op = async move { client.search_by_name(&query).await };
 
-                let out = |out| match out {
+                Command::perform(op, |out| match out {
                     Ok(series) => Message::Search(M::Result(series)),
                     Err(error) => Message::error(error),
-                };
-
-                Command::perform(op, out)
+                })
             }
             M::Change(text) => {
                 self.text = text;
@@ -85,10 +85,10 @@ impl State {
 
     /// Generate the view for the settings page.
     pub(crate) fn view(&self, service: &Service, assets: &Assets) -> Column<'static, Message> {
-        let mut results = column![].spacing(GAP2).padding(GAP2);
+        let mut results = column![];
 
         for series in self.series.iter().skip(self.page * PER_PAGE).take(PER_PAGE) {
-            let handle = match assets.image(&series.poster) {
+            let handle = match series.poster.and_then(|p| assets.image(&p)) {
                 Some(handle) => handle,
                 None => assets.missing_poster(),
             };
@@ -111,16 +111,22 @@ impl State {
                 .map(|o| o.as_str())
                 .unwrap_or_default();
 
+            let mut first_aired = column![];
+
+            if let Some(date) = series.first_aired {
+                first_aired =
+                    first_aired.push(text(format!("First aired: {date}")).size(SMALL_SIZE));
+            }
+
             results = results.push(
-                column![row![
-                    image(handle).height(Length::Units(200)),
+                row![
+                    image(handle).height(Length::Units(POSTER_HEIGHT)),
                     column![
-                        column![text(&series.name).size(24), track].spacing(SPACE),
+                        column![text(&series.name).size(24), first_aired, track,].spacing(SPACE),
                         text(overview),
                     ]
                     .spacing(GAP)
                 ]
-                .spacing(GAP),]
                 .spacing(GAP),
             );
         }
@@ -128,8 +134,8 @@ impl State {
         let mut pages = row![];
 
         if self.series.len() > PER_PAGE {
-            let mut prev = button("previous page");
-            let mut next = button("next page");
+            let mut prev = button("previous page").style(theme::Button::Positive);
+            let mut next = button("next page").style(theme::Button::Positive);
 
             if let Some(page) = self.page.checked_sub(1) {
                 prev = prev.on_press(Message::Search(M::Page(page)));
@@ -139,18 +145,19 @@ impl State {
                 next = next.on_press(Message::Search(M::Page(self.page + 1)));
             }
 
-            pages = row![
-                prev,
-                text(format!(
-                    "{}-{} result(s)",
-                    self.page * PER_PAGE,
-                    ((self.page + 1) * PER_PAGE).min(self.series.len())
-                )),
-                next
-            ]
-            .align_items(Alignment::Center)
-            .spacing(SPACE)
-            .padding(SPACE);
+            let text = text(format!(
+                "{}-{} ({})",
+                self.page * PER_PAGE,
+                ((self.page + 1) * PER_PAGE).min(self.series.len()),
+                self.series.len(),
+            ));
+
+            pages = Row::new()
+                .push(prev)
+                .push(next)
+                .push(text)
+                .align_items(Alignment::Center)
+                .spacing(GAP);
         }
 
         let query = text_input("Query...", &self.text, |value| {
@@ -166,7 +173,11 @@ impl State {
             submit
         };
 
-        let page = column![text("Search"), row![query, submit,], results, pages]
+        let page = Column::new()
+            .push(text("Search").size(TITLE_SIZE))
+            .push(row![query, submit])
+            .push(results.spacing(GAP2))
+            .push(pages)
             .spacing(GAP)
             .padding(GAP);
 

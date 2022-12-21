@@ -12,10 +12,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::model::{
-    Episode, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season, SeasonNumber, Series,
-    Watched,
+    Config, Episode, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season, SeasonNumber,
+    Series, ThemeType, Watched,
 };
-use crate::page::settings::State;
 use crate::thetvdb::Client;
 
 /// Data encapsulating a newly added series.
@@ -137,7 +136,7 @@ impl SeriesDatabase {
 #[derive(Default)]
 struct Database {
     /// Application configuration.
-    config: State,
+    config: Config,
     /// Remote series.
     remote_series: BTreeMap<RemoteSeriesId, Uuid>,
     /// Remote episodes.
@@ -194,7 +193,7 @@ pub struct Service {
 
 impl Service {
     /// Construct and setup in-memory state of
-    pub(crate) fn new() -> Result<(Self, State)> {
+    pub(crate) fn new() -> Result<Self> {
         let dirs = directories_next::ProjectDirs::from("se.tedro", "setbac", "OnTV")
             .context("missing project dirs")?;
 
@@ -212,13 +211,7 @@ impl Service {
         };
 
         let db = load_database(&paths)?;
-
-        let settings = match load_config(&paths.config)? {
-            Some(settings) => settings,
-            None => Default::default(),
-        };
-
-        let client = Client::new(&settings.thetvdb_legacy_apikey);
+        let client = Client::new(&db.config.thetvdb_legacy_apikey);
 
         let this = Self {
             paths: Arc::new(paths),
@@ -226,7 +219,7 @@ impl Service {
             client,
         };
 
-        Ok((this, settings))
+        Ok(this)
     }
 
     /// Get a single series.
@@ -235,8 +228,8 @@ impl Service {
     }
 
     /// Get list of series.
-    pub(crate) fn all_series(&self) -> impl Iterator<Item = &Series> {
-        self.db.series.data.iter()
+    pub(crate) fn all_series(&self) -> &[Series] {
+        &self.db.series.data
     }
 
     /// Iterator over available episodes.
@@ -762,10 +755,21 @@ impl Service {
             .sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
     }
 
-    /// Load configuration file.
-    pub(crate) fn set_config(&mut self, config: State) {
-        self.client.set_api_key(&config.thetvdb_legacy_apikey);
-        self.db.config = config;
+    /// Get current configuration.
+    pub(crate) fn config(&self) -> &Config {
+        &self.db.config
+    }
+
+    /// Set the theme configuration option.
+    pub(crate) fn set_theme(&mut self, theme: ThemeType) {
+        self.db.config.theme = theme;
+        self.db.changes.set.insert(Change::Config);
+    }
+
+    /// Set the theme configuration option.
+    pub(crate) fn set_thetvdb_legacy_apikey(&mut self, api_key: String) {
+        self.client.set_api_key(&api_key);
+        self.db.config.thetvdb_legacy_apikey = api_key;
         self.db.changes.set.insert(Change::Config);
     }
 
@@ -951,7 +955,7 @@ impl Service {
 }
 
 /// Load configuration file.
-pub(crate) fn load_config(path: &Path) -> Result<Option<State>> {
+pub(crate) fn load_config(path: &Path) -> Result<Option<Config>> {
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -1004,6 +1008,11 @@ where
 /// Try to load initial state.
 fn load_database(paths: &Paths) -> Result<Database> {
     let mut db = Database::default();
+
+    db.config = match load_config(&paths.config)? {
+        Some(settings) => settings,
+        None => Default::default(),
+    };
 
     if let Some(remotes) = load_array::<(Uuid, RemoteId)>(&paths.remotes)? {
         for (uuid, remote_id) in remotes {

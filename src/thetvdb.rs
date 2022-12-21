@@ -372,33 +372,56 @@ impl Client {
             .send()
             .await?;
 
-        let data: Bytes = handle_res(res).await?;
-        let data: Data<Vec<Row>> = serde_json::from_slice(&data)?;
+        let bytes: Bytes = handle_res(res).await?;
+
+        if log::log_enabled!(log::Level::Trace) {
+            let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
+            log::trace!("search_by_name: {raw}");
+        }
+
+        let data: Data<Vec<serde_json::Value>> = serde_json::from_slice(&bytes)?;
 
         let mut output = Vec::with_capacity(data.data.len());
 
-        for row in data.data {
-            let poster = Image::parse(&row.poster)?;
+        for (index, row) in data.data.into_iter().enumerate() {
+            let row: Row = match serde_json::from_value(row) {
+                Ok(row) => row,
+                Err(error) => {
+                    log::error!("#{index}: {error}");
+                    continue;
+                }
+            };
+
+            let poster = match Image::parse(&row.poster) {
+                Ok(poster) => Some(poster),
+                Err(error) => {
+                    log::error!("#{index}: {error}");
+                    None
+                }
+            };
 
             output.push(SearchSeries {
                 id: row.id,
-                name: row.name,
+                name: row.series_name,
                 poster,
                 overview: row.overview,
+                first_aired: row.first_aired,
             });
         }
 
         return Ok(output);
 
         #[derive(Debug, Clone, Deserialize)]
+        #[serde(rename_all = "camelCase")]
         pub(crate) struct Row {
             pub(crate) id: SeriesId,
-            #[serde(rename = "seriesName")]
-            pub(crate) name: String,
+            pub(crate) series_name: String,
             #[serde(default)]
             pub(crate) poster: String,
             #[serde(default)]
             pub(crate) overview: Option<String>,
+            #[serde(default)]
+            pub(crate) first_aired: Option<NaiveDate>,
         }
     }
 

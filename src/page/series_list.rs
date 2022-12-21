@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::assets::Assets;
 use crate::message::{Message, Page};
-use crate::params::{centered, style, GAP, GAP2, SPACE, SUBTITLE_SIZE};
+use crate::params::{centered, style, GAP, GAP2, POSTER_HEIGHT, SPACE, SUBTITLE_SIZE};
 use crate::service::Service;
 
 /// Messages generated and handled by [SeriesList].
@@ -19,19 +19,42 @@ pub(crate) enum M {
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct State {
     filter: String,
+    filtered: Option<Box<[usize]>>,
 }
 
 impl State {
     /// Prepare the view.
     pub(crate) fn prepare(&mut self, service: &Service, assets: &mut Assets) {
-        let images = service.all_series().map(|s| s.poster).collect::<Vec<_>>();
-        assets.mark(images);
+        if let Some(filtered) = &self.filtered {
+            let series = service.all_series();
+            let images = filtered.iter().flat_map(|&i| Some(series.get(i)?.poster));
+            assets.mark(images);
+        } else {
+            assets.mark(service.all_series().iter().map(|s| s.poster));
+        }
     }
 
-    pub(crate) fn update(&mut self, message: M) -> Command<Message> {
+    pub(crate) fn update(&mut self, service: &Service, message: M) -> Command<Message> {
         match message {
             M::ChangeFilter(filter) => {
                 self.filter = filter;
+                let filter = tokenize(&self.filter, false);
+
+                self.filtered = if !filter.is_empty() {
+                    let mut filtered = Vec::new();
+
+                    for (index, s) in service.all_series().iter().enumerate() {
+                        let title = tokenize(&s.title, true);
+
+                        if filter.iter().all(|t| title.contains(t.as_str())) {
+                            filtered.push(index);
+                        }
+                    }
+
+                    Some(filtered.into())
+                } else {
+                    None
+                };
             }
         }
 
@@ -41,23 +64,27 @@ impl State {
     pub(crate) fn view(&self, service: &Service, assets: &Assets) -> Column<'static, Message> {
         let mut series = column![];
 
-        let filter = tokenize(&self.filter, false);
+        let mut it;
+        let mut it2;
 
-        for s in service.all_series() {
-            if !filter.is_empty() {
-                let title = tokenize(&s.title, true);
+        let iter: &mut dyn Iterator<Item = _> = if let Some(filtered) = &self.filtered {
+            it = filtered.iter().flat_map(|i| service.all_series().get(*i));
+            &mut it
+        } else {
+            it2 = service.all_series().iter();
+            &mut it2
+        };
 
-                if !filter.iter().all(|t| title.contains(t.as_str())) {
-                    continue;
-                }
-            }
-
+        for s in iter {
             let handle = match assets.image(&s.poster) {
                 Some(handle) => handle,
                 None => assets.missing_poster(),
             };
 
-            let graphic = image(handle).height(Length::Units(200));
+            let graphic = button(image(handle).height(Length::Units(POSTER_HEIGHT)))
+                .on_press(Message::Navigate(Page::Series(s.id)))
+                .style(theme::Button::Text)
+                .padding(0);
 
             let episodes = service.episodes(s.id);
 

@@ -2,7 +2,6 @@ use std::fmt;
 
 use anyhow::{Error, Result};
 use iced_native::image::Handle;
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::model::{Image, RemoteSeriesId, SeasonNumber};
@@ -21,19 +20,11 @@ pub(crate) enum Page {
     Downloads,
 }
 
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum ThemeType {
-    #[default]
-    Light,
-    Dark,
-}
-
 /// A detailed error message.
 #[derive(Debug, Clone)]
 pub(crate) struct ErrorMessage {
-    message: String,
-    causes: Vec<String>,
+    pub(crate) message: String,
+    pub(crate) causes: Vec<String>,
 }
 
 impl From<Error> for ErrorMessage {
@@ -69,7 +60,7 @@ impl fmt::Display for ErrorMessage {
 #[derive(Default, Debug, Clone)]
 pub(crate) enum Message {
     /// Platform-specific events.
-    EventOccurred(iced_native::Event),
+    CloseRequested,
     /// Setting-specific messages.
     Settings(page::settings::M),
     /// Search-specific messages.
@@ -93,6 +84,8 @@ pub(crate) enum Message {
     UpdateDownloadQueue(Vec<Queued>),
     /// Request to navigate to the specified page.
     Navigate(Page),
+    /// Navigate history by the specified stride.
+    History(isize),
     /// Series tracked.
     SeriesDownloadToTrack(NewSeries),
     /// Refresh series data.
