@@ -1,5 +1,5 @@
-mod hex16;
-mod raw16;
+mod hex;
+mod raw;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -10,34 +10,26 @@ use iced::widget::{text, Text};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-pub(crate) use self::hex16::Hex16;
-pub(crate) use self::raw16::Raw16;
+pub(crate) use self::hex::Hex;
+pub(crate) use self::raw::Raw;
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum ThemeType {
-    #[default]
     Light,
+    #[default]
     Dark,
 }
 
 /// The state for the settings page.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Config {
     #[serde(default)]
     pub(crate) theme: ThemeType,
     #[serde(default)]
-    pub(crate) thetvdb_legacy_apikey: String,
-}
-
-impl Default for Config {
-    #[inline]
-    fn default() -> Self {
-        Self {
-            theme: ThemeType::Dark,
-            thetvdb_legacy_apikey: String::new(),
-        }
-    }
+    pub(crate) tvdb_legacy_apikey: String,
+    #[serde(default)]
+    pub(crate) tmdb_api_key: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -56,15 +48,19 @@ pub(crate) enum RemoteId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "remote")]
 pub(crate) enum RemoteSeriesId {
-    TheTvDb { id: SeriesId },
-    Imdb { id: Raw16 },
+    Tvdb { id: SeriesId },
+    Tmdb { id: u32 },
+    Imdb { id: Raw<16> },
 }
 
 impl fmt::Display for RemoteSeriesId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RemoteSeriesId::TheTvDb { id } => {
+            RemoteSeriesId::Tvdb { id } => {
                 write!(f, "thetvdb.com ({id})")
+            }
+            RemoteSeriesId::Tmdb { id } => {
+                write!(f, "themoviedb.org ({id})")
             }
             RemoteSeriesId::Imdb { id } => {
                 write!(f, "imdb.com ({id})")
@@ -76,7 +72,8 @@ impl fmt::Display for RemoteSeriesId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "remote")]
 pub(crate) enum RemoteEpisodeId {
-    TheTvDb { id: SeriesId },
+    Tvdb { id: SeriesId },
+    Tmdb { id: u32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -377,21 +374,21 @@ impl fmt::Display for ArtKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", tag = "type", content = "data")]
 pub(crate) enum TvdbImageKind {
-    Legacy(u64, ArtKind, Hex16),
-    V4(u64, ArtKind, Hex16),
-    Banner(Hex16),
-    BannerSuffixed(u64, Raw16),
-    Graphical(Hex16),
-    GraphicalSuffixed(u64, Raw16),
-    Fanart(Hex16),
-    FanartSuffixed(u64, Raw16),
-    ScreenCap(u64, Hex16),
+    Legacy(u64, ArtKind, Hex<16>),
+    V4(u64, ArtKind, Hex<16>),
+    Banner(Hex<16>),
+    BannerSuffixed(u64, Raw<16>),
+    Graphical(Hex<16>),
+    GraphicalSuffixed(u64, Raw<16>),
+    Fanart(Hex<16>),
+    FanartSuffixed(u64, Raw<16>),
+    ScreenCap(u64, Hex<16>),
     Episodes(u32, u32),
     Blank(u32),
     Missing,
 }
 
-/// The identifier of an image.
+/// An image from thetvdb.com.org
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct TvdbImage {
@@ -447,10 +444,42 @@ impl fmt::Display for TvdbImage {
 
 /// The identifier of an image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", tag = "type", content = "data")]
+pub(crate) enum TmdbImageKind {
+    Base64(Raw<32>),
+}
+
+/// An image from themoviedb.org
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) struct TmdbImage {
+    #[serde(flatten)]
+    pub(crate) kind: TmdbImageKind,
+    pub(crate) ext: ImageExt,
+}
+
+impl fmt::Display for TmdbImage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let ext = &self.ext;
+
+        match self.kind {
+            TmdbImageKind::Base64(id) => {
+                write!(f, "/t/p/original/{id}.{ext}")?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// The identifier of an image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", tag = "from")]
 pub(crate) enum Image {
     /// An image from thetvdb.com
     Tvdb(TvdbImage),
+    /// An image from themoviedb.org
+    Tmdb(TmdbImage),
 }
 
 impl Image {
@@ -472,6 +501,20 @@ impl Image {
     #[inline]
     pub(crate) fn parse_tvdb_banner(input: &str) -> Result<Self> {
         Self::parse_banner_it(input.split('/')).with_context(|| anyhow!("bad image: {input}"))
+    }
+
+    #[inline]
+    pub(crate) fn parse_tmdb(input: &str) -> Result<Self> {
+        let input = input.trim_start_matches('/');
+
+        let Some((id, ext)) = input.split_once('.') else {
+            bail!("missing extension");
+        };
+
+        let id = Raw::new(id).context("base identifier")?;
+        let kind = TmdbImageKind::Base64(id);
+        let ext = ImageExt::parse(ext)?;
+        Ok(Image::Tmdb(TmdbImage { kind, ext }))
     }
 
     fn parse_banner_it<'a, I>(mut it: I) -> Result<Self>
@@ -503,48 +546,48 @@ impl Image {
             &["images", "missing", "series"] => TvdbImageKind::Missing,
             &["v4", "series", series_id, kind, rest] => {
                 let kind = ArtKind::parse(kind)?;
-                let id = Hex16::from_hex(rest).context("bad id")?;
+                let id = Hex::from_hex(rest).context("bad id")?;
                 TvdbImageKind::V4(series_id.parse()?, kind, id)
             }
             &["series", series_id, kind, id] => {
                 let series_id = series_id.parse()?;
                 let kind = ArtKind::parse(kind)?;
-                let id = Hex16::from_hex(id).context("bad id")?;
+                let id = Hex::from_hex(id).context("bad id")?;
                 TvdbImageKind::Legacy(series_id, kind, id)
             }
             &["posters", rest] => {
                 if let Some((series_id, suffix)) = rest.split_once('-') {
                     let series_id = series_id.parse()?;
-                    let suffix = Raw16::from_string(suffix);
+                    let suffix = Raw::new(suffix).context("suffix overflow")?;
                     TvdbImageKind::BannerSuffixed(series_id, suffix)
                 } else {
-                    let id = Hex16::from_hex(rest).context("bad id")?;
+                    let id = Hex::from_hex(rest).context("bad id")?;
                     TvdbImageKind::Banner(id)
                 }
             }
             &["graphical", rest] => {
                 if let Some((series_id, suffix)) = rest.split_once('-') {
                     let series_id = series_id.parse()?;
-                    let suffix = Raw16::from_string(suffix);
+                    let suffix = Raw::new(suffix).context("suffix overflow")?;
                     TvdbImageKind::GraphicalSuffixed(series_id, suffix)
                 } else {
-                    let id = Hex16::from_hex(rest).context("bad hex")?;
+                    let id = Hex::from_hex(rest).context("bad hex")?;
                     TvdbImageKind::Graphical(id)
                 }
             }
             &["fanart", "original", rest] => {
                 if let Some((series_id, suffix)) = rest.split_once('-') {
                     let series_id = series_id.parse()?;
-                    let suffix = Raw16::from_string(suffix);
+                    let suffix = Raw::new(suffix).context("suffix overflow")?;
                     TvdbImageKind::FanartSuffixed(series_id, suffix)
                 } else {
-                    let id = Hex16::from_hex(rest).context("bad hex")?;
+                    let id = Hex::from_hex(rest).context("bad hex")?;
                     TvdbImageKind::Fanart(id)
                 }
             }
             // Example: v4/episode/8538342/screencap/63887bf74c84e.jpg
             &["v4", "episode", episode_id, "screencap", rest] => {
-                let id = Hex16::from_hex(rest).context("bad id")?;
+                let id = Hex::from_hex(rest).context("bad id")?;
                 TvdbImageKind::ScreenCap(episode_id.parse()?, id)
             }
             &["episodes", episode_id, rest] => {
@@ -562,7 +605,8 @@ impl Image {
 impl fmt::Display for Image {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Image::Tvdb(tvdb) => write!(f, "tvdb:{tvdb}"),
+            Image::Tvdb(image) => write!(f, "tvdb:{image}"),
+            Image::Tmdb(image) => write!(f, "tmdb:{image}"),
         }
     }
 }
@@ -574,9 +618,16 @@ impl From<TvdbImage> for Image {
     }
 }
 
+impl From<TmdbImage> for Image {
+    #[inline]
+    fn from(image: TmdbImage) -> Self {
+        Image::Tmdb(image)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct SearchSeries {
-    pub(crate) id: SeriesId,
+    pub(crate) id: RemoteSeriesId,
     pub(crate) name: String,
     pub(crate) poster: Option<Image>,
     pub(crate) overview: Option<String>,

@@ -11,10 +11,11 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::api::themoviedb;
 use crate::api::thetvdb;
 use crate::model::{
     Config, Episode, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season, SeasonNumber,
-    Series, SeriesId, ThemeType, TvdbImage, Watched,
+    Series, SeriesId, ThemeType, TmdbImage, TvdbImage, Watched,
 };
 
 /// Data encapsulating a newly added series.
@@ -186,11 +187,9 @@ struct Paths {
 /// Background service taking care of all state handling.
 pub struct Service {
     paths: Arc<Paths>,
-    /// Service database.
     db: Database,
-    /// Shared client.
-    pub(crate) client: thetvdb::Client,
-    /// Indicates that the service should never touch anything on the filesystem.
+    pub(crate) tvdb: thetvdb::Client,
+    pub(crate) tmdb: themoviedb::Client,
     do_not_save: bool,
 }
 
@@ -214,12 +213,14 @@ impl Service {
         };
 
         let db = load_database(&paths)?;
-        let client = thetvdb::Client::new(&db.config.thetvdb_legacy_apikey);
+        let tvdb = thetvdb::Client::new(&db.config.tvdb_legacy_apikey)?;
+        let tmdb = themoviedb::Client::new(&db.config.tmdb_api_key)?;
 
         let this = Self {
             paths: Arc::new(paths),
             db,
-            client,
+            tvdb,
+            tmdb,
             do_not_save: false,
         };
 
@@ -341,7 +342,7 @@ impl Service {
             }
         }
 
-        let client = self.client.clone();
+        let tvdb = self.tvdb.clone();
 
         async move {
             let mut queue = Vec::new();
@@ -350,8 +351,8 @@ impl Service {
                 log::trace!("{series_id}/{remote_id}: checking for updates (last_modified: {last_modified})");
 
                 match remote_id {
-                    RemoteSeriesId::TheTvDb { id } => {
-                        let Some(update) = client.series_last_modified(id).await? else {
+                    RemoteSeriesId::Tvdb { id } => {
+                        let Some(update) = tvdb.series_last_modified(id).await? else {
                             continue;
                         };
 
@@ -360,6 +361,10 @@ impl Service {
                         if last_modified >= update {
                             continue;
                         }
+                    }
+                    // Nothing to do with the TMDB remote.
+                    RemoteSeriesId::Tmdb { .. } => {
+                        continue;
                     }
                     // Nothing to do with the IMDB remote.
                     RemoteSeriesId::Imdb { .. } => {
@@ -780,9 +785,16 @@ impl Service {
     }
 
     /// Set the theme configuration option.
-    pub(crate) fn set_thetvdb_legacy_apikey(&mut self, api_key: String) {
-        self.client.set_api_key(&api_key);
-        self.db.config.thetvdb_legacy_apikey = api_key;
+    pub(crate) fn set_tvdb_legacy_api_key(&mut self, api_key: String) {
+        self.tvdb.set_api_key(&api_key);
+        self.db.config.tvdb_legacy_apikey = api_key;
+        self.db.changes.set.insert(Change::Config);
+    }
+
+    /// Set the theme configuration option.
+    pub(crate) fn set_tmdb_api_key(&mut self, api_key: String) {
+        self.tmdb.set_api_key(&api_key);
+        self.db.config.tmdb_api_key = api_key;
         self.db.changes.set.insert(Change::Config);
     }
 
@@ -842,7 +854,7 @@ impl Service {
         series_id: Uuid,
         refresh_pending: bool,
     ) -> impl Future<Output = Result<NewSeries>> {
-        let client = self.client.clone();
+        let tvdb = self.tvdb.clone();
         let remote_episodes = self.db.remote_episodes.clone();
 
         async move {
@@ -855,13 +867,16 @@ impl Service {
             };
 
             let (series, episodes, seasons) = match remote_id {
-                RemoteSeriesId::TheTvDb { id } => {
-                    let series = client.series(id, series_id);
-                    let episodes = client
-                        .series_episodes(id, move |id| lookup(RemoteEpisodeId::TheTvDb { id }));
+                RemoteSeriesId::Tvdb { id } => {
+                    let series = tvdb.series(id, series_id);
+                    let episodes =
+                        tvdb.series_episodes(id, move |id| lookup(RemoteEpisodeId::Tvdb { id }));
                     let (series, episodes) = tokio::try_join!(series, episodes)?;
                     let seasons = episodes_into_seasons(&episodes);
                     (series, episodes, seasons)
+                }
+                RemoteSeriesId::Tmdb { .. } => {
+                    bail!("cannot download series data from tmdb")
                 }
                 RemoteSeriesId::Imdb { .. } => {
                     bail!("cannot download series data from imdb")
@@ -962,11 +977,13 @@ impl Service {
         id: Image,
     ) -> impl Future<Output = Result<Vec<(Image, Handle)>>> {
         let paths = self.paths.clone();
-        let client = self.client.clone();
+        let tvdb = self.tvdb.clone();
+        let tmdb = self.tmdb.clone();
 
         async move {
             let output = match id {
-                Image::Tvdb(id) => cache_images_tvdb(&paths.images, &client, [id]).await?,
+                Image::Tvdb(id) => cache_images_tvdb(&paths.images, &tvdb, [id]).await?,
+                Image::Tmdb(id) => cache_images_tmdb(&paths.images, &tmdb, [id]).await?,
             };
 
             Ok(output)
@@ -1039,7 +1056,7 @@ impl Service {
 
             log::debug!("{index}: {row}");
 
-            let Some(series_id) = self.existing_by_remote_id(RemoteSeriesId::TheTvDb { id: SeriesId::from(entry.show.ids.tvdb) }) else {
+            let Some(series_id) = self.existing_by_remote_id(RemoteSeriesId::Tvdb { id: SeriesId::from(entry.show.ids.tvdb) }) else {
                 continue;
             };
 
@@ -1100,11 +1117,14 @@ pub(crate) fn load_config(path: &Path) -> Result<Option<Config>> {
     Ok(serde_json::from_slice(&bytes)?)
 }
 
+const TVDB: u64 = 0x907b86069129a824u64;
+const TMDB: u64 = 0xd614d57a2eadc500u64;
+
 /// Ensure that the given image IDs are in the in-memory and filesystem image
 /// caches.
 async fn cache_images_tvdb<I>(
     path: &Path,
-    client: &thetvdb::Client,
+    tvdb: &thetvdb::Client,
     ids: I,
 ) -> Result<Vec<(Image, Handle)>>
 where
@@ -1115,7 +1135,7 @@ where
     let mut output = Vec::new();
 
     for id in ids {
-        let hash = hash128(&id.kind);
+        let hash = hash128(&(TVDB, id.kind));
         let cache_path = path.join(format!("{:032x}.{ext}", hash, ext = id.ext));
 
         let data = if matches!(fs::metadata(&cache_path).await, Ok(m) if m.is_file()) {
@@ -1123,7 +1143,51 @@ where
             fs::read(&cache_path).await?
         } else {
             log::debug!("downloading: {id}: {}", cache_path.display());
-            let data = client.get_image_data(&id).await?;
+            let data = tvdb.get_image_data(&id).await?;
+
+            if let Some(parent) = cache_path.parent() {
+                if !matches!(fs::metadata(parent).await, Ok(m) if m.is_dir()) {
+                    log::debug!("creating image cache directory: {}", parent.display());
+                    fs::create_dir_all(parent).await?;
+                }
+            }
+
+            fs::write(&cache_path, &data).await?;
+            data
+        };
+
+        log::debug!("loaded: {id} ({} bytes)", data.len());
+        let handle = Handle::from_memory(data);
+        output.push((Image::from(id), handle));
+    }
+
+    Ok(output)
+}
+
+/// Ensure that the given image IDs are in the in-memory and filesystem image
+/// caches.
+async fn cache_images_tmdb<I>(
+    path: &Path,
+    tmdb: &themoviedb::Client,
+    ids: I,
+) -> Result<Vec<(Image, Handle)>>
+where
+    I: IntoIterator<Item = TmdbImage>,
+{
+    use tokio::fs;
+
+    let mut output = Vec::new();
+
+    for id in ids {
+        let hash = hash128(&(TMDB, id.kind));
+        let cache_path = path.join(format!("{:032x}.{ext}", hash, ext = id.ext));
+
+        let data = if matches!(fs::metadata(&cache_path).await, Ok(m) if m.is_file()) {
+            log::debug!("reading image from cache: {id}: {}", cache_path.display());
+            fs::read(&cache_path).await?
+        } else {
+            log::debug!("downloading: {id}: {}", cache_path.display());
+            let data = tmdb.get_image_data(&id).await?;
 
             if let Some(parent) = cache_path.parent() {
                 if !matches!(fs::metadata(parent).await, Ok(m) if m.is_dir()) {

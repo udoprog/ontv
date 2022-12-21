@@ -31,8 +31,11 @@ impl State {
         match message {
             M::OpenRemote(remote_id) => {
                 let url = match remote_id {
-                    RemoteSeriesId::TheTvDb { id } => {
+                    RemoteSeriesId::Tvdb { id } => {
                         format!("https://thetvdb.com/search?query={id}")
+                    }
+                    RemoteSeriesId::Tmdb { id } => {
+                        format!("https://www.themoviedb.org/tv/{id}")
                     }
                     RemoteSeriesId::Imdb { id } => {
                         format!("https://www.imdb.com/title/{id}/")

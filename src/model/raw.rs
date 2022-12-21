@@ -5,25 +5,26 @@ use serde::de;
 use serde::ser;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) struct Raw16([u8; 16]);
+pub(crate) struct Raw<const N: usize>([u8; N]);
 
-impl Raw16 {
+impl<const N: usize> Raw<N> {
     /// Construct a raw identifier from a string.
-    pub(crate) fn from_string<B>(bytes: &B) -> Self
+    pub(crate) fn new<B>(bytes: &B) -> Option<Self>
     where
         B: ?Sized + AsRef<[u8]>,
     {
-        let mut out = [0; 16];
+        let mut out = [0; N];
+        let mut it = out.iter_mut();
 
-        for (&b, o) in bytes.as_ref().iter().zip(out.iter_mut()) {
-            *o = b;
+        for b in bytes.as_ref() {
+            *it.next()? = *b;
         }
 
-        Self(out)
+        Some(Self(out))
     }
 }
 
-impl fmt::Display for Raw16 {
+impl<const N: usize> fmt::Display for Raw<N> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let bytes = trim_end(&self.0);
@@ -51,7 +52,7 @@ impl fmt::Display for Raw16 {
     }
 }
 
-impl fmt::Debug for Raw16 {
+impl<const N: usize> fmt::Debug for Raw<N> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_char('"')?;
@@ -61,7 +62,7 @@ impl fmt::Debug for Raw16 {
     }
 }
 
-impl<'de> de::Deserialize<'de> for Raw16 {
+impl<'de, const N: usize> de::Deserialize<'de> for Raw<N> {
     #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -71,7 +72,7 @@ impl<'de> de::Deserialize<'de> for Raw16 {
     }
 }
 
-impl ser::Serialize for Raw16 {
+impl<const N: usize> ser::Serialize for Raw<N> {
     #[inline]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -81,10 +82,10 @@ impl ser::Serialize for Raw16 {
     }
 }
 
-struct Visitor;
+struct Visitor<const N: usize>;
 
-impl<'de> de::Visitor<'de> for Visitor {
-    type Value = Raw16;
+impl<'de, const N: usize> de::Visitor<'de> for Visitor<N> {
+    type Value = Raw<N>;
 
     #[inline]
     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -96,7 +97,10 @@ impl<'de> de::Visitor<'de> for Visitor {
     where
         E: de::Error,
     {
-        Ok(Raw16::from_string(v))
+        match Raw::new(v) {
+            Some(value) => Ok(value),
+            None => Err(E::custom("value overflow")),
+        }
     }
 
     #[inline]
@@ -104,19 +108,22 @@ impl<'de> de::Visitor<'de> for Visitor {
     where
         E: de::Error,
     {
-        Ok(Raw16::from_string(v))
+        match Raw::new(v) {
+            Some(value) => Ok(value),
+            None => Err(E::custom("value overflow")),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Raw16;
+    use super::Raw;
 
     #[test]
     fn test_raw16() {
-        let id = Raw16::from_string(b"foobarbaz");
+        let id = Raw::<16>::new(b"foobarbaz");
         assert_eq!(id.to_string(), "foobarbaz");
-        let id = Raw16::from_string("foobarbaz");
+        let id = Raw::<16>::new("foobarbaz");
         assert_eq!(id.to_string(), "foobarbaz");
     }
 }

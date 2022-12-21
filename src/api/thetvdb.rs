@@ -12,13 +12,14 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::model::{
-    Episode, Image, Raw16, RemoteEpisodeId, RemoteSeriesId, SearchSeries, SeasonNumber, Series,
+    Episode, Image, Raw, RemoteEpisodeId, RemoteSeriesId, SearchSeries, SeasonNumber, Series,
     SeriesId, TvdbImage,
 };
 
 const BASE_URL: &str = "https://api.thetvdb.com";
 const ARTWORKS_URL: &str = "https://artworks.thetvdb.com";
 const EXPIRATION_SECONDS: u64 = 3600;
+const IDLE_TIMEOUT: Duration = Duration::from_secs(10);
 
 struct Credentials {
     token: Box<str>,
@@ -48,19 +49,21 @@ pub(crate) struct Client {
 
 impl Client {
     /// Construct a new client wrapping the given api key.
-    pub(crate) fn new<S>(api_key: &S) -> Self
+    pub(crate) fn new<S>(api_key: &S) -> Result<Self>
     where
         S: ?Sized + AsRef<str>,
     {
-        Self {
+        Ok(Self {
             state: Arc::new(State {
                 cached: tokio::sync::Mutex::new(None),
                 base_url: Url::parse(BASE_URL).expect("illegal base url"),
                 artworks_url: Url::parse(ARTWORKS_URL).expect("illegal artworks url"),
             }),
-            client: reqwest::Client::new(),
+            client: reqwest::ClientBuilder::new()
+                .pool_idle_timeout(IDLE_TIMEOUT)
+                .build()?,
             api_key: api_key.as_ref().into(),
-        }
+        })
     }
 
     /// Set API key to the given value.
@@ -186,11 +189,11 @@ impl Client {
 
         let poster = Image::parse_tvdb_banner(&value.poster).context("poster image")?;
 
-        let mut remote_ids = Vec::from([RemoteSeriesId::TheTvDb { id }]);
+        let mut remote_ids = Vec::from([RemoteSeriesId::Tvdb { id }]);
 
         if let Some(imdb_id) = value.imdb_id.filter(|id| !id.is_empty()) {
             remote_ids.push(RemoteSeriesId::Imdb {
-                id: Raw16::from_string(&imdb_id),
+                id: Raw::new(&imdb_id).context("id overflow")?,
             });
         }
 
@@ -265,7 +268,7 @@ impl Client {
                     number: row.aired_episode_number,
                     aired: row.first_aired,
                     filename,
-                    remote_ids: Vec::from([RemoteEpisodeId::TheTvDb { id: row.id }]),
+                    remote_ids: Vec::from([RemoteEpisodeId::Tvdb { id: row.id }]),
                 })
             })
             .await;
@@ -401,7 +404,7 @@ impl Client {
             };
 
             output.push(SearchSeries {
-                id: row.id,
+                id: RemoteSeriesId::Tvdb { id: row.id },
                 name: row.series_name,
                 poster,
                 overview: row.overview,
