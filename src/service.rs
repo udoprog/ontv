@@ -13,9 +13,10 @@ use uuid::Uuid;
 
 use crate::api::themoviedb;
 use crate::api::thetvdb;
+use crate::cache;
 use crate::model::{
     Config, Episode, Image, Raw, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season, SeasonNumber,
-    Series, ThemeType, TmdbImage, TvdbImage, Watched,
+    Series, ThemeType, Watched,
 };
 
 /// Data encapsulating a newly added series.
@@ -968,12 +969,10 @@ impl Service {
         let tmdb = self.tmdb.clone();
 
         async move {
-            let output = match id {
-                Image::Tvdb(id) => cache_images_tvdb(&paths.images, &tvdb, [id]).await?,
-                Image::Tmdb(id) => cache_images_tmdb(&paths.images, &tmdb, [id]).await?,
-            };
-
-            Ok(output)
+            Ok(match id {
+                Image::Tvdb(id) => cache::images(&paths.images, &tvdb, [id]).await?,
+                Image::Tmdb(id) => cache::images(&paths.images, &tmdb, [id]).await?,
+            })
         }
     }
 
@@ -1128,108 +1127,6 @@ pub(crate) fn load_config(path: &Path) -> Result<Option<Config>> {
     };
 
     Ok(serde_json::from_slice(&bytes)?)
-}
-
-const TVDB: u64 = 0x907b86069129a824u64;
-const TMDB: u64 = 0xd614d57a2eadc500u64;
-
-/// Ensure that the given image IDs are in the in-memory and filesystem image
-/// caches.
-async fn cache_images_tvdb<I>(
-    path: &Path,
-    tvdb: &thetvdb::Client,
-    ids: I,
-) -> Result<Vec<(Image, Handle)>>
-where
-    I: IntoIterator<Item = TvdbImage>,
-{
-    use tokio::fs;
-
-    let mut output = Vec::new();
-
-    for id in ids {
-        let hash = hash128(&(TVDB, id.kind));
-        let cache_path = path.join(format!("{:032x}.{ext}", hash, ext = id.ext));
-
-        let data = if matches!(fs::metadata(&cache_path).await, Ok(m) if m.is_file()) {
-            log::debug!("reading image from cache: {id}: {}", cache_path.display());
-            fs::read(&cache_path).await?
-        } else {
-            log::debug!("downloading: {id}: {}", cache_path.display());
-            let data = tvdb.get_image_data(&id).await?;
-
-            if let Some(parent) = cache_path.parent() {
-                if !matches!(fs::metadata(parent).await, Ok(m) if m.is_dir()) {
-                    log::debug!("creating image cache directory: {}", parent.display());
-                    fs::create_dir_all(parent).await?;
-                }
-            }
-
-            fs::write(&cache_path, &data).await?;
-            data
-        };
-
-        log::debug!("loaded: {id} ({} bytes)", data.len());
-        let handle = Handle::from_memory(data);
-        output.push((Image::from(id), handle));
-    }
-
-    Ok(output)
-}
-
-/// Ensure that the given image IDs are in the in-memory and filesystem image
-/// caches.
-async fn cache_images_tmdb<I>(
-    path: &Path,
-    tmdb: &themoviedb::Client,
-    ids: I,
-) -> Result<Vec<(Image, Handle)>>
-where
-    I: IntoIterator<Item = TmdbImage>,
-{
-    use tokio::fs;
-
-    let mut output = Vec::new();
-
-    for id in ids {
-        let hash = hash128(&(TMDB, id.kind));
-        let cache_path = path.join(format!("{:032x}.{ext}", hash, ext = id.ext));
-
-        let data = if matches!(fs::metadata(&cache_path).await, Ok(m) if m.is_file()) {
-            log::debug!("reading image from cache: {id}: {}", cache_path.display());
-            fs::read(&cache_path).await?
-        } else {
-            log::debug!("downloading: {id}: {}", cache_path.display());
-            let data = tmdb.get_image_data(&id).await?;
-
-            if let Some(parent) = cache_path.parent() {
-                if !matches!(fs::metadata(parent).await, Ok(m) if m.is_dir()) {
-                    log::debug!("creating image cache directory: {}", parent.display());
-                    fs::create_dir_all(parent).await?;
-                }
-            }
-
-            fs::write(&cache_path, &data).await?;
-            data
-        };
-
-        log::debug!("loaded: {id} ({} bytes)", data.len());
-        let handle = Handle::from_memory(data);
-        output.push((Image::from(id), handle));
-    }
-
-    Ok(output)
-}
-
-/// Generate a 16-byte hash.
-pub(crate) fn hash128<T>(value: &T) -> u128
-where
-    T: std::hash::Hash,
-{
-    use twox_hash::xxh3::HasherExt;
-    let mut hasher = twox_hash::Xxh3Hash128::default();
-    std::hash::Hash::hash(value, &mut hasher);
-    hasher.finish_ext()
 }
 
 /// Try to load initial state.

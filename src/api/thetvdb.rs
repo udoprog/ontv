@@ -454,7 +454,7 @@ impl Client {
     }
 
     /// Load image data.
-    pub(crate) async fn get_image_data(&self, id: &TvdbImage) -> Result<Vec<u8>> {
+    pub(crate) async fn downloage_image(&self, id: &TvdbImage) -> Result<Vec<u8>> {
         let mut url = self.state.artworks_url.clone();
         url.set_path(&id.to_string());
         let res = self.client.get(url).send().await?;
