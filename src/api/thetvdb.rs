@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::model::{
     Episode, Image, Raw, RemoteEpisodeId, RemoteSeriesId, SearchSeries, SeasonNumber, Series,
-    SeriesId, TvdbImage,
+    TvdbImage,
 };
 
 const BASE_URL: &str = "https://api.thetvdb.com";
@@ -145,7 +145,7 @@ impl Client {
     }
 
     /// Get last modified timestamp of a series.
-    pub(crate) async fn series_last_modified(&self, id: SeriesId) -> Result<Option<DateTime<Utc>>> {
+    pub(crate) async fn series_last_modified(&self, id: u32) -> Result<Option<DateTime<Utc>>> {
         let res = self
             .request_with_auth(Method::HEAD, &["series", &id.to_string()])
             .await?
@@ -156,7 +156,7 @@ impl Client {
     }
 
     /// Download series information.
-    pub(crate) async fn series<A>(&self, id: SeriesId, lookup: A) -> Result<Series>
+    pub(crate) async fn series<A>(&self, id: u32, lookup: A) -> Result<Series>
     where
         A: Fn(RemoteSeriesId) -> Option<Uuid>,
     {
@@ -192,7 +192,9 @@ impl Client {
 
         let poster = Image::parse_tvdb_banner(&value.poster).context("poster image")?;
 
-        let mut remote_ids = Vec::from([RemoteSeriesId::Tvdb { id }]);
+        let remote_id = RemoteSeriesId::Tvdb { id };
+
+        let mut remote_ids = Vec::from([remote_id]);
 
         if let Some(imdb_id) = value.imdb_id.filter(|id| !id.is_empty()) {
             remote_ids.push(RemoteSeriesId::Imdb {
@@ -214,6 +216,7 @@ impl Client {
             banner,
             poster,
             fanart,
+            remote_id: Some(remote_id),
             remote_ids,
             tracked: true,
             last_modified,
@@ -224,7 +227,7 @@ impl Client {
         #[serde(rename_all = "camelCase")]
         #[allow(unused)]
         struct Value {
-            id: SeriesId,
+            id: u32,
             // "2021-03-05 07:53:14"
             added: String,
             banner: Option<String>,
@@ -243,11 +246,7 @@ impl Client {
     }
 
     /// Download all series episodes.
-    pub(crate) async fn series_episodes<A>(
-        &self,
-        id: SeriesId,
-        mut alloc: A,
-    ) -> Result<Vec<Episode>>
+    pub(crate) async fn series_episodes<A>(&self, id: u32, mut alloc: A) -> Result<Vec<Episode>>
     where
         A: 'static + Send + FnMut(RemoteEpisodeId) -> Option<Uuid>,
     {
@@ -262,7 +261,14 @@ impl Client {
                     _ => None,
                 };
 
-                let remote_ids = Vec::from([RemoteEpisodeId::Tvdb { id: row.id }]);
+                let remote_id = RemoteEpisodeId::Tvdb { id: row.id };
+                let mut remote_ids = Vec::from([remote_id]);
+
+                if let Some(imdb_id) = row.imdb_id.filter(|id| !id.is_empty()) {
+                    remote_ids.push(RemoteEpisodeId::Imdb {
+                        id: Raw::new(&imdb_id).context("id overflow")?,
+                    });
+                }
 
                 let id = remote_ids
                     .iter()
@@ -284,6 +290,7 @@ impl Client {
                     number: row.aired_episode_number,
                     aired: row.first_aired,
                     filename,
+                    remote_id: Some(remote_id),
                     remote_ids,
                 })
             })
@@ -293,7 +300,7 @@ impl Client {
         #[serde(rename_all = "camelCase")]
         #[allow(unused)]
         struct Row {
-            id: SeriesId,
+            id: u32,
             #[serde(default)]
             absolute_number: Option<u32>,
             aired_episode_number: u32,
@@ -307,6 +314,8 @@ impl Client {
             filename: Option<String>,
             #[serde(default)]
             first_aired: Option<NaiveDate>,
+            #[serde(default)]
+            imdb_id: Option<String>,
         }
     }
 
@@ -433,7 +442,7 @@ impl Client {
         #[derive(Debug, Clone, Deserialize)]
         #[serde(rename_all = "camelCase")]
         pub(crate) struct Row {
-            pub(crate) id: SeriesId,
+            pub(crate) id: u32,
             pub(crate) series_name: String,
             #[serde(default)]
             pub(crate) poster: String,

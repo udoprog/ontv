@@ -36,32 +36,23 @@ pub(crate) struct Config {
 #[serde(rename_all = "kebab-case", tag = "type")]
 pub(crate) enum RemoteId {
     Series {
+        uuid: Uuid,
         #[serde(flatten)]
-        id: RemoteSeriesId,
+        remote: RemoteSeriesId,
     },
     Episode {
+        uuid: Uuid,
         #[serde(flatten)]
-        id: RemoteEpisodeId,
+        remote: RemoteEpisodeId,
     },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "remote")]
 pub(crate) enum RemoteSeriesId {
-    Tvdb { id: SeriesId },
+    Tvdb { id: u32 },
     Tmdb { id: u32 },
     Imdb { id: Raw<16> },
-}
-impl RemoteSeriesId {
-    /// Check if remote has API that can be used.
-    #[inline]
-    pub(crate) fn has_api(&self) -> bool {
-        match self {
-            Self::Tvdb { .. } => true,
-            Self::Tmdb { .. } => true,
-            _ => false,
-        }
-    }
 }
 
 impl fmt::Display for RemoteSeriesId {
@@ -83,34 +74,9 @@ impl fmt::Display for RemoteSeriesId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "remote")]
 pub(crate) enum RemoteEpisodeId {
-    Tvdb { id: SeriesId },
+    Tvdb { id: u32 },
     Tmdb { id: u32 },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[repr(transparent)]
-#[serde(transparent)]
-pub(crate) struct SeriesId(u64);
-
-impl From<u32> for SeriesId {
-    #[inline]
-    fn from(value: u32) -> Self {
-        Self(value as u64)
-    }
-}
-
-impl From<u64> for SeriesId {
-    #[inline]
-    fn from(value: u64) -> Self {
-        Self(value)
-    }
-}
-
-impl fmt::Display for SeriesId {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
+    Imdb { id: Raw<16> },
 }
 
 /// A series.
@@ -132,9 +98,6 @@ pub(crate) struct Series {
     /// Fanart image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) fanart: Option<Image>,
-    /// Remote series ids.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) remote_ids: Vec<RemoteSeriesId>,
     /// Indicates if the series is tracked or not, in that it will receive updates.
     #[serde(default, skip_serializing_if = "is_false")]
     pub(crate) tracked: bool,
@@ -148,6 +111,12 @@ pub(crate) struct Series {
         with = "btree_as_vec"
     )]
     pub(crate) last_sync: BTreeMap<RemoteSeriesId, DateTime<Utc>>,
+    /// The remote identifier that is used to synchronize this series.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) remote_id: Option<RemoteSeriesId>,
+    /// Remote series ids.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) remote_ids: Vec<RemoteSeriesId>,
 }
 
 #[inline]
@@ -299,6 +268,9 @@ pub struct Episode {
     /// Episode image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) filename: Option<Image>,
+    /// The remote identifier that is used to synchronize this episode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) remote_id: Option<RemoteEpisodeId>,
     /// Remote episode ids.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) remote_ids: Vec<RemoteEpisodeId>,

@@ -15,7 +15,7 @@ use crate::api::themoviedb;
 use crate::api::thetvdb;
 use crate::model::{
     Config, Episode, Image, Raw, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season, SeasonNumber,
-    Series, SeriesId, ThemeType, TmdbImage, TvdbImage, Watched,
+    Series, ThemeType, TmdbImage, TvdbImage, Watched,
 };
 
 /// Data encapsulating a newly added series.
@@ -655,12 +655,12 @@ impl Service {
             let mut remotes =
                 Vec::with_capacity(&self.db.remote_series.len() + self.db.remote_episodes.len());
 
-            for (id, series_id) in &self.db.remote_series {
-                remotes.push((series_id.clone(), RemoteId::Series { id: *id }));
+            for (&remote, &uuid) in &self.db.remote_series {
+                remotes.push(RemoteId::Series { uuid, remote });
             }
 
-            for (id, series_id) in &self.db.remote_episodes {
-                remotes.push((series_id.clone(), RemoteId::Episode { id: *id }));
+            for (&remote, &uuid) in &self.db.remote_episodes {
+                remotes.push(RemoteId::Episode { uuid, remote });
             }
 
             Some(remotes)
@@ -810,7 +810,7 @@ impl Service {
         series_id: Uuid,
     ) -> Option<impl Future<Output = Result<NewSeries>>> {
         let series = self.db.series.get(&series_id)?;
-        let remote_id = *series.remote_ids.iter().filter(|r| r.has_api()).next()?;
+        let remote_id = series.remote_id?;
         Some(self.download_series(remote_id, false))
     }
 
@@ -1059,7 +1059,7 @@ impl Service {
 
             let mut ids = Vec::new();
             ids.push(RemoteSeriesId::Tvdb {
-                id: SeriesId::from(entry.show.ids.tvdb),
+                id: entry.show.ids.tvdb,
             });
             ids.push(RemoteSeriesId::Tmdb {
                 id: entry.show.ids.tmdb,
@@ -1241,14 +1241,14 @@ fn load_database(paths: &Paths) -> Result<Database> {
         None => Default::default(),
     };
 
-    if let Some(remotes) = load_array::<(Uuid, RemoteId)>(&paths.remotes)? {
-        for (uuid, remote_id) in remotes {
+    if let Some(remotes) = load_array::<RemoteId>(&paths.remotes)? {
+        for remote_id in remotes {
             match remote_id {
-                RemoteId::Series { id } => {
-                    db.remote_series.insert(id, uuid);
+                RemoteId::Series { uuid, remote } => {
+                    db.remote_series.insert(remote, uuid);
                 }
-                RemoteId::Episode { id } => {
-                    db.remote_episodes.insert(id, uuid);
+                RemoteId::Episode { uuid, remote } => {
+                    db.remote_episodes.insert(remote, uuid);
                 }
             }
         }
