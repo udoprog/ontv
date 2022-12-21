@@ -52,6 +52,17 @@ pub(crate) enum RemoteSeriesId {
     Tmdb { id: u32 },
     Imdb { id: Raw<16> },
 }
+impl RemoteSeriesId {
+    /// Check if remote has API that can be used.
+    #[inline]
+    pub(crate) fn has_api(&self) -> bool {
+        match self {
+            Self::Tvdb { .. } => true,
+            Self::Tmdb { .. } => true,
+            _ => false,
+        }
+    }
+}
 
 impl fmt::Display for RemoteSeriesId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

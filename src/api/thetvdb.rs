@@ -156,7 +156,10 @@ impl Client {
     }
 
     /// Download series information.
-    pub(crate) async fn series(&self, id: SeriesId, new_id: Uuid) -> Result<Series> {
+    pub(crate) async fn series<A>(&self, id: SeriesId, lookup: A) -> Result<Series>
+    where
+        A: Fn(RemoteSeriesId) -> Option<Uuid>,
+    {
         let res = self
             .request_with_auth(Method::GET, &["series", &id.to_string()])
             .await?
@@ -197,8 +200,15 @@ impl Client {
             });
         }
 
+        // Try to lookup the series by known remote ids.
+        let id = remote_ids
+            .iter()
+            .flat_map(move |id| lookup(*id))
+            .next()
+            .unwrap_or_else(Uuid::new_v4);
+
         return Ok(Series {
-            id: new_id,
+            id,
             title: value.series_name.to_owned(),
             overview: value.overview,
             banner,
@@ -239,7 +249,7 @@ impl Client {
         mut alloc: A,
     ) -> Result<Vec<Episode>>
     where
-        A: FnMut(SeriesId) -> Uuid,
+        A: 'static + Send + FnMut(RemoteEpisodeId) -> Option<Uuid>,
     {
         let path = ["series", &id.to_string(), "episodes"];
 
@@ -252,7 +262,13 @@ impl Client {
                     _ => None,
                 };
 
-                let id = alloc(row.id);
+                let remote_ids = Vec::from([RemoteEpisodeId::Tvdb { id: row.id }]);
+
+                let id = remote_ids
+                    .iter()
+                    .flat_map(|id| alloc(*id))
+                    .next()
+                    .unwrap_or_else(Uuid::new_v4);
 
                 Ok(Episode {
                     id,
@@ -268,7 +284,7 @@ impl Client {
                     number: row.aired_episode_number,
                     aired: row.first_aired,
                     filename,
-                    remote_ids: Vec::from([RemoteEpisodeId::Tvdb { id: row.id }]),
+                    remote_ids,
                 })
             })
             .await;

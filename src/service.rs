@@ -14,7 +14,7 @@ use uuid::Uuid;
 use crate::api::themoviedb;
 use crate::api::thetvdb;
 use crate::model::{
-    Config, Episode, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season, SeasonNumber,
+    Config, Episode, Image, Raw, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season, SeasonNumber,
     Series, SeriesId, ThemeType, TmdbImage, TvdbImage, Watched,
 };
 
@@ -810,8 +810,8 @@ impl Service {
         series_id: Uuid,
     ) -> Option<impl Future<Output = Result<NewSeries>>> {
         let series = self.db.series.get(&series_id)?;
-        let remote_id = *series.remote_ids.iter().next()?;
-        Some(self.download_series(remote_id, series_id, false))
+        let remote_id = *series.remote_ids.iter().filter(|r| r.has_api()).next()?;
+        Some(self.download_series(remote_id, false))
     }
 
     /// Remove the given series by ID.
@@ -834,43 +834,30 @@ impl Service {
         &self,
         id: RemoteSeriesId,
     ) -> impl Future<Output = Result<NewSeries>> {
-        let series_id = self.existing_by_remote_id(id).unwrap_or_else(Uuid::new_v4);
-        self.download_series(id, series_id, true)
-    }
-
-    /// Try to find an existing series by its remote id.
-    fn existing_by_remote_id(&self, id: RemoteSeriesId) -> Option<Uuid> {
-        self.db
-            .remote_series
-            .iter()
-            .find(|(remote_id, _)| **remote_id == id)
-            .map(|(_, &id)| id)
+        self.download_series(id, true)
     }
 
     /// Download series using a remote identifier.
     fn download_series(
         &self,
         remote_id: RemoteSeriesId,
-        series_id: Uuid,
         refresh_pending: bool,
     ) -> impl Future<Output = Result<NewSeries>> {
         let tvdb = self.tvdb.clone();
-        let remote_episodes = self.db.remote_episodes.clone();
+        let series = self.db.remote_series.clone();
+        let episodes = self.db.remote_episodes.clone();
 
         async move {
-            let lookup = |q| {
-                remote_episodes
-                    .iter()
-                    .find(|(remote_id, _)| **remote_id == q)
-                    .map(|(_, &id)| id)
-                    .unwrap_or_else(Uuid::new_v4)
-            };
+            let lookup_series =
+                move |q| Some(*series.iter().find(|(remote_id, _)| **remote_id == q)?.1);
+
+            let lookup_episode =
+                move |q| Some(*episodes.iter().find(|(remote_id, _)| **remote_id == q)?.1);
 
             let (series, episodes, seasons) = match remote_id {
                 RemoteSeriesId::Tvdb { id } => {
-                    let series = tvdb.series(id, series_id);
-                    let episodes =
-                        tvdb.series_episodes(id, move |id| lookup(RemoteEpisodeId::Tvdb { id }));
+                    let series = tvdb.series(id, lookup_series);
+                    let episodes = tvdb.series_episodes(id, lookup_episode);
                     let (series, episodes) = tokio::try_join!(series, episodes)?;
                     let seasons = episodes_into_seasons(&episodes);
                     (series, episodes, seasons)
@@ -995,6 +982,20 @@ impl Service {
         self.do_not_save = true;
     }
 
+    /// Get existing id by remote if it exists.
+    fn existing_by_remote_ids<I>(&self, ids: I) -> Option<Uuid>
+    where
+        I: IntoIterator<Item = RemoteSeriesId>,
+    {
+        for q in ids {
+            if let Some(id) = self.db.remote_series.iter().find(|(id, _)| **id == q) {
+                return Some(*id.1);
+            }
+        }
+
+        None
+    }
+
     /// Import trakt watched history from the given path.
     pub(crate) fn import_trakt_watched(
         &mut self,
@@ -1056,7 +1057,19 @@ impl Service {
 
             log::debug!("{index}: {row}");
 
-            let Some(series_id) = self.existing_by_remote_id(RemoteSeriesId::Tvdb { id: SeriesId::from(entry.show.ids.tvdb) }) else {
+            let mut ids = Vec::new();
+            ids.push(RemoteSeriesId::Tvdb {
+                id: SeriesId::from(entry.show.ids.tvdb),
+            });
+            ids.push(RemoteSeriesId::Tmdb {
+                id: entry.show.ids.tmdb,
+            });
+            ids.push(RemoteSeriesId::Imdb {
+                id: Raw::new(&entry.show.ids.imdb).context("imdb id")?,
+            });
+
+            // TODO: use more databases.
+            let Some(series_id) = self.existing_by_remote_ids(ids) else {
                 continue;
             };
 
