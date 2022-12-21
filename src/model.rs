@@ -310,15 +310,15 @@ impl Episode {
 /// Image format in use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum ImageFormat {
+pub(crate) enum ImageExt {
     Jpg,
 }
 
-impl ImageFormat {
+impl ImageExt {
     /// Parse a banner URL.
     fn parse(input: &str) -> Result<Self> {
         match input {
-            "jpg" => Ok(ImageFormat::Jpg),
+            "jpg" => Ok(ImageExt::Jpg),
             _ => {
                 bail!("unsupported image format")
             }
@@ -326,140 +326,12 @@ impl ImageFormat {
     }
 }
 
-impl fmt::Display for ImageFormat {
+impl fmt::Display for ImageExt {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ImageFormat::Jpg => write!(f, "jpg"),
+            ImageExt::Jpg => write!(f, "jpg"),
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
-pub(crate) struct Image {
-    #[serde(flatten)]
-    pub(crate) kind: ImageKind,
-    pub(crate) format: ImageFormat,
-}
-
-impl Image {
-    /// Parse an image URL from thetvdb.
-    pub(crate) fn parse(mut input: &str) -> Result<Self> {
-        input = input.trim_start_matches('/');
-
-        let mut it = input.split('/');
-
-        ensure!(
-            matches!(it.next(), Some("banners")),
-            "{input}: missing `banners`"
-        );
-
-        Self::parse_banner_it(it).with_context(|| anyhow!("bad image: {input}"))
-    }
-
-    /// Parse without expecting a `banners` prefix.
-    #[inline]
-    pub(crate) fn parse_banner(input: &str) -> Result<Self> {
-        Self::parse_banner_it(input.split('/')).with_context(|| anyhow!("bad image: {input}"))
-    }
-
-    fn parse_banner_it<'a, I>(mut it: I) -> Result<Self>
-    where
-        I: DoubleEndedIterator<Item = &'a str>,
-    {
-        use arrayvec::ArrayVec;
-
-        let rest = it.next_back().context("missing last component")?;
-
-        let Some((rest, ext)) = rest.split_once('.') else {
-            bail!("missing extension");
-        };
-
-        let format = ImageFormat::parse(ext)?;
-
-        let mut array = ArrayVec::<_, 6>::new();
-
-        for part in it {
-            array.try_push(part).map_err(|e| anyhow!("{e}"))?;
-        }
-
-        array.try_push(rest).map_err(|e| anyhow!("{e}"))?;
-
-        let kind = match &array[..] {
-            // blank/77092.jpg
-            &["blank", series_id] => ImageKind::Blank(series_id.parse()?),
-            // images/missing/series.jpg
-            &["images", "missing", "series"] => ImageKind::Missing,
-            &["v4", "series", series_id, kind, rest] => {
-                let kind = ArtKind::parse(kind)?;
-                let id = Hex16::from_hex(rest).context("bad id")?;
-                ImageKind::V4(series_id.parse()?, kind, id)
-            }
-            &["series", series_id, kind, id] => {
-                let series_id = series_id.parse()?;
-                let kind = ArtKind::parse(kind)?;
-                let id = Hex16::from_hex(id).context("bad id")?;
-                ImageKind::Legacy(series_id, kind, id)
-            }
-            &["posters", rest] => {
-                if let Some((series_id, suffix)) = rest.split_once('-') {
-                    let series_id = series_id.parse()?;
-                    let suffix = Raw16::from_string(suffix);
-                    ImageKind::BannerSuffixed(series_id, suffix)
-                } else {
-                    let id = Hex16::from_hex(rest).context("bad id")?;
-                    ImageKind::Banner(id)
-                }
-            }
-            &["graphical", rest] => {
-                if let Some((series_id, suffix)) = rest.split_once('-') {
-                    let series_id = series_id.parse()?;
-                    let suffix = Raw16::from_string(suffix);
-                    ImageKind::GraphicalSuffixed(series_id, suffix)
-                } else {
-                    let id = Hex16::from_hex(rest).context("bad hex")?;
-                    ImageKind::Graphical(id)
-                }
-            }
-            &["fanart", "original", rest] => {
-                if let Some((series_id, suffix)) = rest.split_once('-') {
-                    let series_id = series_id.parse()?;
-                    let suffix = Raw16::from_string(suffix);
-                    ImageKind::FanartSuffixed(series_id, suffix)
-                } else {
-                    let id = Hex16::from_hex(rest).context("bad hex")?;
-                    ImageKind::Fanart(id)
-                }
-            }
-            // Example: v4/episode/8538342/screencap/63887bf74c84e.jpg
-            &["v4", "episode", episode_id, "screencap", rest] => {
-                let id = Hex16::from_hex(rest).context("bad id")?;
-                ImageKind::ScreenCap(episode_id.parse()?, id)
-            }
-            &["episodes", episode_id, rest] => {
-                ImageKind::Episodes(episode_id.parse()?, rest.parse()?)
-            }
-            _ => {
-                bail!("unsupported image");
-            }
-        };
-
-        Ok(Image { kind, format })
-    }
-
-    /// Generate a 16-byte hash.
-    pub(crate) fn hash(&self) -> u128 {
-        use std::hash::Hash;
-        use twox_hash::xxh3::HasherExt;
-
-        let mut hasher = twox_hash::Xxh3Hash128::default();
-        self.kind.hash(&mut hasher);
-        hasher.finish_ext()
-    }
-
-    /// Get the expected image format.
-    pub(crate) fn format(&self) -> ImageFormat {
-        self.format
     }
 }
 
@@ -504,7 +376,7 @@ impl fmt::Display for ArtKind {
 /// The identifier of an image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", tag = "type", content = "data")]
-pub(crate) enum ImageKind {
+pub(crate) enum TvdbImageKind {
     Legacy(u64, ArtKind, Hex16),
     V4(u64, ArtKind, Hex16),
     Banner(Hex16),
@@ -519,51 +391,186 @@ pub(crate) enum ImageKind {
     Missing,
 }
 
-impl fmt::Display for Image {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let format = &self.format;
+/// The identifier of an image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) struct TvdbImage {
+    #[serde(flatten)]
+    pub(crate) kind: TvdbImageKind,
+    pub(crate) ext: ImageExt,
+}
 
-        match self.kind {
-            ImageKind::Legacy(series_id, kind, id) => {
-                write!(f, "/banners/series/{series_id}/{kind}/{id}.{format}")
+impl fmt::Display for TvdbImage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let ext = &self.ext;
+
+        match &self.kind {
+            TvdbImageKind::Legacy(series_id, kind, id) => {
+                write!(f, "/banners/series/{series_id}/{kind}/{id}.{ext}")
             }
-            ImageKind::V4(series_id, kind, id) => {
-                write!(f, "/banners/v4/series/{series_id}/{kind}/{id}.{format}")
+            TvdbImageKind::V4(series_id, kind, id) => {
+                write!(f, "/banners/v4/series/{series_id}/{kind}/{id}.{ext}")
             }
-            ImageKind::Banner(id) => {
-                write!(f, "/banners/posters/{id}.{format}")
+            TvdbImageKind::Banner(id) => {
+                write!(f, "/banners/posters/{id}.{ext}")
             }
-            ImageKind::BannerSuffixed(series_id, suffix) => {
-                write!(f, "/banners/posters/{series_id}-{suffix}.{format}")
+            TvdbImageKind::BannerSuffixed(series_id, suffix) => {
+                write!(f, "/banners/posters/{series_id}-{suffix}.{ext}")
             }
-            ImageKind::Graphical(id) => {
-                write!(f, "/banners/graphical/{id}.{format}")
+            TvdbImageKind::Graphical(id) => {
+                write!(f, "/banners/graphical/{id}.{ext}")
             }
-            ImageKind::GraphicalSuffixed(series_id, suffix) => {
-                write!(f, "/banners/graphical/{series_id}-{suffix}.{format}")
+            TvdbImageKind::GraphicalSuffixed(series_id, suffix) => {
+                write!(f, "/banners/graphical/{series_id}-{suffix}.{ext}")
             }
-            ImageKind::Fanart(id) => {
-                write!(f, "/banners/fanart/original/{id}.{format}")
+            TvdbImageKind::Fanart(id) => {
+                write!(f, "/banners/fanart/original/{id}.{ext}")
             }
-            ImageKind::FanartSuffixed(series_id, suffix) => {
-                write!(f, "/banners/fanart/original/{series_id}-{suffix}.{format}")
+            TvdbImageKind::FanartSuffixed(series_id, suffix) => {
+                write!(f, "/banners/fanart/original/{series_id}-{suffix}.{ext}")
             }
-            ImageKind::ScreenCap(episode_id, id) => {
-                write!(
-                    f,
-                    "/banners/v4/episode/{episode_id}/screencap/{id}.{format}"
-                )
+            TvdbImageKind::ScreenCap(episode_id, id) => {
+                write!(f, "/banners/v4/episode/{episode_id}/screencap/{id}.{ext}")
             }
-            ImageKind::Episodes(episode_id, image_id) => {
-                write!(f, "/banners/episodes/{episode_id}/{image_id}.{format}")
+            TvdbImageKind::Episodes(episode_id, image_id) => {
+                write!(f, "/banners/episodes/{episode_id}/{image_id}.{ext}")
             }
-            ImageKind::Blank(series_id) => {
-                write!(f, "/banners/blank/{series_id}.{format}")
+            TvdbImageKind::Blank(series_id) => {
+                write!(f, "/banners/blank/{series_id}.{ext}")
             }
-            ImageKind::Missing => {
-                write!(f, "/banners/images/missing/series.jpg")
+            TvdbImageKind::Missing => {
+                write!(f, "/banners/images/missing/series.{ext}")
             }
         }
+    }
+}
+
+/// The identifier of an image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", tag = "from")]
+pub(crate) enum Image {
+    /// An image from thetvdb.com
+    Tvdb(TvdbImage),
+}
+
+impl Image {
+    /// Parse an image URL from thetvdb.
+    pub(crate) fn parse_tvdb(mut input: &str) -> Result<Self> {
+        input = input.trim_start_matches('/');
+
+        let mut it = input.split('/');
+
+        ensure!(
+            matches!(it.next(), Some("banners")),
+            "{input}: missing `banners`"
+        );
+
+        Self::parse_banner_it(it).with_context(|| anyhow!("bad image: {input}"))
+    }
+
+    /// Parse without expecting a `banners` prefix.
+    #[inline]
+    pub(crate) fn parse_tvdb_banner(input: &str) -> Result<Self> {
+        Self::parse_banner_it(input.split('/')).with_context(|| anyhow!("bad image: {input}"))
+    }
+
+    fn parse_banner_it<'a, I>(mut it: I) -> Result<Self>
+    where
+        I: DoubleEndedIterator<Item = &'a str>,
+    {
+        use arrayvec::ArrayVec;
+
+        let rest = it.next_back().context("missing last component")?;
+
+        let Some((rest, ext)) = rest.split_once('.') else {
+            bail!("missing extension");
+        };
+
+        let ext = ImageExt::parse(ext)?;
+
+        let mut array = ArrayVec::<_, 6>::new();
+
+        for part in it {
+            array.try_push(part).map_err(|e| anyhow!("{e}"))?;
+        }
+
+        array.try_push(rest).map_err(|e| anyhow!("{e}"))?;
+
+        let kind = match &array[..] {
+            // blank/77092.jpg
+            &["blank", series_id] => TvdbImageKind::Blank(series_id.parse()?),
+            // images/missing/series.jpg
+            &["images", "missing", "series"] => TvdbImageKind::Missing,
+            &["v4", "series", series_id, kind, rest] => {
+                let kind = ArtKind::parse(kind)?;
+                let id = Hex16::from_hex(rest).context("bad id")?;
+                TvdbImageKind::V4(series_id.parse()?, kind, id)
+            }
+            &["series", series_id, kind, id] => {
+                let series_id = series_id.parse()?;
+                let kind = ArtKind::parse(kind)?;
+                let id = Hex16::from_hex(id).context("bad id")?;
+                TvdbImageKind::Legacy(series_id, kind, id)
+            }
+            &["posters", rest] => {
+                if let Some((series_id, suffix)) = rest.split_once('-') {
+                    let series_id = series_id.parse()?;
+                    let suffix = Raw16::from_string(suffix);
+                    TvdbImageKind::BannerSuffixed(series_id, suffix)
+                } else {
+                    let id = Hex16::from_hex(rest).context("bad id")?;
+                    TvdbImageKind::Banner(id)
+                }
+            }
+            &["graphical", rest] => {
+                if let Some((series_id, suffix)) = rest.split_once('-') {
+                    let series_id = series_id.parse()?;
+                    let suffix = Raw16::from_string(suffix);
+                    TvdbImageKind::GraphicalSuffixed(series_id, suffix)
+                } else {
+                    let id = Hex16::from_hex(rest).context("bad hex")?;
+                    TvdbImageKind::Graphical(id)
+                }
+            }
+            &["fanart", "original", rest] => {
+                if let Some((series_id, suffix)) = rest.split_once('-') {
+                    let series_id = series_id.parse()?;
+                    let suffix = Raw16::from_string(suffix);
+                    TvdbImageKind::FanartSuffixed(series_id, suffix)
+                } else {
+                    let id = Hex16::from_hex(rest).context("bad hex")?;
+                    TvdbImageKind::Fanart(id)
+                }
+            }
+            // Example: v4/episode/8538342/screencap/63887bf74c84e.jpg
+            &["v4", "episode", episode_id, "screencap", rest] => {
+                let id = Hex16::from_hex(rest).context("bad id")?;
+                TvdbImageKind::ScreenCap(episode_id.parse()?, id)
+            }
+            &["episodes", episode_id, rest] => {
+                TvdbImageKind::Episodes(episode_id.parse()?, rest.parse()?)
+            }
+            _ => {
+                bail!("unsupported image");
+            }
+        };
+
+        Ok(Image::Tvdb(TvdbImage { kind, ext }))
+    }
+}
+
+impl fmt::Display for Image {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Image::Tvdb(tvdb) => write!(f, "tvdb:{tvdb}"),
+        }
+    }
+}
+
+impl From<TvdbImage> for Image {
+    #[inline]
+    fn from(image: TvdbImage) -> Self {
+        Image::Tvdb(image)
     }
 }
 

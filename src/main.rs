@@ -1,3 +1,4 @@
+mod api;
 mod assets;
 mod message;
 mod model;
@@ -5,7 +6,6 @@ mod page;
 mod params;
 mod search;
 mod service;
-mod thetvdb;
 mod utils;
 
 use std::collections::VecDeque;

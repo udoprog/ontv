@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::model::{
     Episode, Image, Raw16, RemoteEpisodeId, RemoteSeriesId, SearchSeries, SeasonNumber, Series,
-    SeriesId,
+    SeriesId, TvdbImage,
 };
 
 const BASE_URL: &str = "https://api.thetvdb.com";
@@ -172,19 +172,19 @@ impl Client {
 
         let banner = match &value.banner {
             Some(banner) if !banner.is_empty() => {
-                Some(Image::parse_banner(banner).context("banner image")?)
+                Some(Image::parse_tvdb_banner(banner).context("banner image")?)
             }
             _ => None,
         };
 
         let fanart = match &value.fanart {
             Some(fanart) if !fanart.is_empty() => {
-                Some(Image::parse_banner(fanart).context("fanart image")?)
+                Some(Image::parse_tvdb_banner(fanart).context("fanart image")?)
             }
             _ => None,
         };
 
-        let poster = Image::parse_banner(&value.poster).context("poster image")?;
+        let poster = Image::parse_tvdb_banner(&value.poster).context("poster image")?;
 
         let mut remote_ids = Vec::from([RemoteSeriesId::TheTvDb { id }]);
 
@@ -244,7 +244,7 @@ impl Client {
             .paged_request("episode", &path, move |row: Row| {
                 let filename = match row.filename {
                     Some(filename) if !filename.is_empty() => {
-                        Some(Image::parse_banner(&filename).context("filename")?)
+                        Some(Image::parse_tvdb_banner(&filename).context("filename")?)
                     }
                     _ => None,
                 };
@@ -392,7 +392,7 @@ impl Client {
                 }
             };
 
-            let poster = match Image::parse(&row.poster) {
+            let poster = match Image::parse_tvdb(&row.poster) {
                 Ok(poster) => Some(poster),
                 Err(error) => {
                     log::error!("#{index}: {error}");
@@ -426,7 +426,7 @@ impl Client {
     }
 
     /// Load image data.
-    pub(crate) async fn get_image_data(&self, id: &Image) -> Result<Vec<u8>> {
+    pub(crate) async fn get_image_data(&self, id: &TvdbImage) -> Result<Vec<u8>> {
         let mut url = self.state.artworks_url.clone();
         url.set_path(&id.to_string());
         let res = self.client.get(url).send().await?;

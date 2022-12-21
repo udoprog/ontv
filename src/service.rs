@@ -11,11 +11,11 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::api::thetvdb;
 use crate::model::{
     Config, Episode, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season, SeasonNumber,
-    Series, SeriesId, ThemeType, Watched,
+    Series, SeriesId, ThemeType, TvdbImage, Watched,
 };
-use crate::thetvdb::Client;
 
 /// Data encapsulating a newly added series.
 #[derive(Clone)]
@@ -189,7 +189,7 @@ pub struct Service {
     /// Service database.
     db: Database,
     /// Shared client.
-    pub(crate) client: Client,
+    pub(crate) client: thetvdb::Client,
     /// Indicates that the service should never touch anything on the filesystem.
     do_not_save: bool,
 }
@@ -214,7 +214,7 @@ impl Service {
         };
 
         let db = load_database(&paths)?;
-        let client = Client::new(&db.config.thetvdb_legacy_apikey);
+        let client = thetvdb::Client::new(&db.config.thetvdb_legacy_apikey);
 
         let this = Self {
             paths: Arc::new(paths),
@@ -961,9 +961,16 @@ impl Service {
         &self,
         id: Image,
     ) -> impl Future<Output = Result<Vec<(Image, Handle)>>> {
-        let client = self.client.clone();
         let paths = self.paths.clone();
-        cache_images(client, paths, [id])
+        let client = self.client.clone();
+
+        async move {
+            let output = match id {
+                Image::Tvdb(id) => cache_images_tvdb(&paths.images, &client, [id]).await?,
+            };
+
+            Ok(output)
+        }
     }
 
     /// Prevents the service from saving anything to the filesystem.
@@ -1095,17 +1102,21 @@ pub(crate) fn load_config(path: &Path) -> Result<Option<Config>> {
 
 /// Ensure that the given image IDs are in the in-memory and filesystem image
 /// caches.
-async fn cache_images<I>(client: Client, paths: Arc<Paths>, ids: I) -> Result<Vec<(Image, Handle)>>
+async fn cache_images_tvdb<I>(
+    path: &Path,
+    client: &thetvdb::Client,
+    ids: I,
+) -> Result<Vec<(Image, Handle)>>
 where
-    I: IntoIterator<Item = Image>,
+    I: IntoIterator<Item = TvdbImage>,
 {
     use tokio::fs;
 
     let mut output = Vec::new();
 
     for id in ids {
-        let hash = id.hash();
-        let cache_path = paths.images.join(format!("{:032x}.{}", hash, id.format()));
+        let hash = hash128(&id.kind);
+        let cache_path = path.join(format!("{:032x}.{ext}", hash, ext = id.ext));
 
         let data = if matches!(fs::metadata(&cache_path).await, Ok(m) if m.is_file()) {
             log::debug!("reading image from cache: {id}: {}", cache_path.display());
@@ -1127,10 +1138,21 @@ where
 
         log::debug!("loaded: {id} ({} bytes)", data.len());
         let handle = Handle::from_memory(data);
-        output.push((id, handle));
+        output.push((Image::from(id), handle));
     }
 
     Ok(output)
+}
+
+/// Generate a 16-byte hash.
+pub(crate) fn hash128<T>(value: &T) -> u128
+where
+    T: std::hash::Hash,
+{
+    use twox_hash::xxh3::HasherExt;
+    let mut hasher = twox_hash::Xxh3Hash128::default();
+    std::hash::Hash::hash(value, &mut hasher);
+    hasher.finish_ext()
 }
 
 /// Try to load initial state.
