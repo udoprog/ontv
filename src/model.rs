@@ -84,6 +84,13 @@ pub(crate) enum RemoteEpisodeId {
 #[serde(transparent)]
 pub(crate) struct SeriesId(u64);
 
+impl From<u32> for SeriesId {
+    #[inline]
+    fn from(value: u32) -> Self {
+        Self(value as u64)
+    }
+}
+
 impl From<u64> for SeriesId {
     #[inline]
     fn from(value: u64) -> Self {

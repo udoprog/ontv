@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::model::{
     Config, Episode, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season, SeasonNumber,
-    Series, ThemeType, Watched,
+    Series, SeriesId, ThemeType, Watched,
 };
 use crate::thetvdb::Client;
 
@@ -74,6 +74,7 @@ struct Changes {
 }
 
 impl Changes {
+    #[inline]
     fn has_changes(&self) -> bool {
         !self.set.is_empty() || !self.remove.is_empty() || !self.add.is_empty()
     }
@@ -189,6 +190,8 @@ pub struct Service {
     db: Database,
     /// Shared client.
     pub(crate) client: Client,
+    /// Indicates that the service should never touch anything on the filesystem.
+    do_not_save: bool,
 }
 
 impl Service {
@@ -217,6 +220,7 @@ impl Service {
             paths: Arc::new(paths),
             db,
             client,
+            do_not_save: false,
         };
 
         Ok(this)
@@ -594,9 +598,6 @@ impl Service {
 
     /// Set up next pending episode.
     fn setup_pending(&mut self, series: Uuid, episode: Option<Uuid>) {
-        // Remove any pending episodes for the given series.
-        self.db.pending.retain(|p| p.series != series);
-        self.db.changes.set.insert(Change::Pending);
         let now = Utc::now();
         self.populate_pending(&now, series, episode);
     }
@@ -664,7 +665,13 @@ impl Service {
 
         let paths = self.paths.clone();
 
+        let do_not_save = self.do_not_save;
+
         async move {
+            if do_not_save {
+                return Ok(());
+            }
+
             let guard = paths.lock.lock().await;
 
             if let Some(config) = config {
@@ -714,9 +721,13 @@ impl Service {
 
     /// Ensure that at least one pending episode is present for the given
     /// series.
-    fn populate_pending(&mut self, now: &DateTime<Utc>, series: Uuid, last: Option<Uuid>) {
+    fn populate_pending(&mut self, now: &DateTime<Utc>, series_id: Uuid, last: Option<Uuid>) {
+        // Remove any pending episodes for the given series.
+        self.db.pending.retain(|p| p.series != series_id);
+        self.db.changes.set.insert(Change::Pending);
+
         // Populate the next pending episode.
-        let Some(episodes) = self.db.episodes.get(&series) else {
+        let Some(episodes) = self.db.episodes.get(&series_id) else {
             return;
         };
 
@@ -740,11 +751,13 @@ impl Service {
             }
         }
 
+        self.db.changes.set.insert(Change::Pending);
+
         // Mark the first episode (that has aired).
         if let Some(e) = it.find(|e| e.has_aired(now)) {
             // Mark the next episode in the show as pending.
             self.db.pending.push(Pending {
-                series,
+                series: series_id,
                 episode: e.id,
                 timestamp: *now,
             });
@@ -809,15 +822,17 @@ impl Service {
         &self,
         id: RemoteSeriesId,
     ) -> impl Future<Output = Result<NewSeries>> {
-        let series_id = self
-            .db
+        let series_id = self.existing_by_remote_id(id).unwrap_or_else(Uuid::new_v4);
+        self.download_series(id, series_id, true)
+    }
+
+    /// Try to find an existing series by its remote id.
+    fn existing_by_remote_id(&self, id: RemoteSeriesId) -> Option<Uuid> {
+        self.db
             .remote_series
             .iter()
             .find(|(remote_id, _)| **remote_id == id)
             .map(|(_, &id)| id)
-            .unwrap_or_else(Uuid::new_v4);
-
-        self.download_series(id, series_id, true)
     }
 
     /// Download series using a remote identifier.
@@ -931,10 +946,8 @@ impl Service {
 
         if data.refresh_pending {
             // Remove any pending episodes for the given series.
-            self.db.pending.retain(|p| p.series != series_id);
             let now = Utc::now();
             self.populate_pending(&now, series_id, None);
-            self.db.changes.set.insert(Change::Pending);
         }
 
         self.db.changes.set.insert(Change::Series);
@@ -951,6 +964,121 @@ impl Service {
         let client = self.client.clone();
         let paths = self.paths.clone();
         cache_images(client, paths, [id])
+    }
+
+    /// Prevents the service from saving anything to the filesystem.
+    pub(crate) fn do_not_save(&mut self) {
+        self.do_not_save = true;
+    }
+
+    /// Import trakt watched history from the given path.
+    pub(crate) fn import_trakt_watched(
+        &mut self,
+        path: &Path,
+        filter: Option<&str>,
+        remove: bool,
+    ) -> Result<()> {
+        #[derive(Debug, Deserialize, Serialize)]
+        struct Episode {
+            last_watched_at: DateTime<Utc>,
+            number: u32,
+        }
+
+        #[derive(Debug, Deserialize, Serialize)]
+        struct Season {
+            number: u32,
+            episodes: Vec<Episode>,
+        }
+
+        #[derive(Debug, Deserialize, Serialize)]
+        struct Ids {
+            imdb: String,
+            slug: String,
+            tmdb: u32,
+            trakt: u32,
+            tvdb: u32,
+            #[serde(default)]
+            tvrage: Option<u32>,
+        }
+
+        #[derive(Debug, Deserialize, Serialize)]
+        struct Show {
+            title: String,
+            ids: Ids,
+        }
+
+        #[derive(Debug, Deserialize, Serialize)]
+        struct Entry {
+            show: Show,
+            seasons: Vec<Season>,
+        }
+
+        let filter = filter.map(|filter| crate::search::Tokens::new(filter));
+
+        use std::fs::File;
+        let f = File::open(path)?;
+        let rows: Vec<serde_json::Value> = serde_json::from_reader(f)?;
+
+        let now = Utc::now();
+
+        for (index, row) in rows.into_iter().enumerate() {
+            let entry: Entry = serde_json::from_value(row.clone())?;
+
+            if let Some(filter) = &filter {
+                if !filter.matches(&entry.show.title) {
+                    continue;
+                }
+            }
+
+            log::debug!("{index}: {row}");
+
+            let Some(series_id) = self.existing_by_remote_id(RemoteSeriesId::TheTvDb { id: SeriesId::from(entry.show.ids.tvdb) }) else {
+                continue;
+            };
+
+            log::debug!("{index}: {series_id}: {entry:?}");
+
+            let Some(episodes) = self.db.episodes.get(&series_id) else {
+                continue;
+            };
+
+            if remove {
+                self.db.watched.retain(|w| w.series != series_id);
+
+                for e in episodes {
+                    let _ = self.db.watch_counts.remove(&e.id);
+                }
+
+                self.db.changes.set.insert(Change::Watched);
+            }
+
+            let mut last = None;
+
+            for season in &entry.seasons {
+                for episode in &season.episodes {
+                    let Some(e) = episodes.iter().find(|e| e.season == SeasonNumber::Number(season.number) && e.number == episode.number) else {
+                        continue;
+                    };
+
+                    log::debug!("{index}: watch: {}", e.id);
+
+                    self.db.watched.push(Watched {
+                        id: Uuid::new_v4(),
+                        series: series_id,
+                        episode: e.id,
+                        timestamp: episode.last_watched_at,
+                    });
+
+                    *self.db.watch_counts.entry(e.id).or_default() += 1;
+                    self.db.changes.set.insert(Change::Watched);
+                    last = Some(e.id);
+                }
+            }
+
+            self.populate_pending(&now, series_id, last);
+        }
+
+        Ok(())
     }
 }
 

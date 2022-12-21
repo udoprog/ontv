@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use iced::widget::{button, column, image, row, text, text_input, vertical_space, Column};
 use iced::Length;
 use iced::{theme, Command};
@@ -38,15 +36,13 @@ impl State {
         match message {
             M::ChangeFilter(filter) => {
                 self.filter = filter;
-                let filter = tokenize(&self.filter, false);
+                let filter = crate::search::Tokens::new(&self.filter);
 
                 self.filtered = if !filter.is_empty() {
                     let mut filtered = Vec::new();
 
                     for (index, s) in service.all_series().iter().enumerate() {
-                        let title = tokenize(&s.title, true);
-
-                        if filter.iter().all(|t| title.contains(t.as_str())) {
+                        if filter.matches(&s.title) {
                             filtered.push(index);
                         }
                     }
@@ -133,40 +129,4 @@ impl State {
         ]
         .spacing(GAP)
     }
-}
-
-/// Tokenize a string for filtering.
-fn tokenize(input: &str, prefix: bool) -> HashSet<String> {
-    let mut output = HashSet::new();
-
-    let mut string = String::new();
-
-    for part in input.split_whitespace() {
-        if prefix {
-            string.clear();
-
-            for c in part.chars() {
-                if !c.is_alphanumeric() {
-                    continue;
-                }
-
-                string.extend(c.to_lowercase());
-                output.insert(string.clone());
-            }
-        } else {
-            string.clear();
-
-            for c in part.chars() {
-                if !c.is_alphanumeric() {
-                    continue;
-                }
-
-                string.extend(c.to_lowercase());
-            }
-
-            output.insert(string.clone());
-        }
-    }
-
-    output
 }

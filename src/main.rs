@@ -3,15 +3,18 @@ mod message;
 mod model;
 mod page;
 mod params;
+mod search;
 mod service;
 mod thetvdb;
 mod utils;
 
 use std::collections::VecDeque;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Result;
 use chrono::Utc;
+use clap::Parser;
 use iced::theme::{self, Theme};
 use iced::widget::{
     button, column, container, horizontal_rule, row, scrollable, text, Button, Space,
@@ -33,9 +36,30 @@ use crate::utils::{TimedOut, Timeout};
 const UPDATE_TIMEOUT: u64 = 60;
 const ERRORS: usize = 3;
 
+#[derive(Parser)]
+struct Opts {
+    /// Import watch history from trakt.
+    #[arg(long, name = "path")]
+    import_trakt_watched: Option<PathBuf>,
+    /// Only import a show matching the given filter.
+    #[arg(long, name = "string")]
+    import_filter: Option<String>,
+    /// Override any existing watch history.
+    #[arg(long)]
+    import_remove: bool,
+}
+
 pub fn main() -> Result<()> {
     pretty_env_logger::init();
-    let service = Service::new()?;
+    let mut service = Service::new()?;
+
+    let opts = Opts::try_parse()?;
+
+    if let Some(path) = opts.import_trakt_watched {
+        service.import_trakt_watched(&path, opts.import_filter.as_deref(), opts.import_remove)?;
+        service.do_not_save();
+    }
+
     let mut settings = Settings::with_flags(Flags { service });
     settings.exit_on_close_request = false;
     Main::run(settings)?;
