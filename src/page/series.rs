@@ -126,7 +126,7 @@ impl State {
             );
         }
 
-        let info = match service.episodes(series.id).count() {
+        let info = match service.episodes(series.id).len() {
             0 => text(format!("No episodes")),
             1 => text(format!("One episode")),
             count => text(format!("{count} episodes")),
@@ -225,7 +225,7 @@ pub(crate) fn season_info(
         "Watched {watched} out of {total} {plural} ({percentage})"
     ));
 
-    column![actions, info]
+    Column::new().push(actions).push(info)
 }
 
 /// Prepare assets needed for banner.

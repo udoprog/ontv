@@ -4,6 +4,7 @@
 mod api;
 mod assets;
 mod cache;
+mod import;
 mod message;
 mod model;
 mod page;
@@ -53,9 +54,15 @@ struct Opts {
     /// Override any existing watch history.
     #[arg(long)]
     import_remove: bool,
+    /// Import any missing shows encountered.
+    #[arg(long)]
+    import_missing: bool,
     /// Ensure that import history is saved.
     #[arg(long)]
-    import_save: bool,
+    import_test: bool,
+    /// Don't save anything.
+    #[arg(long)]
+    test: bool,
 }
 
 pub fn main() -> Result<()> {
@@ -65,11 +72,21 @@ pub fn main() -> Result<()> {
     let opts = Opts::try_parse()?;
 
     if let Some(path) = opts.import_trakt_watched {
-        service.import_trakt_watched(&path, opts.import_filter.as_deref(), opts.import_remove)?;
+        crate::import::import_trakt_watched(
+            &mut service,
+            &path,
+            opts.import_filter.as_deref(),
+            opts.import_remove,
+            opts.import_missing,
+        )?;
 
-        if !opts.import_save {
+        if opts.import_test {
             service.do_not_save();
         }
+    }
+
+    if opts.test {
+        service.do_not_save();
     }
 
     let mut settings = Settings::with_flags(Flags { service });
@@ -172,6 +189,7 @@ impl Application for Main {
             }
             Message::SeriesList(message) => self.series_list.update(&self.service, message),
             Message::Series(message) => self.series.update(message),
+            Message::Season(message) => self.season.update(&mut self.service, message),
             Message::Noop => {
                 return Command::none();
             }
@@ -295,11 +313,6 @@ impl Application for Main {
             Message::SelectPending(series, episode) => {
                 let now = Utc::now();
                 self.service.select_pending(series, episode, now);
-                Command::none()
-            }
-            Message::RemoveEpisodeWatches(series, episode) => {
-                let now = Utc::now();
-                self.service.remove_episode_watches(series, episode, now);
                 Command::none()
             }
             Message::RemoveSeasonWatches(series, season) => {

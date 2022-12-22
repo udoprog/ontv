@@ -96,7 +96,7 @@ impl State {
             content = content.push(
                 column![
                     title,
-                    text(format!("{} episode(s)", episodes.count())),
+                    text(format!("{} episode(s)", episodes.len())),
                     actions,
                 ]
                 .spacing(SPACE),

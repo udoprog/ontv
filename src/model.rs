@@ -214,12 +214,13 @@ pub(crate) struct Watched {
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum SeasonNumber {
-    Number(u32),
-    #[serde(rename = "specials")]
-    Specials,
     #[serde(rename = "unknown")]
     #[default]
     Unknown,
+    #[serde(rename = "specials")]
+    Specials,
+    /// A regular numbered season.
+    Number(u32),
 }
 
 impl SeasonNumber {
@@ -238,6 +239,17 @@ impl SeasonNumber {
             SeasonNumber::Number(number) => text(format!("S{}", number)),
             SeasonNumber::Specials => text("S"),
             SeasonNumber::Unknown => text("N/A"),
+        }
+    }
+}
+
+impl fmt::Display for SeasonNumber {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SeasonNumber::Number(number) => write!(f, "Season {}", number),
+            SeasonNumber::Specials => write!(f, "Specials"),
+            SeasonNumber::Unknown => write!(f, "N/A"),
         }
     }
 }
@@ -301,6 +313,13 @@ impl Episode {
         };
 
         *aired <= now.date_naive()
+    }
+}
+
+impl fmt::Display for Episode {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} / {}", self.season, self.number)
     }
 }
 

@@ -69,6 +69,8 @@ pub(crate) enum Message {
     SeriesList(page::series_list::M),
     /// Series-specific messages.
     Series(page::series::M),
+    /// Season-specific messages.
+    Season(page::season::M),
     /// Do nothing.
     #[default]
     Noop,
@@ -104,8 +106,6 @@ pub(crate) enum Message {
     Skip(Uuid, Uuid),
     /// Explicitly select the next pending episode.
     SelectPending(Uuid, Uuid),
-    /// Remove all watches.
-    RemoveEpisodeWatches(Uuid, Uuid),
     /// Weatch the remainder of all unwatched episodes in the specified season.
     WatchRemainingSeason(Uuid, SeasonNumber),
     /// Remove all matching season watches.

@@ -15,7 +15,7 @@ use crate::api::themoviedb;
 use crate::api::thetvdb;
 use crate::cache;
 use crate::model::{
-    Config, Episode, Image, Raw, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season, SeasonNumber,
+    Config, Episode, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season, SeasonNumber,
     Series, ThemeType, Watched,
 };
 
@@ -26,6 +26,13 @@ pub(crate) struct NewSeries {
     episodes: Vec<Episode>,
     seasons: Vec<Season>,
     refresh_pending: bool,
+}
+
+impl NewSeries {
+    /// Return the identifier of the newly downloaded series.
+    pub(crate) fn series_id(&self) -> Uuid {
+        self.series.id
+    }
 }
 
 impl fmt::Debug for NewSeries {
@@ -152,10 +159,8 @@ struct Database {
     episodes: HashMap<Uuid, Vec<Episode>>,
     /// Seasons collection.
     seasons: HashMap<Uuid, Vec<Season>>,
-    /// Watched list.
-    watched: Vec<Watched>,
-    /// Temporary set of watched episodes and its corresponding watch count.
-    watch_counts: HashMap<Uuid, usize>,
+    /// Episode to watch history.
+    watched: BTreeMap<Uuid, Vec<Watched>>,
     /// Ordered list of things to watch.
     pending: Vec<Pending>,
     /// Keeping track of changes to be saved.
@@ -247,8 +252,13 @@ impl Service {
     }
 
     /// Iterator over available episodes.
-    pub(crate) fn episodes(&self, id: Uuid) -> impl Iterator<Item = &Episode> {
-        self.db.episodes.get(&id).into_iter().flatten()
+    #[inline]
+    pub(crate) fn episodes(&self, id: Uuid) -> &[Episode] {
+        let Some(values) = self.db.episodes.get(&id) else {
+            return &[];
+        };
+
+        values
     }
 
     /// Iterator over available seasons.
@@ -256,9 +266,13 @@ impl Service {
         self.db.seasons.get(&id).into_iter().flatten()
     }
 
-    /// Get watch history.
-    pub(crate) fn watched(&self) -> impl Iterator<Item = &Watched> {
-        self.db.watched.iter()
+    /// Get all the watches for the given episode.
+    pub(crate) fn watched(&self, episode_id: Uuid) -> &[Watched] {
+        self.db
+            .watched
+            .get(&episode_id)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
     }
 
     /// Get download queue.
@@ -279,9 +293,9 @@ impl Service {
     /// Test if episode is watched.
     pub(crate) fn watch_count(&self, episode_id: Uuid) -> usize {
         self.db
-            .watch_counts
+            .watched
             .get(&episode_id)
-            .copied()
+            .map(Vec::len)
             .unwrap_or_default()
     }
 
@@ -290,7 +304,11 @@ impl Service {
         let mut total = 0;
         let mut watched = 0;
 
-        for episode in self.episodes(series_id).filter(|e| e.season == season) {
+        for episode in self
+            .episodes(series_id)
+            .iter()
+            .filter(|e| e.season == season)
+        {
             total += 1;
             watched += usize::from(self.watch_count(episode.id) != 0);
         }
@@ -451,14 +469,17 @@ impl Service {
                 continue;
             }
 
-            self.db.watched.push(Watched {
-                id: Uuid::new_v4(),
-                series,
-                episode: episode.id,
-                timestamp,
-            });
+            self.db
+                .watched
+                .entry(episode.id)
+                .or_default()
+                .push(Watched {
+                    id: Uuid::new_v4(),
+                    series,
+                    episode: episode.id,
+                    timestamp,
+                });
 
-            *self.db.watch_counts.entry(episode.id).or_default() += 1;
             self.db.changes.set.insert(Change::Watched);
             last = Some(episode.id);
         }
@@ -471,17 +492,20 @@ impl Service {
     }
 
     /// Mark an episode as watched at the given timestamp.
-    pub(crate) fn watch(&mut self, series: Uuid, episode: Uuid, timestamp: DateTime<Utc>) {
-        self.db.watched.push(Watched {
-            id: Uuid::new_v4(),
-            series,
-            episode,
-            timestamp,
-        });
+    pub(crate) fn watch(&mut self, series_id: Uuid, episode_id: Uuid, timestamp: DateTime<Utc>) {
+        self.db
+            .watched
+            .entry(episode_id)
+            .or_default()
+            .push(Watched {
+                id: Uuid::new_v4(),
+                series: series_id,
+                episode: episode_id,
+                timestamp,
+            });
 
-        *self.db.watch_counts.entry(episode).or_default() += 1;
         self.db.changes.set.insert(Change::Watched);
-        self.setup_pending(series, Some(episode))
+        self.setup_pending(series_id, Some(episode_id))
     }
 
     /// Skip an episode.
@@ -544,65 +568,61 @@ impl Service {
     }
 
     /// Remove all watches of the given episode.
-    pub(crate) fn remove_episode_watches(
-        &mut self,
-        series_id: Uuid,
-        episode_id: Uuid,
-        now: DateTime<Utc>,
-    ) {
-        self.db.watched.retain(|w| w.episode != episode_id);
-        let _ = self.db.watch_counts.remove(&episode_id);
-        self.db.pending.retain(|p| p.series != series_id);
-
-        self.db.pending.push(Pending {
-            series: series_id,
-            episode: episode_id,
-            timestamp: now,
-        });
-
+    pub(crate) fn remove_last_episode_watch(&mut self, series_id: Uuid, episode_id: Uuid) {
+        let watched = self.db.watched.entry(episode_id).or_default();
+        watched.pop();
         self.db.changes.set.insert(Change::Watched);
-        self.db.changes.set.insert(Change::Pending);
+
+        if watched.is_empty() {
+            self.db.pending.retain(|p| p.series != series_id);
+
+            let last_timestamp = self
+                .episodes(series_id)
+                .iter()
+                .take_while(|e| e.id != episode_id)
+                .flat_map(|e| self.watched(e.id))
+                .map(|w| w.timestamp)
+                .max();
+
+            self.db.pending.push(Pending {
+                series: series_id,
+                episode: episode_id,
+                timestamp: last_timestamp.unwrap_or_else(Utc::now),
+            });
+
+            self.db.changes.set.insert(Change::Pending);
+        }
     }
 
     /// Remove all watches of the given episode.
     pub(crate) fn remove_season_watches(
         &mut self,
-        series: Uuid,
+        series_id: Uuid,
         season: SeasonNumber,
         now: DateTime<Utc>,
     ) {
-        let mut removed = Vec::new();
+        let Some(episodes) = self.db.episodes.get(&series_id) else {
+            return;
+        };
 
-        self.db.watched.retain(|w| {
-            if w.series != series {
-                return true;
-            };
+        let mut last_timestamp = None;
 
-            let Some(episodes) = self.db.episodes.get(&w.series) else {
-                return true;
-            };
-
-            let Some(episode) = episodes.iter().find(|e| e.id == w.episode) else {
-                return true;
-            };
-
-            if episode.season == season {
-                removed.push(episode.id);
-                false
-            } else {
-                true
+        for e in episodes {
+            if e.season == season {
+                let _ = self.db.watched.remove(&e.id);
+            } else if e.season < season {
+                last_timestamp = last_timestamp
+                    .into_iter()
+                    .chain(self.watched(e.id).iter().map(|w| w.timestamp))
+                    .max();
             }
-        });
-
-        for id in removed {
-            let _ = self.db.watch_counts.remove(&id);
         }
 
         self.db.changes.set.insert(Change::Watched);
-        self.db.pending.retain(|p| p.series != series);
+        self.db.pending.retain(|p| p.series != series_id);
         self.db.changes.set.insert(Change::Pending);
 
-        let Some(episodes) = self.db.episodes.get(&series) else {
+        let Some(episodes) = self.db.episodes.get(&series_id) else {
             return;
         };
 
@@ -613,9 +633,9 @@ impl Service {
             .find(|e| e.season == season && e.has_aired(&now))
         {
             self.db.pending.push(Pending {
-                series,
+                series: series_id,
                 episode: episode.id,
-                timestamp: now,
+                timestamp: last_timestamp.unwrap_or(now),
             });
         }
     }
@@ -638,7 +658,7 @@ impl Service {
         let watched = changes
             .set
             .contains(Change::Watched)
-            .then(|| self.db.watched.clone());
+            .then(|| self.db.watched.clone().into_iter().flat_map(|(_, v)| v));
 
         let pending = changes
             .set
@@ -745,7 +765,12 @@ impl Service {
 
     /// Ensure that at least one pending episode is present for the given
     /// series.
-    fn populate_pending(&mut self, now: &DateTime<Utc>, series_id: Uuid, last: Option<Uuid>) {
+    pub(crate) fn populate_pending(
+        &mut self,
+        now: &DateTime<Utc>,
+        series_id: Uuid,
+        last: Option<Uuid>,
+    ) {
         // Remove any pending episodes for the given series.
         self.db.pending.retain(|p| p.series != series_id);
         self.db.changes.set.insert(Change::Pending);
@@ -755,35 +780,52 @@ impl Service {
             return;
         };
 
-        let mut it = episodes.iter().peekable();
+        let mut last_timestamp = None;
 
-        if let Some(last) = last {
+        let episode = if let Some(last) = last {
+            let mut it = episodes.iter();
+
             // Find the first episode which is after the last episode indicated.
-            while let Some(e) = it.next() {
+            loop {
+                let Some(e) = it.next() else {
+                    break None;
+                };
+
                 if e.id == last {
-                    break;
+                    last_timestamp = self.watched(e.id).into_iter().map(|w| w.timestamp).max();
+                    break it.next();
                 }
             }
         } else {
+            let mut last = None;
+
             // Find the first episode which is *not* in our watch history.
-            while let Some(e) = it.peek() {
-                if self.watch_count(e.id) == 0 {
-                    break;
+            for episode in episodes {
+                if self.watch_count(episode.id) == 0 {
+                    last = Some(last.unwrap_or(episode));
+                    continue;
                 }
 
-                it.next();
+                last_timestamp = self
+                    .watched(episode.id)
+                    .into_iter()
+                    .map(|w| w.timestamp)
+                    .max();
+                last = None;
             }
-        }
+
+            last
+        };
 
         self.db.changes.set.insert(Change::Pending);
 
         // Mark the first episode (that has aired).
-        if let Some(e) = it.find(|e| e.has_aired(now)) {
+        if let Some(e) = episode.filter(|e| e.has_aired(now)) {
             // Mark the next episode in the show as pending.
             self.db.pending.push(Pending {
                 series: series_id,
                 episode: e.id,
-                timestamp: *now,
+                timestamp: last_timestamp.unwrap_or(*now),
             });
         }
 
@@ -1049,7 +1091,7 @@ impl Service {
     }
 
     /// Get existing id by remote if it exists.
-    fn existing_by_remote_ids<I>(&self, ids: I) -> Option<Uuid>
+    pub(crate) fn existing_by_remote_ids<I>(&self, ids: I) -> Option<Uuid>
     where
         I: IntoIterator<Item = RemoteSeriesId>,
     {
@@ -1062,126 +1104,42 @@ impl Service {
         None
     }
 
-    /// Import trakt watched history from the given path.
-    pub(crate) fn import_trakt_watched(
+    /// Insert a new watch.
+    pub(crate) fn insert_new_watch(
         &mut self,
-        path: &Path,
-        filter: Option<&str>,
-        remove: bool,
-    ) -> Result<()> {
-        let filter = filter.map(|filter| crate::search::Tokens::new(filter));
-
-        use std::fs::File;
-        let f = File::open(path)?;
-        let rows: Vec<serde_json::Value> = serde_json::from_reader(f)?;
-
-        let now = Utc::now();
-
-        for (index, row) in rows.into_iter().enumerate() {
-            let entry: Entry = serde_json::from_value(row.clone())?;
-
-            if let Some(filter) = &filter {
-                if !filter.matches(&entry.show.title) {
-                    continue;
-                }
-            }
-
-            log::debug!("{index}: {row}");
-
-            let mut ids = Vec::new();
-            ids.push(RemoteSeriesId::Tvdb {
-                id: entry.show.ids.tvdb,
-            });
-            ids.push(RemoteSeriesId::Tmdb {
-                id: entry.show.ids.tmdb,
-            });
-            ids.push(RemoteSeriesId::Imdb {
-                id: Raw::new(&entry.show.ids.imdb).context("imdb id")?,
+        series_id: Uuid,
+        episode_id: Uuid,
+        timestamp: DateTime<Utc>,
+    ) {
+        self.db
+            .watched
+            .entry(episode_id)
+            .or_default()
+            .push(Watched {
+                id: Uuid::new_v4(),
+                series: series_id,
+                episode: episode_id,
+                timestamp,
             });
 
-            // TODO: use more databases.
-            let Some(series_id) = self.existing_by_remote_ids(ids) else {
-                continue;
-            };
+        self.db.changes.set.insert(Change::Watched);
+    }
 
-            log::debug!("{index}: {series_id}: {entry:?}");
-
-            let Some(episodes) = self.db.episodes.get(&series_id) else {
-                continue;
-            };
-
-            if remove {
-                self.db.watched.retain(|w| w.series != series_id);
-
-                for e in episodes {
-                    let _ = self.db.watch_counts.remove(&e.id);
-                }
-
-                self.db.changes.set.insert(Change::Watched);
-            }
-
-            let mut last = None;
-
-            for season in &entry.seasons {
-                for episode in &season.episodes {
-                    let Some(e) = episodes.iter().find(|e| e.season == SeasonNumber::Number(season.number) && e.number == episode.number) else {
-                        continue;
-                    };
-
-                    log::debug!("{index}: watch: {}", e.id);
-
-                    self.db.watched.push(Watched {
-                        id: Uuid::new_v4(),
-                        series: series_id,
-                        episode: e.id,
-                        timestamp: episode.last_watched_at,
-                    });
-
-                    *self.db.watch_counts.entry(e.id).or_default() += 1;
-                    self.db.changes.set.insert(Change::Watched);
-                    last = Some(e.id);
-                }
-            }
-
-            self.populate_pending(&now, series_id, last);
+    /// Remove watch history matching the given series.
+    pub(crate) fn clear_watches(&mut self, series_id: Uuid) {
+        for (_, values) in &mut self.db.watched {
+            values.retain(|w| w.series != series_id);
         }
 
-        return Ok(());
+        self.db.changes.set.insert(Change::Watched);
+    }
 
-        #[derive(Debug, Deserialize, Serialize)]
-        struct Episode {
-            last_watched_at: DateTime<Utc>,
-            number: u32,
-        }
-
-        #[derive(Debug, Deserialize, Serialize)]
-        struct Season {
-            number: u32,
-            episodes: Vec<Episode>,
-        }
-
-        #[derive(Debug, Deserialize, Serialize)]
-        struct Ids {
-            imdb: String,
-            slug: String,
-            tmdb: u32,
-            trakt: u32,
-            tvdb: u32,
-            #[serde(default)]
-            tvrage: Option<u32>,
-        }
-
-        #[derive(Debug, Deserialize, Serialize)]
-        struct Show {
-            title: String,
-            ids: Ids,
-        }
-
-        #[derive(Debug, Deserialize, Serialize)]
-        struct Entry {
-            show: Show,
-            seasons: Vec<Season>,
-        }
+    /// Find an episode using the given predicate.
+    pub(crate) fn find_episode_by<P>(&self, series_id: Uuid, mut predicate: P) -> Option<&Episode>
+    where
+        P: FnMut(&Episode) -> bool,
+    {
+        self.episodes(series_id).iter().find(move |&e| predicate(e))
     }
 }
 
@@ -1240,11 +1198,9 @@ fn load_database(paths: &Paths) -> Result<Database> {
     }
 
     if let Some(watched) = load_array::<Watched>(&paths.watched)? {
-        for w in &watched {
-            *db.watch_counts.entry(w.episode).or_default() += 1;
+        for w in watched {
+            db.watched.entry(w.episode).or_default().push(w);
         }
-
-        db.watched = watched;
     }
 
     if let Some(pending) = load_array(&paths.pending)? {
@@ -1342,7 +1298,7 @@ where
     use std::fs;
     use std::io::Write;
 
-    log::debug!("saving {what}: {}", path.display());
+    log::trace!("saving {what}: {}", path.display());
 
     let path = path.to_owned();
 
