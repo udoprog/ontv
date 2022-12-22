@@ -14,6 +14,7 @@ use uuid::Uuid;
 use crate::api::themoviedb;
 use crate::api::thetvdb;
 use crate::cache;
+
 use crate::model::{
     Config, Episode, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season, SeasonNumber,
     Series, ThemeType, Watched,
@@ -200,10 +201,6 @@ pub struct Service {
     pub(crate) tvdb: thetvdb::Client,
     pub(crate) tmdb: themoviedb::Client,
     do_not_save: bool,
-    /// Set of series which are in the process of being downloaded.
-    downloading: HashSet<RemoteSeriesId>,
-    /// Series IDs in the process of being downloaded.
-    downloading_ids: HashSet<Uuid>,
 }
 
 impl Service {
@@ -235,8 +232,6 @@ impl Service {
             tvdb,
             tmdb,
             do_not_save: false,
-            downloading: HashSet::new(),
-            downloading_ids: HashSet::new(),
         };
 
         Ok(this)
@@ -285,16 +280,6 @@ impl Service {
     /// Get download queue.
     pub(crate) fn queue(&self) -> &[Queued] {
         &self.db.queue.data
-    }
-
-    /// Indicates that a series is in the process of downloading.
-    pub(crate) fn is_downloading(&self, remote_id: &RemoteSeriesId) -> bool {
-        self.downloading.contains(remote_id)
-    }
-
-    /// Indicates that a series is in the process of downloading.
-    pub(crate) fn is_downloading_id(&self, series_id: &Uuid) -> bool {
-        self.downloading_ids.contains(series_id)
     }
 
     /// Test if episode is watched.
@@ -879,23 +864,6 @@ impl Service {
         self.db.series.get(id)
     }
 
-    /// Refresh series data.
-    pub(crate) fn refresh_series(
-        &mut self,
-        series_id: Uuid,
-    ) -> Option<impl Future<Output = (Option<Uuid>, RemoteSeriesId, Result<NewSeries>)>> {
-        let series = self.db.series.get(&series_id)?;
-        let remote_id = series.remote_id?;
-        self.downloading_ids.insert(series_id);
-
-        let op = self.download_series(remote_id, false);
-
-        Some(async move {
-            let (_, remote_id, result) = op.await;
-            (Some(series_id), remote_id, result)
-        })
-    }
-
     /// Remove the given series by ID.
     pub(crate) fn remove_series(&mut self, series_id: Uuid) {
         let _ = self.db.series.remove(&series_id);
@@ -915,18 +883,16 @@ impl Service {
     pub(crate) fn download_series_by_remote(
         &mut self,
         remote_id: RemoteSeriesId,
-    ) -> impl Future<Output = (Option<Uuid>, RemoteSeriesId, Result<NewSeries>)> {
+    ) -> (Option<Uuid>, impl Future<Output = Result<NewSeries>>) {
         self.download_series(remote_id, true)
     }
 
     /// Download series using a remote identifier.
-    fn download_series(
+    pub(crate) fn download_series(
         &mut self,
         remote_id: RemoteSeriesId,
         refresh_pending: bool,
-    ) -> impl Future<Output = (Option<Uuid>, RemoteSeriesId, Result<NewSeries>)> {
-        self.downloading.insert(remote_id);
-
+    ) -> (Option<Uuid>, impl Future<Output = Result<NewSeries>>) {
         let tvdb = self.tvdb.clone();
         let tmdb = self.tmdb.clone();
         let series = self.db.remote_series.clone();
@@ -937,10 +903,6 @@ impl Service {
             move |q| Some(*series.iter().find(|(remote_id, _)| **remote_id == q)?.1);
 
         let id = lookup_series(remote_id);
-
-        if let Some(id) = id {
-            self.downloading_ids.insert(id);
-        }
 
         let op = async move {
             let lookup_episode =
@@ -988,7 +950,7 @@ impl Service {
             Ok::<_, Error>(data)
         };
 
-        async move { (id, remote_id, op.await) }
+        (id, op)
     }
 
     /// If the series is already loaded in the local database, simply mark it as tracked.
@@ -1025,15 +987,6 @@ impl Service {
 
         self.db.pending.retain(|p| p.series != series_id);
         self.db.changes.set.insert(Change::Pending);
-    }
-
-    /// Download completed, whether it was successful or not.
-    pub(crate) fn download_complete(&mut self, series_id: Option<Uuid>, remote_id: RemoteSeriesId) {
-        self.downloading.remove(&remote_id);
-
-        if let Some(series_id) = series_id {
-            self.downloading_ids.remove(&series_id);
-        }
     }
 
     /// Insert a new tracked song.

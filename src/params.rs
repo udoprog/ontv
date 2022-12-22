@@ -2,8 +2,6 @@ use chrono::Duration;
 use iced::widget::{Column, Container, Text};
 use iced::{Color, Element};
 
-use crate::message::Message;
-
 pub(crate) const SPACE: u16 = 5;
 pub(crate) const HALF_GAP: u16 = 10;
 pub(crate) const GAP: u16 = 20;
@@ -24,9 +22,9 @@ pub(crate) const POSTER_HEIGHT: u16 = 200;
 pub(crate) const WARNING_COLOR: Color = Color::from_rgba(0.5, 0.0, 0.0, 1.0);
 
 /// Build a default container.
-pub(crate) fn default_container<E>(content: E) -> Column<'static, Message>
+pub(crate) fn default_container<'a, E, M: 'a>(content: E) -> Column<'a, M>
 where
-    Element<'static, Message>: From<E>,
+    Element<'a, M>: From<E>,
 {
     use iced::widget::container;
     use iced::{Alignment, Length};
@@ -38,12 +36,12 @@ where
 }
 
 /// Alternate container with background color.
-pub(crate) fn centered<E>(
+pub(crate) fn centered<'a, E, M: 'a>(
     content: E,
     style: Option<style::StyleSheet>,
-) -> Container<'static, Message>
+) -> Container<'a, M>
 where
-    Element<'static, Message>: From<E>,
+    Element<'a, M>: From<E>,
 {
     use iced::alignment::Horizontal;
     use iced::widget::container;

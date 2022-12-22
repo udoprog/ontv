@@ -1,93 +1,108 @@
+use chrono::Utc;
 use iced::alignment::Horizontal;
 use iced::widget::{button, column, container, image, row, text, Column, Row};
-use iced::Length;
 use iced::{theme, Command};
-use serde::{Deserialize, Serialize};
+use iced::{Element, Length};
 use uuid::Uuid;
 
-use crate::assets::Assets;
-use crate::message::Message;
+use crate::comps;
 use crate::model::SeasonNumber;
-use crate::page::series::{prepare_series_banner, season_info, series_banner};
 use crate::params::{centered, style, ACTION_SIZE, GAP, GAP2, SPACE, SUBTITLE_SIZE, WARNING_COLOR};
-use crate::service::Service;
+
+use crate::state::State;
 
 #[derive(Debug, Clone)]
-pub(crate) enum M {
+pub(crate) enum Message {
     RemoveWatch(Uuid, Uuid),
     RemoveLastWatch(Uuid, Uuid),
     CancelRemoveWatch,
+    Watch(Uuid, Uuid),
+    SelectPending(Uuid, Uuid),
+    SeasonInfo(comps::season_info::Message),
+    SeriesBanner(comps::series_banner::Message),
 }
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct State {
+#[derive(Default)]
+pub(crate) struct Season {
     remove_watch: Option<(Uuid, Uuid)>,
+    season_info: comps::SeasonInfo,
+    series_banner: comps::SeriesBanner,
 }
 
-impl State {
+impl Season {
     /// Prepare data that is needed for the view.
-    pub(crate) fn prepare(
-        &mut self,
-        service: &Service,
-        assets: &mut Assets,
-        id: Uuid,
-        season: SeasonNumber,
-    ) {
-        if let Some(s) = service.series(id) {
-            prepare_series_banner(assets, s);
+    pub(crate) fn prepare(&mut self, s: &mut State, id: Uuid, season: SeasonNumber) {
+        self.series_banner.prepare(s, id);
 
-            for e in service.episodes(id).iter().filter(|e| e.season == season) {
-                assets.mark(e.filename);
-            }
+        for e in s.service.episodes(id).iter().filter(|e| e.season == season) {
+            s.assets.mark(e.filename);
         }
     }
 
     /// Handle series messages.
-    pub(crate) fn update(&mut self, service: &mut Service, message: M) -> Command<Message> {
+    pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
         match message {
-            M::RemoveWatch(season_id, episode_id) => {
+            Message::RemoveWatch(season_id, episode_id) => {
                 self.remove_watch = Some((season_id, episode_id));
+                Command::none()
             }
-            M::RemoveLastWatch(series_id, episode_id) => {
+            Message::RemoveLastWatch(series_id, episode_id) => {
                 self.remove_watch = None;
-                service.remove_last_episode_watch(series_id, episode_id);
+                s.service.remove_last_episode_watch(series_id, episode_id);
+                Command::none()
             }
-            M::CancelRemoveWatch => {
+            Message::CancelRemoveWatch => {
                 self.remove_watch = None;
+                Command::none()
             }
+            Message::Watch(series, episode) => {
+                let now = Utc::now();
+                s.service.watch(series, episode, now);
+                Command::none()
+            }
+            Message::SelectPending(series, episode) => {
+                let now = Utc::now();
+                s.service.select_pending(series, episode, now);
+                Command::none()
+            }
+            Message::SeasonInfo(message) => {
+                self.season_info.update(s, message).map(Message::SeasonInfo)
+            }
+            Message::SeriesBanner(message) => self
+                .series_banner
+                .update(s, message)
+                .map(Message::SeriesBanner),
         }
-
-        Command::none()
     }
 
     /// Render season view.
     pub(crate) fn view(
         &self,
-        service: &Service,
-        assets: &Assets,
+        s: &State,
         series_id: Uuid,
         season: SeasonNumber,
-    ) -> Column<'static, Message> {
-        let Some(series) = service.series(series_id) else {
-            return column![text("no such series")];
+    ) -> Element<'static, Message> {
+        let Some(series) = s.service.series(series_id) else {
+            return column![text("no such series")].into();
         };
 
-        let Some(season) = service.seasons(series_id).iter().find(|s| s.number == season) else {
-            return column![text("no such season")];
+        let Some(season) = s.service.seasons(series_id).iter().find(|s| s.number == season) else {
+            return column![text("no such season")].into();
         };
 
         let mut episodes = column![];
 
-        let pending = service.get_pending(series_id).map(|p| p.episode);
+        let pending = s.service.get_pending(series_id).map(|p| p.episode);
 
-        for episode in service
+        for episode in s
+            .service
             .episodes(series.id)
             .iter()
             .filter(|e| e.season == season.number)
         {
-            let screencap = match episode.filename.and_then(|image| assets.image(&image)) {
+            let screencap = match episode.filename.and_then(|image| s.assets.image(&image)) {
                 Some(handle) => handle,
-                None => assets.missing_screencap(),
+                None => s.assets.missing_screencap(),
             };
 
             let mut name = row![].spacing(SPACE);
@@ -100,7 +115,7 @@ impl State {
 
             let overview = text(episode.overview.as_deref().unwrap_or_default());
 
-            let watched = service.watched(episode.id);
+            let watched = s.service.watched(episode.id);
 
             let mut actions = row![].spacing(SPACE);
 
@@ -123,15 +138,13 @@ impl State {
                         prompt = prompt.push(
                             button(text("remove").size(ACTION_SIZE))
                                 .style(theme::Button::Destructive)
-                                .on_press(Message::Season(M::RemoveLastWatch(
-                                    series_id, episode_id,
-                                ))),
+                                .on_press(Message::RemoveLastWatch(series_id, episode_id)),
                         );
 
                         prompt = prompt.push(
                             button(text("cancel").size(ACTION_SIZE))
                                 .style(theme::Button::Secondary)
-                                .on_press(Message::Season(M::CancelRemoveWatch)),
+                                .on_press(Message::CancelRemoveWatch),
                         );
 
                         actions = actions.push(prompt);
@@ -145,7 +158,7 @@ impl State {
                         actions = actions.push(
                             button(remove_watch_text.size(ACTION_SIZE))
                                 .style(theme::Button::Primary)
-                                .on_press(Message::Season(M::RemoveWatch(series_id, episode.id))),
+                                .on_press(Message::RemoveWatch(series_id, episode.id)),
                         );
                     }
                 }
@@ -202,14 +215,27 @@ impl State {
 
         let season_title = season.number.title().size(SUBTITLE_SIZE);
 
-        let banner = series_banner(assets, series)
+        let banner = Column::new()
+            .push(
+                self.series_banner
+                    .view(s, series)
+                    .map(Message::SeriesBanner),
+            )
             .push(season_title)
             .spacing(GAP);
 
-        let top = season_info(service, series, season).spacing(GAP);
+        let top = self
+            .season_info
+            .view(s, series, season)
+            .map(Message::SeasonInfo);
 
-        let header = centered(column![banner, top].spacing(GAP), None).padding(GAP);
+        let header = centered(Column::new().push(banner).push(top).spacing(GAP), None).padding(GAP);
 
-        column![header, episodes.spacing(GAP2)].spacing(GAP)
+        Column::new()
+            .push(header)
+            .push(episodes.spacing(GAP2))
+            .width(Length::Fill)
+            .spacing(GAP)
+            .into()
     }
 }

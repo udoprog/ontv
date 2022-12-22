@@ -126,10 +126,7 @@ async fn download_series(
 ) -> Result<Option<Uuid>> {
     log::info!("downloading `{}`", entry.show.title);
 
-    let (series_id, remote_id, new_series) = service.download_series_by_remote(remote_id).await;
-    service.download_complete(series_id, remote_id);
-
-    let new_series = match new_series {
+    let new_series = match service.download_series_by_remote(remote_id).1.await {
         Ok(new_series) => new_series,
         Err(error) => {
             log::error!("failed to download `{}`: {error}", entry.show.title);

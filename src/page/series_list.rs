@@ -1,47 +1,57 @@
-use iced::widget::{button, column, image, row, text, text_input, vertical_space, Column};
-use iced::Length;
+use iced::widget::{button, image, row, text, text_input, vertical_space, Column, Row};
 use iced::{theme, Command};
-use serde::{Deserialize, Serialize};
+use iced::{Element, Length};
 
-use crate::assets::Assets;
-use crate::message::{Message, Page};
+use crate::comps;
+use crate::message::Page;
 use crate::params::{centered, style, GAP, GAP2, POSTER_HEIGHT, SPACE, SUBTITLE_SIZE};
-use crate::service::Service;
+
+use crate::state::State;
 
 /// Messages generated and handled by [SeriesList].
 #[derive(Debug, Clone)]
-pub(crate) enum M {
+pub(crate) enum Message {
     ChangeFilter(String),
+    SeriesActions(usize, comps::series_actions::Message),
+    Navigate(Page),
 }
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct State {
+#[derive(Default, Clone)]
+pub(crate) struct SeriesList {
     filter: String,
     filtered: Option<Box<[usize]>>,
+    actions: Vec<comps::SeriesActions>,
 }
 
-impl State {
+impl SeriesList {
     /// Prepare the view.
-    pub(crate) fn prepare(&mut self, service: &Service, assets: &mut Assets) {
+    pub(crate) fn prepare(&mut self, s: &mut State) {
+        let len = s.service.all_series().len();
+
+        if self.actions.len() != len {
+            self.actions.resize(len, comps::SeriesActions::default());
+        }
+
         if let Some(filtered) = &self.filtered {
-            let series = service.all_series();
+            let series = s.service.all_series();
             let images = filtered.iter().flat_map(|&i| series.get(i)?.poster);
-            assets.mark(images);
+            s.assets.mark(images);
         } else {
-            assets.mark(service.all_series().iter().flat_map(|s| s.poster));
+            s.assets
+                .mark(s.service.all_series().iter().flat_map(|s| s.poster));
         }
     }
 
-    pub(crate) fn update(&mut self, service: &Service, message: M) -> Command<Message> {
+    pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
         match message {
-            M::ChangeFilter(filter) => {
+            Message::ChangeFilter(filter) => {
                 self.filter = filter;
                 let filter = crate::search::Tokens::new(&self.filter);
 
                 self.filtered = if !filter.is_empty() {
                     let mut filtered = Vec::new();
 
-                    for (index, s) in service.all_series().iter().enumerate() {
+                    for (index, s) in s.service.all_series().iter().enumerate() {
                         if filter.matches(&s.title) {
                             filtered.push(index);
                         }
@@ -51,30 +61,43 @@ impl State {
                 } else {
                     None
                 };
+
+                Command::none()
+            }
+            Message::SeriesActions(index, message) => {
+                if let Some(actions) = self.actions.get_mut(index) {
+                    actions
+                        .update(s, message)
+                        .map(move |m| Message::SeriesActions(index, m))
+                } else {
+                    Command::none()
+                }
+            }
+            Message::Navigate(page) => {
+                s.push_history(page);
+                Command::none()
             }
         }
-
-        Command::none()
     }
 
-    pub(crate) fn view(&self, service: &Service, assets: &Assets) -> Column<'static, Message> {
+    pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
         let mut rows = Column::new();
 
         let mut it;
         let mut it2;
 
         let iter: &mut dyn Iterator<Item = _> = if let Some(filtered) = &self.filtered {
-            it = filtered.iter().flat_map(|i| service.all_series().get(*i));
+            it = filtered.iter().flat_map(|i| s.service.all_series().get(*i));
             &mut it
         } else {
-            it2 = service.all_series().iter();
+            it2 = s.service.all_series().iter();
             &mut it2
         };
 
-        for series in iter {
-            let poster = match series.poster.and_then(|i| assets.image(&i)) {
+        for (index, (series, actions)) in iter.zip(&self.actions).enumerate() {
+            let poster = match series.poster.and_then(|i| s.assets.image(&i)) {
                 Some(handle) => handle,
-                None => assets.missing_poster(),
+                None => s.assets.missing_poster(),
             };
 
             let graphic = button(image(poster).height(Length::Units(POSTER_HEIGHT)))
@@ -82,24 +105,25 @@ impl State {
                 .style(theme::Button::Text)
                 .padding(0);
 
-            let episodes = service.episodes(series.id);
-
-            let actions = crate::page::series::actions(series, service).spacing(SPACE);
+            let episodes = s.service.episodes(series.id);
 
             let title = button(text(&series.title).size(SUBTITLE_SIZE))
                 .padding(0)
                 .style(theme::Button::Text)
                 .on_press(Message::Navigate(Page::Series(series.id)));
 
-            let mut content = column![].width(Length::Fill);
+            let actions = actions
+                .view(s, series)
+                .map(move |m| Message::SeriesActions(index, m));
+
+            let mut content = Column::new().width(Length::Fill);
 
             content = content.push(
-                column![
-                    title,
-                    text(format!("{} episode(s)", episodes.len())),
-                    actions,
-                ]
-                .spacing(SPACE),
+                Column::new()
+                    .push(title)
+                    .push(text(format!("{} episode(s)", episodes.len())))
+                    .push(actions)
+                    .spacing(SPACE),
             );
 
             if let Some(overview) = &series.overview {
@@ -118,14 +142,16 @@ impl State {
         }
 
         let filter = text_input("Filter...", &self.filter, |value| {
-            Message::SeriesList(M::ChangeFilter(value))
+            Message::ChangeFilter(value)
         })
         .width(Length::Fill);
 
         Column::new()
             .push(vertical_space(Length::Shrink))
-            .push(centered(row![filter].width(Length::Fill), None))
+            .push(centered(Row::new().push(filter).width(Length::Fill), None))
             .push(rows.spacing(GAP2))
+            .width(Length::Fill)
             .spacing(GAP)
+            .into()
     }
 }

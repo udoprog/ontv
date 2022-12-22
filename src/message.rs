@@ -4,9 +4,9 @@ use anyhow::{Error, Result};
 use iced_native::image::Handle;
 use uuid::Uuid;
 
-use crate::model::{Image, RemoteSeriesId, SeasonNumber};
+use crate::model::{Image, SeasonNumber};
 use crate::page;
-use crate::service::{NewSeries, Queued};
+use crate::service::Queued;
 use crate::utils::TimedOut;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,22 +57,17 @@ impl fmt::Display for ErrorMessage {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub(crate) enum Message {
     /// Platform-specific events.
     CloseRequested,
-    /// Setting-specific messages.
     Settings(page::settings::M),
-    /// Search-specific messages.
-    Search(page::search::M),
-    /// SeriesList-specific messages.
-    SeriesList(page::series_list::M),
-    /// Series-specific messages.
-    Series(page::series::M),
-    /// Season-specific messages.
-    Season(page::season::M),
+    Dashboard(page::dashboard::Message),
+    Search(page::search::Message),
+    SeriesList(page::series_list::Message),
+    Series(page::series::Message),
+    Season(page::season::Message),
     /// Do nothing.
-    #[default]
     Noop,
     /// Error during operation.
     Error(ErrorMessage),
@@ -88,32 +83,6 @@ pub(crate) enum Message {
     Navigate(Page),
     /// Navigate history by the specified stride.
     History(isize),
-    /// Series tracked.
-    SeriesDownloadToTrack(Option<Uuid>, RemoteSeriesId, NewSeries),
-    /// Remote series failed to download.
-    SeriesDownloadFailed(Option<Uuid>, RemoteSeriesId, ErrorMessage),
-    /// Refresh series data.
-    RefreshSeries(Uuid),
-    /// Switch series to use the given remote.
-    SwitchSeries(Uuid, RemoteSeriesId),
-    /// Remove the given series from the database.
-    RemoveSeries(Uuid),
-    /// Start tracking the series with the given remote ID.
-    AddSeriesByRemote(RemoteSeriesId),
-    /// Mark the given series / episode as watched.
-    Watch(Uuid, Uuid),
-    /// Skip an episode.
-    Skip(Uuid, Uuid),
-    /// Explicitly select the next pending episode.
-    SelectPending(Uuid, Uuid),
-    /// Weatch the remainder of all unwatched episodes in the specified season.
-    WatchRemainingSeason(Uuid, SeasonNumber),
-    /// Remove all matching season watches.
-    RemoveSeasonWatches(Uuid, SeasonNumber),
-    /// Start tracking the series with the given ID.
-    Track(Uuid),
-    /// Stop tracking the given show.
-    Untrack(Uuid),
     /// Images have been loaded in the background.
     ImagesLoaded(Result<Vec<(Image, Handle)>, ErrorMessage>),
 }

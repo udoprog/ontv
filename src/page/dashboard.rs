@@ -1,23 +1,34 @@
+use chrono::Utc;
 use iced::alignment::Horizontal;
-use iced::theme;
-use iced::widget::{button, column, container, image, row, text, vertical_space, Column};
+use iced::widget::{button, column, container, image, row, text, vertical_space};
+use iced::{theme, Command, Element};
 use iced::{Alignment, Length};
+use uuid::Uuid;
 
-use crate::assets::Assets;
-use crate::message::{Message, Page};
+use crate::message::Page;
 use crate::model::SeasonNumber;
 use crate::params::{centered, style, ACTION_SIZE, GAP, SMALL_SIZE, SPACE, SUBTITLE_SIZE};
-use crate::service::{PendingRef, Service};
+use crate::service::PendingRef;
+use crate::state::State;
+
+#[derive(Debug, Clone)]
+pub(crate) enum Message {
+    /// Skip an episode.
+    Skip(Uuid, Uuid),
+    /// Watch an episode.
+    Watch(Uuid, Uuid),
+    /// Navigate.
+    Navigate(Page),
+}
 
 /// The state for the settings page.
 #[derive(Default)]
-pub(crate) struct State {}
+pub(crate) struct Dashboard;
 
-impl State {
-    /// Prepare data that is needed for the view.
-    pub(crate) fn prepare(&mut self, service: &Service, assets: &mut Assets) {
-        assets.mark(
-            service
+impl Dashboard {
+    pub(crate) fn prepare(&mut self, s: &mut State) {
+        s.assets.mark(
+            s.service
                 .pending()
                 .rev()
                 .take(5)
@@ -25,8 +36,26 @@ impl State {
         );
     }
 
-    /// Generate the view for the settings page.
-    pub(crate) fn view(&self, service: &Service, assets: &Assets) -> Column<'static, Message> {
+    pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
+        match message {
+            Message::Skip(series, episode) => {
+                let now = Utc::now();
+                s.service.skip(series, episode, now);
+                Command::none()
+            }
+            Message::Watch(series, episode) => {
+                let now = Utc::now();
+                s.service.watch(series, episode, now);
+                Command::none()
+            }
+            Message::Navigate(page) => {
+                s.push_history(page);
+                Command::none()
+            }
+        }
+    }
+
+    pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
         let mut pending = row![];
 
         for PendingRef {
@@ -34,7 +63,7 @@ impl State {
             season,
             episode,
             ..
-        } in service.pending().rev().take(5)
+        } in s.service.pending().rev().take(5)
         {
             let mut actions = row![].spacing(SPACE);
 
@@ -63,10 +92,10 @@ impl State {
             let handle = match season
                 .and_then(|s| s.poster)
                 .or(series.poster)
-                .and_then(|i| assets.image(&i))
+                .and_then(|i| s.assets.image(&i))
             {
                 Some(handle) => handle,
-                None => assets.missing_poster(),
+                None => s.assets.missing_poster(),
             };
 
             let mut episode_number = match episode.season {
@@ -162,5 +191,6 @@ impl State {
             vertical_space(Length::Shrink),
         ]
         .spacing(GAP)
+        .into()
     }
 }

@@ -4,6 +4,7 @@
 mod api;
 mod assets;
 mod cache;
+mod comps;
 mod import;
 mod message;
 mod model;
@@ -11,9 +12,9 @@ mod page;
 mod params;
 mod search;
 mod service;
+mod state;
 mod utils;
 
-use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -26,22 +27,20 @@ use iced::widget::{
 };
 use iced::{Alignment, Application, Command, Element, Length, Settings};
 use iced_native::image::Handle;
-use message::ErrorMessage;
-use model::RemoteSeriesId;
+
 use params::{ACTION_SIZE, WARNING_COLOR};
 use utils::Singleton;
-use uuid::Uuid;
 
 use crate::assets::Assets;
 use crate::message::{Message, Page};
 use crate::model::{Image, ThemeType};
 use crate::params::{GAP, GAP2, HALF_GAP, SPACE, SUB_MENU_SIZE};
 use crate::service::Service;
+use crate::state::State;
 use crate::utils::{TimedOut, Timeout};
 
 // Check for remote updates every 60 seconds.
 const UPDATE_TIMEOUT: u64 = 60;
-const ERRORS: usize = 3;
 
 #[derive(Parser)]
 struct Opts {
@@ -92,32 +91,24 @@ pub fn main() -> Result<()> {
 }
 
 struct Main {
-    service: Service,
-    dashboard: page::dashboard::State,
-    settings: page::settings::State,
-    search: page::search::State,
-    series: page::series::State,
-    series_list: page::series_list::State,
-    season: page::season::State,
-    queue: page::queue::State,
-    loading: bool,
+    state: state::State,
+    dashboard: page::Dashboard,
+    settings: page::Settings,
+    search: page::Search,
+    series: page::Series,
+    series_list: page::SeriesList,
+    season: page::Season,
+    queue: page::Queue,
     // Timeout before database changes are saved to the filesystem.
     database_timeout: Timeout,
     // Timeout to populate the update queue.
     update_timeout: Timeout,
     /// Image loader future being run.
     image_loader: Singleton,
-    assets: Assets,
     // Exit after save has been completed.
     exit_after_save: bool,
     // Should exit.
     should_exit: bool,
-    // Accumulated errors.
-    errors: VecDeque<ErrorMessage>,
-    // History entries.
-    history: Vec<Page>,
-    // Current history entry.
-    history_index: usize,
 }
 
 struct Flags {
@@ -132,24 +123,19 @@ impl Application for Main {
 
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
         let mut this = Main {
-            service: flags.service,
-            loading: false,
-            dashboard: page::dashboard::State::default(),
-            settings: page::settings::State::default(),
-            search: page::search::State::default(),
-            series: page::series::State::default(),
-            series_list: page::series_list::State::default(),
-            season: page::season::State::default(),
-            queue: page::queue::State::default(),
+            state: State::new(flags.service, Assets::new()),
+            dashboard: page::dashboard::Dashboard::default(),
+            settings: page::settings::Settings::default(),
+            search: page::search::Search::default(),
+            series: page::series::Series::default(),
+            series_list: page::series_list::SeriesList::default(),
+            season: page::season::Season::default(),
+            queue: page::queue::Queue::default(),
             database_timeout: Timeout::default(),
             update_timeout: Timeout::default(),
             image_loader: Singleton::default(),
-            assets: Assets::new(),
             exit_after_save: false,
             should_exit: false,
-            errors: VecDeque::new(),
-            history: vec![Page::Dashboard],
-            history_index: 0,
         };
 
         this.prepare();
@@ -178,19 +164,32 @@ impl Application for Main {
 
                 return Command::none();
             }
-            Message::Settings(message) => self.settings.update(&mut self.service, message),
-            Message::Search(message) => {
-                self.search
-                    .update(&mut self.service, &mut self.assets, message)
-            }
-            Message::SeriesList(message) => self.series_list.update(&self.service, message),
-            Message::Series(message) => self.series.update(message),
-            Message::Season(message) => self.season.update(&mut self.service, message),
+            Message::Settings(message) => self.settings.update(&mut self.state, message),
+            Message::Dashboard(message) => self
+                .dashboard
+                .update(&mut self.state, message)
+                .map(Message::Dashboard),
+            Message::Search(message) => self
+                .search
+                .update(&mut self.state, message)
+                .map(Message::Search),
+            Message::SeriesList(message) => self
+                .series_list
+                .update(&mut self.state, message)
+                .map(Message::SeriesList),
+            Message::Series(message) => self
+                .series
+                .update(&mut self.state, message)
+                .map(Message::Series),
+            Message::Season(message) => self
+                .season
+                .update(&mut self.state, message)
+                .map(Message::Season),
             Message::Noop => {
                 return Command::none();
             }
             Message::Error(error) => {
-                self.handle_error(error);
+                self.state.handle_error(error);
                 Command::none()
             }
             Message::Save(timed_out) => {
@@ -200,9 +199,9 @@ impl Application for Main {
                 }
 
                 self.database_timeout.clear();
-                self.loading = true;
+                self.state.set_loading(true);
 
-                Command::perform(self.service.save_changes(), |result| match result {
+                Command::perform(self.state.service.save_changes(), |result| match result {
                     Ok(()) => Message::Saved,
                     Err(error) => Message::error(error),
                 })
@@ -212,7 +211,7 @@ impl Application for Main {
                     self.should_exit = true;
                 }
 
-                self.loading = false;
+                self.state.set_loading(false);
                 Command::none()
             }
             Message::CheckForUpdates(timed_out) => {
@@ -220,14 +219,12 @@ impl Application for Main {
                     TimedOut::TimedOut => {
                         let now = Utc::now();
 
-                        let a =
-                            Command::perform(
-                                self.service.find_updates(now),
-                                |output| match output {
-                                    Ok(update) => Message::UpdateDownloadQueue(update),
-                                    Err(error) => Message::error(error),
-                                },
-                            );
+                        let a = Command::perform(self.state.service.find_updates(now), |output| {
+                            match output {
+                                Ok(update) => Message::UpdateDownloadQueue(update),
+                                Err(error) => Message::error(error),
+                            }
+                        });
 
                         // Schedule next update.
                         let b = Command::perform(
@@ -244,95 +241,21 @@ impl Application for Main {
                 }
             }
             Message::UpdateDownloadQueue(queue) => {
-                self.service.add_to_queue(queue);
+                self.state.service.add_to_queue(queue);
                 Command::none()
             }
             Message::Navigate(page) => {
-                self.assets.clear();
-
-                while self.history_index + 1 < self.history.len() {
-                    self.history.pop();
-                }
-
-                self.push_history(page);
+                self.state.push_history(page);
                 Command::none()
             }
             Message::History(relative) => {
-                if relative > 0 {
-                    self.history_index = self.history_index.saturating_add(relative as usize);
-                } else if relative < 0 {
-                    self.history_index = self.history_index.saturating_sub(-relative as usize);
-                }
-
-                self.history_index = self.history_index.min(self.history.len().saturating_sub(1));
-                Command::none()
-            }
-            Message::SeriesDownloadToTrack(id, remote_id, data) => {
-                self.service.download_complete(id, remote_id);
-                self.service.insert_new_series(data);
-                Command::none()
-            }
-            Message::SeriesDownloadFailed(id, remote_id, error) => {
-                self.service.download_complete(id, remote_id);
-                self.handle_error(error);
-                Command::none()
-            }
-            Message::RefreshSeries(id) => {
-                if let Some(future) = self.service.refresh_series(id) {
-                    Command::perform(future, |(id, remote_id, result)| match result {
-                        Ok(new_data) => Message::SeriesDownloadToTrack(id, remote_id, new_data),
-                        Err(e) => Message::SeriesDownloadFailed(id, remote_id, e.into()),
-                    })
-                } else {
-                    Command::none()
-                }
-            }
-            Message::SwitchSeries(series_id, remote_id) => {
-                self.remove_series(series_id);
-                self.add_series_by_remote(remote_id)
-            }
-            Message::RemoveSeries(series_id) => {
-                self.remove_series(series_id);
-                Command::none()
-            }
-            Message::AddSeriesByRemote(remote_id) => self.add_series_by_remote(remote_id),
-            Message::Watch(series, episode) => {
-                let now = Utc::now();
-                self.service.watch(series, episode, now);
-                Command::none()
-            }
-            Message::Skip(series, episode) => {
-                let now = Utc::now();
-                self.service.skip(series, episode, now);
-                Command::none()
-            }
-            Message::SelectPending(series, episode) => {
-                let now = Utc::now();
-                self.service.select_pending(series, episode, now);
-                Command::none()
-            }
-            Message::RemoveSeasonWatches(series, season) => {
-                let now = Utc::now();
-                self.service.remove_season_watches(series, season, now);
-                Command::none()
-            }
-            Message::WatchRemainingSeason(series, season) => {
-                let now = Utc::now();
-                self.service.watch_remaining_season(series, season, now);
-                Command::none()
-            }
-            Message::Track(id) => {
-                self.service.track(id);
-                Command::none()
-            }
-            Message::Untrack(id) => {
-                self.service.untrack(id);
+                self.state.history(relative);
                 Command::none()
             }
             Message::ImagesLoaded(loaded) => {
                 match loaded {
                     Ok(loaded) => {
-                        self.assets.insert_images(loaded);
+                        self.state.assets.insert_images(loaded);
                     }
                     Err(error) => {
                         log::error!("error loading images: {error}");
@@ -344,7 +267,7 @@ impl Application for Main {
             }
         };
 
-        let save_database = if self.service.has_changes() && !self.exit_after_save {
+        let save_database = if self.state.service.has_changes() && !self.exit_after_save {
             Command::perform(
                 self.database_timeout.set(Duration::from_secs(5)),
                 Message::Save,
@@ -387,7 +310,7 @@ impl Application for Main {
     fn view(&self) -> Element<Message> {
         let mut menu = column![].spacing(HALF_GAP).padding(GAP).max_width(200);
 
-        let Some(&page) = self.page() else {
+        let Some(&page) = self.state.page() else {
             return text("missing history entry").into();
         };
 
@@ -398,7 +321,7 @@ impl Application for Main {
         if let Page::Series(series_id) | Page::Season(series_id, _) = page {
             let mut sub_menu = column![];
 
-            if let Some(series) = self.service.series(series_id) {
+            if let Some(series) = self.state.service.series(series_id) {
                 sub_menu = sub_menu.push(row![
                     Space::new(Length::Units(SPACE), Length::Shrink),
                     menu_item(
@@ -409,9 +332,9 @@ impl Application for Main {
                 ]);
             }
 
-            for season in self.service.seasons(series_id) {
+            for season in self.state.service.seasons(series_id) {
                 let title = season.number.title();
-                let (watched, total) = self.service.season_watched(series_id, season.number);
+                let (watched, total) = self.state.service.season_watched(series_id, season.number);
 
                 let mut title = row![title.size(SUB_MENU_SIZE)];
 
@@ -433,7 +356,7 @@ impl Application for Main {
 
         // Build queue element.
         {
-            let count = self.service.queue().len();
+            let count = self.state.service.queue().len();
 
             let text = match count {
                 0 => text("Queue"),
@@ -448,17 +371,20 @@ impl Application for Main {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        let page = match page {
-            Page::Dashboard => self.dashboard.view(&self.service, &self.assets),
-            Page::Search => self.search.view(&self.service, &self.assets),
-            Page::SeriesList => self.series_list.view(&self.service, &self.assets),
-            Page::Series(id) => self.series.view(&self.service, &self.assets, id),
-            Page::Settings => self.settings.view(&self.service),
-            Page::Season(id, season) => self.season.view(&self.service, &self.assets, id, season),
-            Page::Downloads => self.queue.view(&self.service),
+        let page: Element<'static, Message> = match page {
+            Page::Dashboard => self.dashboard.view(&self.state).map(Message::Dashboard),
+            Page::Search => self.search.view(&self.state).map(Message::Search),
+            Page::SeriesList => self.series_list.view(&self.state).map(Message::SeriesList),
+            Page::Series(id) => self.series.view(&self.state, id).map(Message::Series),
+            Page::Settings => self.settings.view(&self.state).into(),
+            Page::Season(id, season) => self
+                .season
+                .view(&self.state, id, season)
+                .map(Message::Season),
+            Page::Downloads => self.queue.view(&self.state).into(),
         };
 
-        let content = content.push(scrollable(page.width(Length::Fill)));
+        let content = content.push(scrollable(page));
 
         let mut window = column![];
 
@@ -466,13 +392,13 @@ impl Application for Main {
 
         let mut status_bar = row![];
 
-        if self.loading {
-            status_bar = status_bar.push(text("saving...").size(ACTION_SIZE));
+        if self.state.is_loading() {
+            status_bar = status_bar.push(text("loading...").size(ACTION_SIZE));
         } else {
             status_bar = status_bar.push(text("idle").size(ACTION_SIZE));
         }
 
-        for error in &self.errors {
+        for error in self.state.errors() {
             status_bar = status_bar.push(
                 text(&error.message)
                     .size(ACTION_SIZE)
@@ -497,7 +423,7 @@ impl Application for Main {
     }
 
     fn theme(&self) -> Theme {
-        match self.service.config().theme {
+        match self.state.service.config().theme {
             ThemeType::Light => Theme::Light,
             ThemeType::Dark => Theme::Dark,
         }
@@ -507,40 +433,39 @@ impl Application for Main {
 impl Main {
     // Call prepare on the appropriate components to prepare asset loading.
     fn prepare(&mut self) {
-        let Some(page) = self.page() else {
+        let Some(page) = self.state.page() else {
             return;
         };
 
         match *page {
             Page::Dashboard => {
-                self.dashboard.prepare(&self.service, &mut self.assets);
+                self.dashboard.prepare(&mut self.state);
             }
             Page::Search => {
-                self.search.prepare(&self.service, &mut self.assets);
+                self.search.prepare(&mut self.state);
             }
             Page::SeriesList => {
-                self.series_list.prepare(&self.service, &mut self.assets);
+                self.series_list.prepare(&mut self.state);
             }
             Page::Series(id) => {
-                self.series.prepare(&self.service, &mut self.assets, id);
+                self.series.prepare(&mut self.state, id);
             }
             Page::Settings => {
-                self.settings.prepare(&self.service, &mut self.assets);
+                self.settings.prepare(&mut self.state);
             }
             Page::Season(id, season) => {
-                self.season
-                    .prepare(&self.service, &mut self.assets, id, season);
+                self.season.prepare(&mut self.state, id, season);
             }
             Page::Downloads => {
-                self.queue.prepare(&self.service, &mut self.assets);
+                self.queue.prepare(&mut self.state);
             }
         }
 
-        if self.assets.is_cleared() {
+        if self.state.assets.is_cleared() {
             self.image_loader.clear();
         }
 
-        self.assets.commit();
+        self.state.assets.commit();
     }
 
     fn handle_image_loading(&mut self) -> Command<Message> {
@@ -556,56 +481,12 @@ impl Main {
             return Command::none();
         }
 
-        let Some(id) = self.assets.next_image() else {
+        let Some(id) = self.state.assets.next_image() else {
             return Command::none();
         };
 
-        let future = self.image_loader.set(self.service.load_image(id));
+        let future = self.image_loader.set(self.state.service.load_image(id));
         Command::perform(future, translate)
-    }
-
-    fn handle_error(&mut self, error: ErrorMessage) {
-        log::error!("error: {error}");
-        self.loading = false;
-        self.errors.push_back(error);
-
-        if self.errors.len() > ERRORS {
-            self.errors.pop_front();
-        }
-    }
-}
-
-impl Main {
-    fn page(&self) -> Option<&Page> {
-        self.history.get(self.history_index)
-    }
-
-    fn push_history(&mut self, page: Page) {
-        self.history.push(page);
-        self.history_index += 1;
-    }
-
-    fn remove_series(&mut self, series_id: Uuid) {
-        if matches!(self.page(), Some(&Page::Series(id) | &Page::Season(id, _)) if id == series_id)
-        {
-            self.push_history(Page::Dashboard);
-        }
-
-        self.service.remove_series(series_id);
-    }
-
-    fn add_series_by_remote(&mut self, remote_id: RemoteSeriesId) -> Command<Message> {
-        if self.service.set_tracked_by_remote(remote_id) {
-            return Command::none();
-        }
-
-        Command::perform(
-            self.service.download_series_by_remote(remote_id),
-            |(id, remote_id, result)| match result {
-                Ok(data) => Message::SeriesDownloadToTrack(id, remote_id, data),
-                Err(error) => Message::SeriesDownloadFailed(id, remote_id, error.into()),
-            },
-        )
     }
 }
 

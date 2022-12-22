@@ -4,24 +4,24 @@ use iced::widget::{column, horizontal_rule, row, text, vertical_space, Column};
 use iced::Length;
 use serde::{Deserialize, Serialize};
 
-use crate::assets::Assets;
 use crate::message::Message;
 use crate::params::{default_container, duration_display, GAP, HALF_GAP, TITLE_SIZE};
-use crate::service::Service;
+
+use crate::state::State;
 
 /// The state for the settings page.
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct State;
+pub(crate) struct Queue;
 
-impl State {
+impl Queue {
     /// Prepare data that is needed for the view.
-    pub(crate) fn prepare(&mut self, _: &Service, _: &mut Assets) {}
+    pub(crate) fn prepare(&mut self, _: &mut State) {}
 
     /// Render the current download queue.
-    pub(crate) fn view(&self, service: &Service) -> Column<'static, Message> {
+    pub(crate) fn view(&self, state: &State) -> Column<'static, Message> {
         let mut page = column![];
 
-        let queue = service.queue();
+        let queue = state.service.queue();
 
         if queue.is_empty() {
             page = page.push(
@@ -45,7 +45,7 @@ impl State {
             let now = Utc::now();
 
             while let Some(d) = it.next() {
-                let Some(series) = service.series(d.series_id) else {
+                let Some(series) = state.service.series(d.series_id) else {
                     page = page.push(text(format!("{:?} (no series)", d)));
                     continue;
                 };
