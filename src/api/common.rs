@@ -1,9 +1,8 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use reqwest::{header, Response};
-use uuid::Uuid;
 
-use crate::model::{Etag, RemoteEpisodeId, RemoteSeriesId};
+use crate::model::{EpisodeId, Etag, RemoteEpisodeId, RemoteSeriesId, SeriesId};
 
 /// Parse out last modified header if present.
 pub(crate) fn parse_last_modified(res: &Response) -> Result<Option<DateTime<Utc>>> {
@@ -24,24 +23,24 @@ pub(crate) fn parse_etag(response: &Response) -> Option<Etag> {
 
 /// Helper trait to lookup a series id.
 pub(crate) trait LookupSeriesId {
-    fn lookup<I>(&self, ids: I) -> Option<Uuid>
+    fn lookup<I>(&self, ids: I) -> Option<SeriesId>
     where
         I: IntoIterator<Item = RemoteSeriesId>;
 }
 
 /// Helper trait to lookup an episode id.
 pub(crate) trait LookupEpisodeId {
-    fn lookup<I>(&self, ids: I) -> Option<Uuid>
+    fn lookup<I>(&self, ids: I) -> Option<EpisodeId>
     where
         I: IntoIterator<Item = RemoteEpisodeId>;
 }
 
 impl<F> LookupSeriesId for F
 where
-    F: Fn(RemoteSeriesId) -> Option<Uuid>,
+    F: Fn(RemoteSeriesId) -> Option<SeriesId>,
 {
     #[inline]
-    fn lookup<I>(&self, ids: I) -> Option<Uuid>
+    fn lookup<I>(&self, ids: I) -> Option<SeriesId>
     where
         I: IntoIterator<Item = RemoteSeriesId>,
     {
@@ -57,10 +56,10 @@ where
 
 impl<F> LookupEpisodeId for F
 where
-    F: Fn(RemoteEpisodeId) -> Option<Uuid>,
+    F: Fn(RemoteEpisodeId) -> Option<EpisodeId>,
 {
     #[inline]
-    fn lookup<I>(&self, ids: I) -> Option<Uuid>
+    fn lookup<I>(&self, ids: I) -> Option<EpisodeId>
     where
         I: IntoIterator<Item = RemoteEpisodeId>,
     {

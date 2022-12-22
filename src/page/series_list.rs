@@ -105,7 +105,7 @@ impl SeriesList {
                 .style(theme::Button::Text)
                 .padding(0);
 
-            let episodes = s.service.episodes(series.id);
+            let episodes = s.service.episodes(&series.id);
 
             let title = button(text(&series.title).size(SUBTITLE_SIZE))
                 .padding(0)

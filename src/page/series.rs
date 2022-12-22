@@ -1,11 +1,10 @@
 use iced::widget::{button, column, image, row, text, Column, Row};
 use iced::Length;
 use iced::{theme, Command, Element};
-use uuid::Uuid;
 
 use crate::comps;
 use crate::message::Page;
-use crate::model::RemoteSeriesId;
+use crate::model::{RemoteSeriesId, SeriesId};
 use crate::params::{centered, style, GAP, GAP2, POSTER_HEIGHT, SPACE, SUBTITLE_SIZE};
 
 use crate::state::State;
@@ -27,19 +26,19 @@ pub(crate) struct Series {
 }
 
 impl Series {
-    pub(crate) fn prepare(&mut self, s: &mut State, id: Uuid) {
-        let len = s.service.seasons(id).len();
+    pub(crate) fn prepare(&mut self, s: &mut State, series_id: &SeriesId) {
+        let len = s.service.seasons(series_id).len();
 
         if self.seasons.len() != len {
             self.seasons.resize(len, comps::SeasonInfo::default());
         }
 
-        self.banner.prepare(s, id);
+        self.banner.prepare(s, series_id);
 
-        if let Some(series) = s.service.series(id) {
+        if let Some(series) = s.service.series(series_id) {
             s.assets.mark(
                 s.service
-                    .seasons(series.id)
+                    .seasons(&series.id)
                     .iter()
                     .flat_map(|season| season.poster.or(series.poster)),
             );
@@ -87,8 +86,8 @@ impl Series {
     }
 
     /// Render view of series.
-    pub(crate) fn view(&self, s: &State, id: Uuid) -> Element<'static, Message> {
-        let Some(series) = s.service.series(id) else {
+    pub(crate) fn view(&self, s: &State, series_id: &SeriesId) -> Element<'static, Message> {
+        let Some(series) = s.service.series(series_id) else {
             return column![text("no series")].into();
         };
 
@@ -112,7 +111,7 @@ impl Series {
 
         for (index, (season, c)) in s
             .service
-            .seasons(series.id)
+            .seasons(&series.id)
             .iter()
             .zip(&self.seasons)
             .enumerate()
@@ -156,7 +155,7 @@ impl Series {
             );
         }
 
-        let info = match s.service.episodes(series.id).len() {
+        let info = match s.service.episodes(&series.id).len() {
             0 => text(format!("No episodes")),
             1 => text(format!("One episode")),
             count => text(format!("{count} episodes")),

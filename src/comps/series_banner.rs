@@ -1,9 +1,8 @@
 use iced::widget::{button, image, text, Column};
 use iced::{theme, Alignment, Command, Element, Length};
-use uuid::Uuid;
 
 use crate::message::Page;
-use crate::model::Series;
+use crate::model::{Series, SeriesId};
 use crate::params::TITLE_SIZE;
 use crate::state::State;
 
@@ -17,8 +16,8 @@ pub(crate) struct SeriesBanner {}
 
 impl SeriesBanner {
     /// Prepare assets needed for banner.
-    pub(crate) fn prepare(&mut self, s: &mut State, id: Uuid) {
-        if let Some(series) = s.service.series(id) {
+    pub(crate) fn prepare(&mut self, s: &mut State, series_id: &SeriesId) {
+        if let Some(series) = s.service.series(series_id) {
             s.assets.mark(series.banner);
         }
     }

@@ -9,12 +9,11 @@ use chrono::{DateTime, NaiveDate, Utc};
 use reqwest::{Method, RequestBuilder, Response, Url};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::api::common;
 use crate::model::{
-    Episode, Image, Raw, RemoteEpisodeId, RemoteSeriesId, SearchSeries, SeasonNumber, Series,
-    TvdbImage,
+    Episode, EpisodeId, Image, Raw, RemoteEpisodeId, RemoteSeriesId, SearchSeries, SeasonNumber,
+    Series, SeriesId, TvdbImage,
 };
 
 const BASE_URL: &str = "https://api.thetvdb.com";
@@ -208,7 +207,7 @@ impl Client {
         // Try to lookup the series by known remote ids.
         let id = lookup
             .lookup(remote_ids.iter().copied())
-            .unwrap_or_else(Uuid::new_v4);
+            .unwrap_or_else(SeriesId::random);
 
         return Ok(Series {
             id,
@@ -276,7 +275,7 @@ impl Client {
 
                 let id = lookup
                     .lookup(remote_ids.iter().copied())
-                    .unwrap_or_else(Uuid::new_v4);
+                    .unwrap_or_else(EpisodeId::random);
 
                 Ok(Episode {
                     id,

@@ -45,7 +45,7 @@ impl Queue {
             let now = Utc::now();
 
             while let Some(d) = it.next() {
-                let Some(series) = state.service.series(d.series_id) else {
+                let Some(series) = state.service.series(&d.series_id) else {
                     page = page.push(text(format!("{:?} (no series)", d)));
                     continue;
                 };

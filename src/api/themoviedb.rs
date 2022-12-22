@@ -10,9 +10,10 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use reqwest::{Method, RequestBuilder, Response, Url};
 use serde::Deserialize;
-use uuid::Uuid;
 
 use crate::api::common;
+use crate::model::EpisodeId;
+use crate::model::SeriesId;
 use crate::model::{
     Episode, Image, Raw, RemoteEpisodeId, RemoteSeriesId, SearchSeries, Season, SeasonNumber,
     Series, TmdbImage,
@@ -190,7 +191,7 @@ impl Client {
         // Try to lookup the series by known remote ids.
         let id = lookup
             .lookup(remote_ids.iter().copied())
-            .unwrap_or_else(Uuid::new_v4);
+            .unwrap_or_else(SeriesId::random);
 
         let poster = process_image(details.poster_path.as_deref()).context("poster image")?;
         let banner = process_image(details.backdrop_path.as_deref()).context("backdrop image")?;
@@ -270,7 +271,7 @@ impl Client {
         remotes: R,
     ) -> Result<Vec<Episode>>
     where
-        R: Fn(Uuid) -> Option<&'a BTreeSet<RemoteEpisodeId>>,
+        R: Fn(EpisodeId) -> Option<&'a BTreeSet<RemoteEpisodeId>>,
     {
         let season_number = match season {
             SeasonNumber::Specials => 0,
@@ -376,11 +377,11 @@ impl Client {
         usize,
         BTreeSet<RemoteEpisodeId>,
         RemoteEpisodeId,
-        Uuid,
+        EpisodeId,
         EpisodeDetail,
     )>
     where
-        R: Fn(Uuid) -> Option<&'a BTreeSet<RemoteEpisodeId>>,
+        R: Fn(EpisodeId) -> Option<&'a BTreeSet<RemoteEpisodeId>>,
     {
         log::trace!(
             "downloading remote ids for: series: {series_id}, season: {season_number}, episode: {}",
@@ -412,7 +413,7 @@ impl Client {
             Some(id) => id,
             None => lookup
                 .lookup(remotes.iter().copied())
-                .unwrap_or_else(Uuid::new_v4),
+                .unwrap_or_else(EpisodeId::random),
         };
 
         Ok((index, remotes, remote_id, id, episode))

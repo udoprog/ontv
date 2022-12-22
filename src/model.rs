@@ -4,6 +4,7 @@ mod raw;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::str::FromStr;
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use chrono::{DateTime, NaiveDate, Utc};
@@ -14,6 +15,68 @@ use uuid::Uuid;
 pub(crate) use self::etag::Etag;
 pub(crate) use self::hex::Hex;
 pub(crate) use self::raw::Raw;
+
+#[derive(
+    Default, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub(crate) struct SeriesId(Uuid);
+
+impl SeriesId {
+    /// Generate a new random series identifier.
+    #[inline]
+    pub(crate) fn random() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
+
+impl fmt::Display for SeriesId {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl FromStr for SeriesId {
+    type Err = uuid::Error;
+
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(uuid::Uuid::from_str(s)?))
+    }
+}
+
+#[derive(
+    Default, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub(crate) struct EpisodeId(Uuid);
+
+impl EpisodeId {
+    /// Generate a new random episode identifier.
+    #[inline]
+    pub(crate) fn random() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
+
+impl fmt::Display for EpisodeId {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl FromStr for EpisodeId {
+    type Err = uuid::Error;
+
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(uuid::Uuid::from_str(s)?))
+    }
+}
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -38,11 +101,11 @@ pub(crate) struct Config {
 #[serde(rename_all = "kebab-case", tag = "type")]
 pub(crate) enum RemoteId {
     Series {
-        uuid: Uuid,
+        uuid: SeriesId,
         remotes: BTreeSet<RemoteSeriesId>,
     },
     Episode {
-        uuid: Uuid,
+        uuid: EpisodeId,
         remotes: BTreeSet<RemoteEpisodeId>,
     },
 }
@@ -84,7 +147,7 @@ pub(crate) enum RemoteEpisodeId {
 #[serde(rename_all = "snake_case")]
 pub(crate) struct Series {
     /// Allocated UUID.
-    pub(crate) id: Uuid,
+    pub(crate) id: SeriesId,
     /// Title of the series.
     pub(crate) title: String,
     /// First air date of the series.
@@ -201,9 +264,9 @@ pub(crate) struct Watched {
     /// Unique identifier for this watch.
     pub(crate) id: Uuid,
     /// Identifier of watched series.
-    pub(crate) series: Uuid,
+    pub(crate) series: SeriesId,
     /// Identifier of watched episode.
-    pub(crate) episode: Uuid,
+    pub(crate) episode: EpisodeId,
     /// Timestamp when it was watched.
     pub(crate) timestamp: DateTime<Utc>,
 }
@@ -274,7 +337,7 @@ pub struct Season {
 #[serde(rename_all = "snake_case")]
 pub struct Episode {
     /// Uuid of the watched episode.
-    pub(crate) id: Uuid,
+    pub(crate) id: EpisodeId,
     /// Name of the episode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) name: Option<String>,

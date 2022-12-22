@@ -3,10 +3,9 @@ use iced::alignment::Horizontal;
 use iced::widget::{button, column, container, image, row, text, vertical_space};
 use iced::{theme, Command, Element};
 use iced::{Alignment, Length};
-use uuid::Uuid;
 
 use crate::message::Page;
-use crate::model::SeasonNumber;
+use crate::model::{EpisodeId, SeasonNumber, SeriesId};
 use crate::params::{centered, style, ACTION_SIZE, GAP, SMALL_SIZE, SPACE, SUBTITLE_SIZE};
 use crate::service::PendingRef;
 use crate::state::State;
@@ -14,9 +13,9 @@ use crate::state::State;
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     /// Skip an episode.
-    Skip(Uuid, Uuid),
+    Skip(SeriesId, EpisodeId),
     /// Watch an episode.
-    Watch(Uuid, Uuid),
+    Watch(SeriesId, EpisodeId),
     /// Navigate.
     Navigate(Page),
 }
@@ -38,14 +37,14 @@ impl Dashboard {
 
     pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
         match message {
-            Message::Skip(series, episode) => {
+            Message::Skip(series_id, episode_id) => {
                 let now = Utc::now();
-                s.service.skip(series, episode, now);
+                s.service.skip(&series_id, &episode_id, now);
                 Command::none()
             }
-            Message::Watch(series, episode) => {
+            Message::Watch(series_id, episode_id) => {
                 let now = Utc::now();
-                s.service.watch(series, episode, now);
+                s.service.watch(&series_id, &episode_id, now);
                 Command::none()
             }
             Message::Navigate(page) => {

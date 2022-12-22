@@ -3,38 +3,42 @@ use iced::alignment::Horizontal;
 use iced::widget::{button, column, container, image, row, text, Column, Row};
 use iced::{theme, Command};
 use iced::{Element, Length};
-use uuid::Uuid;
 
 use crate::comps;
-use crate::model::SeasonNumber;
+use crate::model::{EpisodeId, SeasonNumber, SeriesId};
 use crate::params::{centered, style, ACTION_SIZE, GAP, GAP2, SPACE, SUBTITLE_SIZE, WARNING_COLOR};
 
 use crate::state::State;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
-    RemoveWatch(Uuid, Uuid),
-    RemoveLastWatch(Uuid, Uuid),
+    RemoveWatch(SeriesId, EpisodeId),
+    RemoveLastWatch(SeriesId, EpisodeId),
     CancelRemoveWatch,
-    Watch(Uuid, Uuid),
-    SelectPending(Uuid, Uuid),
+    Watch(SeriesId, EpisodeId),
+    SelectPending(SeriesId, EpisodeId),
     SeasonInfo(comps::season_info::Message),
     SeriesBanner(comps::series_banner::Message),
 }
 
 #[derive(Default)]
 pub(crate) struct Season {
-    remove_watch: Option<(Uuid, Uuid)>,
+    remove_watch: Option<(SeriesId, EpisodeId)>,
     season_info: comps::SeasonInfo,
     series_banner: comps::SeriesBanner,
 }
 
 impl Season {
     /// Prepare data that is needed for the view.
-    pub(crate) fn prepare(&mut self, s: &mut State, id: Uuid, season: SeasonNumber) {
-        self.series_banner.prepare(s, id);
+    pub(crate) fn prepare(&mut self, s: &mut State, series_id: &SeriesId, season: SeasonNumber) {
+        self.series_banner.prepare(s, series_id);
 
-        for e in s.service.episodes(id).iter().filter(|e| e.season == season) {
+        for e in s
+            .service
+            .episodes(series_id)
+            .iter()
+            .filter(|e| e.season == season)
+        {
             s.assets.mark(e.filename);
         }
     }
@@ -48,7 +52,7 @@ impl Season {
             }
             Message::RemoveLastWatch(series_id, episode_id) => {
                 self.remove_watch = None;
-                s.service.remove_last_episode_watch(series_id, episode_id);
+                s.service.remove_last_episode_watch(&series_id, &episode_id);
                 Command::none()
             }
             Message::CancelRemoveWatch => {
@@ -57,12 +61,12 @@ impl Season {
             }
             Message::Watch(series, episode) => {
                 let now = Utc::now();
-                s.service.watch(series, episode, now);
+                s.service.watch(&series, &episode, now);
                 Command::none()
             }
             Message::SelectPending(series, episode) => {
                 let now = Utc::now();
-                s.service.select_pending(series, episode, now);
+                s.service.select_pending(&series, &episode, now);
                 Command::none()
             }
             Message::SeasonInfo(message) => {
@@ -79,24 +83,24 @@ impl Season {
     pub(crate) fn view(
         &self,
         s: &State,
-        series_id: Uuid,
-        season: SeasonNumber,
+        series_id: &SeriesId,
+        season: &SeasonNumber,
     ) -> Element<'static, Message> {
         let Some(series) = s.service.series(series_id) else {
             return column![text("no such series")].into();
         };
 
-        let Some(season) = s.service.seasons(series_id).iter().find(|s| s.number == season) else {
+        let Some(season) = s.service.seasons(series_id).iter().find(|s| s.number == *season) else {
             return column![text("no such season")].into();
         };
 
         let mut episodes = column![];
 
-        let pending = s.service.get_pending(series_id).map(|p| p.episode);
+        let pending = s.service.get_pending(&series_id).map(|p| p.episode);
 
         for episode in s
             .service
-            .episodes(series.id)
+            .episodes(&series.id)
             .iter()
             .filter(|e| e.season == season.number)
         {
@@ -115,7 +119,7 @@ impl Season {
 
             let overview = text(episode.overview.as_deref().unwrap_or_default());
 
-            let watched = s.service.watched(episode.id);
+            let watched = s.service.watched(&episode.id);
 
             let mut actions = row![].spacing(SPACE);
 
@@ -127,7 +131,7 @@ impl Season {
             actions = actions.push(
                 button(watch_text.size(ACTION_SIZE))
                     .style(theme::Button::Positive)
-                    .on_press(Message::Watch(series_id, episode.id)),
+                    .on_press(Message::Watch(*series_id, episode.id)),
             );
 
             if !watched.is_empty() {
@@ -158,7 +162,7 @@ impl Season {
                         actions = actions.push(
                             button(remove_watch_text.size(ACTION_SIZE))
                                 .style(theme::Button::Primary)
-                                .on_press(Message::RemoveWatch(series_id, episode.id)),
+                                .on_press(Message::RemoveWatch(*series_id, episode.id)),
                         );
                     }
                 }
@@ -168,7 +172,7 @@ impl Season {
                 actions = actions.push(
                     button(text("Make next episode").size(ACTION_SIZE))
                         .style(theme::Button::Secondary)
-                        .on_press(Message::SelectPending(series_id, episode.id)),
+                        .on_press(Message::SelectPending(*series_id, episode.id)),
                 );
             } else {
                 actions = actions.push(

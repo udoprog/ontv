@@ -2,9 +2,8 @@ use std::fmt;
 
 use anyhow::{Error, Result};
 use iced_native::image::Handle;
-use uuid::Uuid;
 
-use crate::model::{Image, SeasonNumber};
+use crate::model::{Image, SeasonNumber, SeriesId};
 use crate::page;
 use crate::service::Queued;
 use crate::utils::TimedOut;
@@ -14,9 +13,9 @@ pub(crate) enum Page {
     Dashboard,
     Search,
     SeriesList,
-    Series(Uuid),
+    Series(SeriesId),
     Settings,
-    Season(Uuid, SeasonNumber),
+    Season(SeriesId, SeasonNumber),
     Downloads,
 }
 

@@ -4,9 +4,8 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::runtime;
-use uuid::Uuid;
 
-use crate::model::{Raw, RemoteSeriesId, SeasonNumber};
+use crate::model::{Raw, RemoteSeriesId, SeasonNumber, SeriesId};
 use crate::search::Tokens;
 use crate::service::Service;
 
@@ -57,9 +56,9 @@ pub(crate) fn import_trakt_watched(
 
         // TODO: use more databases.
         let series_id = match service.existing_by_remote_ids(ids) {
-            Some(series_id) => {
-                if service.series(series_id).is_none() && import_missing {
-                    let Some(..) = runtime.block_on(download_series(service, &entry, tmdb_remote_id))? else {
+            Some(&series_id) => {
+                if service.series(&series_id).is_none() && import_missing {
+                    let Some(..) = runtime.block_on(download_series(service, &entry, &tmdb_remote_id))? else {
                         continue;
                     };
                 }
@@ -75,7 +74,7 @@ pub(crate) fn import_trakt_watched(
                     continue;
                 };
 
-                let Some(id) = runtime.block_on(download_series(service, &entry, tmdb_remote_id))? else {
+                let Some(id) = runtime.block_on(download_series(service, &entry, &tmdb_remote_id))? else {
                     continue;
                 };
 
@@ -93,11 +92,11 @@ pub(crate) fn import_trakt_watched(
 
         for season in &entry.seasons {
             for import in &season.episodes {
-                let Some(episode) = service.find_episode_by(series_id, |e| e.season == SeasonNumber::Number(season.number) && e.number == import.number) else {
+                let Some(episode) = service.find_episode_by(&series_id, |e| e.season == SeasonNumber::Number(season.number) && e.number == import.number) else {
                     continue;
                 };
 
-                if !service.watched(episode.id).is_empty() {
+                if !service.watched(&episode.id).is_empty() {
                     continue;
                 }
 
@@ -111,7 +110,7 @@ pub(crate) fn import_trakt_watched(
             log::info!("imported watch history for `{}`", entry.show.title);
         }
 
-        service.populate_pending(&now, series_id, None);
+        service.populate_pending(&now, &series_id, None);
         runtime.block_on(service.save_changes())?;
     }
 
@@ -122,8 +121,8 @@ pub(crate) fn import_trakt_watched(
 async fn download_series(
     service: &mut Service,
     entry: &Entry,
-    remote_id: RemoteSeriesId,
-) -> Result<Option<Uuid>> {
+    remote_id: &RemoteSeriesId,
+) -> Result<Option<SeriesId>> {
     log::info!("downloading `{}`", entry.show.title);
 
     let new_series = match service.download_series_by_remote(remote_id).1.await {
@@ -134,7 +133,7 @@ async fn download_series(
         }
     };
 
-    let series_id = new_series.series_id();
+    let series_id = *new_series.series_id();
     service.insert_new_series(new_series);
     service.save_changes().await?;
     Ok(Some(series_id))

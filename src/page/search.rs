@@ -4,10 +4,9 @@ use anyhow::Result;
 use iced::widget::{button, column, image, radio, row, text, text_input, Column, Row};
 use iced::{theme, Alignment, Element};
 use iced::{Command, Length};
-use uuid::Uuid;
 
 use crate::message::ErrorMessage;
-use crate::model::{RemoteSeriesId, SearchSeries};
+use crate::model::{RemoteSeriesId, SearchSeries, SeriesId};
 use crate::params::{
     default_container, ACTION_SIZE, GAP, GAP2, POSTER_HEIGHT, SMALL_SIZE, SPACE, TITLE_SIZE,
 };
@@ -43,10 +42,10 @@ pub(crate) enum Message {
     Result(Vec<SearchSeries>),
     SearchKindChanged(SearchKind),
     AddSeriesByRemote(RemoteSeriesId),
-    SwitchSeries(Uuid, RemoteSeriesId),
-    RemoveSeries(Uuid),
-    SeriesDownloadToTrack(Option<Uuid>, RemoteSeriesId, NewSeries),
-    SeriesDownloadFailed(Option<Uuid>, RemoteSeriesId, ErrorMessage),
+    SwitchSeries(SeriesId, RemoteSeriesId),
+    RemoveSeries(SeriesId),
+    SeriesDownloadToTrack(Option<SeriesId>, RemoteSeriesId, NewSeries),
+    SeriesDownloadFailed(Option<SeriesId>, RemoteSeriesId, ErrorMessage),
 }
 
 /// The state for the settings page.
@@ -96,13 +95,13 @@ impl Search {
                 self.kind = kind;
                 self.search(s)
             }
-            Message::AddSeriesByRemote(remote_id) => self.add_series_by_remote(s, remote_id),
+            Message::AddSeriesByRemote(remote_id) => self.add_series_by_remote(s, &remote_id),
             Message::SwitchSeries(series_id, remote_id) => {
-                s.remove_series(series_id);
-                self.add_series_by_remote(s, remote_id)
+                s.remove_series(&series_id);
+                self.add_series_by_remote(s, &remote_id)
             }
             Message::RemoveSeries(series_id) => {
-                s.remove_series(series_id);
+                s.remove_series(&series_id);
                 Command::none()
             }
             Message::SeriesDownloadToTrack(id, remote_id, data) => {
@@ -284,7 +283,7 @@ impl Search {
     fn add_series_by_remote(
         &mut self,
         s: &mut State,
-        remote_id: RemoteSeriesId,
+        remote_id: &RemoteSeriesId,
     ) -> Command<Message> {
         if s.service.set_tracked_by_remote(remote_id) {
             return Command::none();

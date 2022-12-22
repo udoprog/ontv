@@ -321,7 +321,7 @@ impl Application for Main {
         if let Page::Series(series_id) | Page::Season(series_id, _) = page {
             let mut sub_menu = column![];
 
-            if let Some(series) = self.state.service.series(series_id) {
+            if let Some(series) = self.state.service.series(&series_id) {
                 sub_menu = sub_menu.push(row![
                     Space::new(Length::Units(SPACE), Length::Shrink),
                     menu_item(
@@ -332,9 +332,12 @@ impl Application for Main {
                 ]);
             }
 
-            for season in self.state.service.seasons(series_id) {
+            for season in self.state.service.seasons(&series_id) {
                 let title = season.number.title();
-                let (watched, total) = self.state.service.season_watched(series_id, season.number);
+                let (watched, total) = self
+                    .state
+                    .service
+                    .season_watched(&series_id, &season.number);
 
                 let mut title = row![title.size(SUB_MENU_SIZE)];
 
@@ -375,11 +378,14 @@ impl Application for Main {
             Page::Dashboard => self.dashboard.view(&self.state).map(Message::Dashboard),
             Page::Search => self.search.view(&self.state).map(Message::Search),
             Page::SeriesList => self.series_list.view(&self.state).map(Message::SeriesList),
-            Page::Series(id) => self.series.view(&self.state, id).map(Message::Series),
+            Page::Series(series_id) => self
+                .series
+                .view(&self.state, &series_id)
+                .map(Message::Series),
             Page::Settings => self.settings.view(&self.state).into(),
-            Page::Season(id, season) => self
+            Page::Season(series_id, season) => self
                 .season
-                .view(&self.state, id, season)
+                .view(&self.state, &series_id, &season)
                 .map(Message::Season),
             Page::Downloads => self.queue.view(&self.state).into(),
         };
@@ -447,14 +453,14 @@ impl Main {
             Page::SeriesList => {
                 self.series_list.prepare(&mut self.state);
             }
-            Page::Series(id) => {
-                self.series.prepare(&mut self.state, id);
+            Page::Series(series_id) => {
+                self.series.prepare(&mut self.state, &series_id);
             }
             Page::Settings => {
                 self.settings.prepare(&mut self.state);
             }
-            Page::Season(id, season) => {
-                self.season.prepare(&mut self.state, id, season);
+            Page::Season(series_id, season) => {
+                self.season.prepare(&mut self.state, &series_id, season);
             }
             Page::Downloads => {
                 self.queue.prepare(&mut self.state);
