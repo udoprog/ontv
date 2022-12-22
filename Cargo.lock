@@ -2096,6 +2096,7 @@ dependencies = [
  "clap",
  "directories-next",
  "fixed-map",
+ "futures",
  "iced",
  "iced_futures",
  "iced_native",

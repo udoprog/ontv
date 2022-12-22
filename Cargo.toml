@@ -12,6 +12,7 @@ chrono = { version = "0.4.23", features = ["serde"] }
 clap = { version = "4.0.30", features = ["derive"] }
 directories-next = "2.0.0"
 fixed-map = "0.8.0"
+futures = "0.3.25"
 iced = { version = "0.6.0", features = ["image", "tokio"] }
 iced_futures = { version = "0.5.1", features = ["tokio"] }
 iced_native = "0.7.0"

@@ -1,10 +1,13 @@
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::sync::Arc;
 use std::time::Duration;
-use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::{bail, Context, Result};
 use bytes::Bytes;
 use chrono::NaiveDate;
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use reqwest::{Method, RequestBuilder, Response, Url};
 use serde::Deserialize;
 use uuid::Uuid;
@@ -18,6 +21,7 @@ use crate::model::{
 const BASE_URL: &str = "https://api.themoviedb.org/3";
 const IMAGE_URL: &str = "https://image.tmdb.org";
 const IDLE_TIMEOUT: Duration = Duration::from_secs(10);
+const PARALLELISM: usize = 10;
 
 struct State {
     base_url: Url,
@@ -296,45 +300,44 @@ impl Client {
         let details: Details = serde_json::from_slice(&details).context("details response")?;
 
         let mut episodes = Vec::new();
+        let mut output = Vec::with_capacity(details.episodes.len());
+        let mut it = details.episodes.into_iter();
 
-        for e in details.episodes {
-            let remote_id = RemoteEpisodeId::Tmdb { id: e.id };
+        let mut tasks = FuturesUnordered::new();
 
-            // ID allocation is a bit complicated, because downloading external
-            // IDs from themoviedb is super slow:
-            // * First try to lookup an existing ID by its current known remote
-            //   ID.
-            // * If that fails; download all remotes and try to allocate an ID
-            //   using all known remotes.
-            let (id, remote_ids) = match lookup.lookup([remote_id]) {
-                Some(id) => {
-                    let remote_ids = match remotes(id) {
-                        Some(remote_ids) => remote_ids.clone(),
-                        None => {
-                            self.download_remote_ids(
-                                remote_id,
-                                series_id,
-                                season_number,
-                                e.episode_number,
-                            )
-                            .await?
-                        }
-                    };
+        let mut n = 0;
 
-                    (id, remote_ids)
-                }
-                None => {
-                    let remote_ids = self
-                        .download_remote_ids(remote_id, series_id, season_number, e.episode_number)
-                        .await?;
+        loop {
+            while tasks.len() < PARALLELISM {
+                let Some(e) = it.next() else {
+                    break;
+                };
 
-                    let id = lookup
-                        .lookup(remote_ids.iter().copied())
-                        .unwrap_or_else(Uuid::new_v4);
-                    (id, remote_ids)
-                }
+                let remote_id = RemoteEpisodeId::Tmdb { id: e.id };
+
+                tasks.push(self.download_remote_ids(
+                    n,
+                    remote_id,
+                    series_id,
+                    season_number,
+                    e,
+                    &lookup,
+                    &remotes,
+                ));
+
+                n += 1;
+            }
+
+            let Some(result) = tasks.next().await else {
+                break;
             };
 
+            output.push(result?);
+        }
+
+        output.sort_by(|a, b| a.0.cmp(&b.0));
+
+        for (_, remote_ids, remote_id, id, e) in output {
             let filename = process_image(e.still_path.as_deref()).context("bad still image")?;
 
             episodes.push(Episode {
@@ -358,42 +361,60 @@ impl Client {
             #[serde(default)]
             episodes: Vec<EpisodeDetail>,
         }
-
-        #[derive(Deserialize)]
-        struct EpisodeDetail {
-            id: u32,
-            episode_number: u32,
-            #[serde(default)]
-            air_date: Option<NaiveDate>,
-            #[serde(default)]
-            name: Option<String>,
-            #[serde(default)]
-            overview: Option<String>,
-            #[serde(default)]
-            still_path: Option<String>,
-        }
     }
 
-    async fn download_remote_ids(
+    async fn download_remote_ids<'a, 'e, R>(
         &self,
+        index: usize,
         remote_id: RemoteEpisodeId,
         series_id: u32,
         season_number: u32,
-        episode_number: u32,
-    ) -> Result<BTreeSet<RemoteEpisodeId>> {
-        log::trace!("downloading remote ids for: series: {series_id}, season: {season_number}, episode: {episode_number}");
+        episode: EpisodeDetail,
+        lookup: &impl common::LookupEpisodeId,
+        remotes: R,
+    ) -> Result<(
+        usize,
+        BTreeSet<RemoteEpisodeId>,
+        RemoteEpisodeId,
+        Uuid,
+        EpisodeDetail,
+    )>
+    where
+        R: Fn(Uuid) -> Option<&'a BTreeSet<RemoteEpisodeId>>,
+    {
+        log::trace!(
+            "downloading remote ids for: series: {series_id}, season: {season_number}, episode: {}",
+            episode.episode_number
+        );
+
+        let id = if let Some(id) = lookup.lookup([remote_id]) {
+            if let Some(remotes) = remotes(id) {
+                return Ok((index, remotes.clone(), remote_id, id, episode));
+            }
+
+            Some(id)
+        } else {
+            None
+        };
 
         let external_ids = self
-            .episode_external_ids(series_id, season_number, episode_number)
+            .episode_external_ids(series_id, season_number, episode.episode_number)
             .await?;
 
-        let mut remote_ids = BTreeSet::from([remote_id]);
+        let mut remotes = BTreeSet::from([remote_id]);
 
         for remote_id in external_ids.into_remote_episodes() {
-            remote_ids.insert(remote_id?);
+            remotes.insert(remote_id?);
         }
 
-        Ok(remote_ids)
+        let id = match id {
+            Some(id) => id,
+            None => lookup
+                .lookup(remotes.iter().copied())
+                .unwrap_or_else(Uuid::new_v4),
+        };
+
+        Ok((index, remotes, remote_id, id, episode))
     }
 
     /// Get external IDs for an episode.
@@ -488,4 +509,18 @@ impl ExternalIds {
 #[derive(Deserialize)]
 struct Data<T> {
     results: T,
+}
+
+#[derive(Deserialize)]
+struct EpisodeDetail {
+    id: u32,
+    episode_number: u32,
+    #[serde(default)]
+    air_date: Option<NaiveDate>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    overview: Option<String>,
+    #[serde(default)]
+    still_path: Option<String>,
 }
