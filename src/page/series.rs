@@ -28,6 +28,7 @@ impl State {
             assets.mark(
                 service
                     .seasons(series.id)
+                    .iter()
                     .flat_map(|season| season.poster.or(series.poster)),
             );
         }

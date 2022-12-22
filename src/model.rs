@@ -214,31 +214,32 @@ pub(crate) struct Watched {
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum SeasonNumber {
-    #[serde(rename = "unknown")]
+    /// Season used for non-numbered episodes.
     #[default]
-    Unknown,
-    #[serde(rename = "specials")]
     Specials,
     /// A regular numbered season.
     Number(u32),
 }
 
 impl SeasonNumber {
+    #[inline]
+    fn is_special(&self) -> bool {
+        matches!(self, SeasonNumber::Specials)
+    }
+
     /// Build season title.
     pub(crate) fn title(&self) -> Text<'static> {
         match self {
-            SeasonNumber::Number(number) => text(format!("Season {}", number)),
             SeasonNumber::Specials => text("Specials"),
-            SeasonNumber::Unknown => text("N/A"),
+            SeasonNumber::Number(number) => text(format!("Season {}", number)),
         }
     }
 
     /// Build season title.
     pub(crate) fn short(&self) -> Text<'static> {
         match self {
-            SeasonNumber::Number(number) => text(format!("S{}", number)),
             SeasonNumber::Specials => text("S"),
-            SeasonNumber::Unknown => text("N/A"),
+            SeasonNumber::Number(number) => text(format!("S{}", number)),
         }
     }
 }
@@ -247,9 +248,8 @@ impl fmt::Display for SeasonNumber {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SeasonNumber::Number(number) => write!(f, "Season {}", number),
             SeasonNumber::Specials => write!(f, "Specials"),
-            SeasonNumber::Unknown => write!(f, "N/A"),
+            SeasonNumber::Number(number) => write!(f, "Season {}", number),
         }
     }
 }
@@ -259,7 +259,7 @@ impl fmt::Display for SeasonNumber {
 #[serde(rename_all = "snake_case")]
 pub struct Season {
     /// The number of the season.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "SeasonNumber::is_special")]
     pub(crate) number: SeasonNumber,
     #[serde(default)]
     pub(crate) air_date: Option<NaiveDate>,

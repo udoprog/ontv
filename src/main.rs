@@ -71,6 +71,10 @@ pub fn main() -> Result<()> {
 
     let opts = Opts::try_parse()?;
 
+    if opts.test {
+        service.do_not_save();
+    }
+
     if let Some(path) = opts.import_trakt_watched {
         crate::import::import_trakt_watched(
             &mut service,
@@ -79,14 +83,6 @@ pub fn main() -> Result<()> {
             opts.import_remove,
             opts.import_missing,
         )?;
-
-        if opts.import_test {
-            service.do_not_save();
-        }
-    }
-
-    if opts.test {
-        service.do_not_save();
     }
 
     let mut settings = Settings::with_flags(Flags { service });

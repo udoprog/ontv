@@ -214,9 +214,8 @@ impl Client {
 
             seasons.push(Season {
                 number: match s.season_number {
-                    Some(0) => SeasonNumber::Specials,
-                    Some(n) => SeasonNumber::Number(n),
-                    None => SeasonNumber::Unknown,
+                    Some(n) if n > 0 => SeasonNumber::Number(n),
+                    _ => SeasonNumber::Specials,
                 },
                 air_date: s.air_date,
                 name: s.name,
@@ -272,7 +271,6 @@ impl Client {
         let season_number = match season {
             SeasonNumber::Specials => 0,
             SeasonNumber::Number(n) => n,
-            _ => return Ok(Vec::new()),
         };
 
         let details = self

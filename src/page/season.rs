@@ -72,7 +72,7 @@ impl State {
             return column![text("no such series")];
         };
 
-        let Some(season) = service.seasons(series_id).find(|s| s.number == season) else {
+        let Some(season) = service.seasons(series_id).iter().find(|s| s.number == season) else {
             return column![text("no such season")];
         };
 

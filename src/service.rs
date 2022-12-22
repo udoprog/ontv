@@ -53,6 +53,7 @@ pub(crate) struct Pending {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PendingRef<'a> {
     pub(crate) series: &'a Series,
+    pub(crate) season: Option<&'a Season>,
     pub(crate) episode: &'a Episode,
 }
 
@@ -152,7 +153,7 @@ struct Database {
     /// Remote episodes.
     remote_episodes: BTreeMap<RemoteEpisodeId, Uuid>,
     /// Episode IDs to remotes.
-    episodes_remotes: HashMap<Uuid, BTreeSet<RemoteEpisodeId>>,
+    remote_episodes_rev: HashMap<Uuid, BTreeSet<RemoteEpisodeId>>,
     /// Series database.
     series: SeriesDatabase,
     /// Episodes collection.
@@ -262,11 +263,17 @@ impl Service {
     }
 
     /// Iterator over available seasons.
-    pub(crate) fn seasons(&self, id: Uuid) -> impl Iterator<Item = &Season> {
-        self.db.seasons.get(&id).into_iter().flatten()
+    #[inline]
+    pub(crate) fn seasons(&self, id: Uuid) -> &[Season] {
+        self.db
+            .seasons
+            .get(&id)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
     }
 
     /// Get all the watches for the given episode.
+    #[inline]
     pub(crate) fn watched(&self, episode_id: Uuid) -> &[Watched] {
         self.db
             .watched
@@ -329,9 +336,16 @@ impl Service {
     pub(crate) fn pending(&self) -> impl DoubleEndedIterator<Item = PendingRef<'_>> {
         self.db.pending.iter().flat_map(|p| {
             let series = self.db.series.get(&p.series)?;
-            let episodes = self.db.episodes.get(&p.series)?;
-            let episode = episodes.iter().find(|e| e.id == p.episode)?;
-            Some(PendingRef { series, episode })
+            let episode = self.episodes(p.series).iter().find(|e| e.id == p.episode)?;
+            let season = self
+                .seasons(p.series)
+                .iter()
+                .find(|s| s.number == episode.season);
+            Some(PendingRef {
+                series,
+                season,
+                episode,
+            })
         })
     }
 
@@ -917,7 +931,7 @@ impl Service {
         let tmdb = self.tmdb.clone();
         let series = self.db.remote_series.clone();
         let episodes = self.db.remote_episodes.clone();
-        let episodes_remotes = self.db.episodes_remotes.clone();
+        let episodes_remotes = self.db.remote_episodes_rev.clone();
 
         let lookup_series =
             move |q| Some(*series.iter().find(|(remote_id, _)| **remote_id == q)?.1);
@@ -1027,14 +1041,21 @@ impl Service {
         let series_id = data.series.id;
 
         for remote_id in &data.series.remote_ids {
-            self.db.remote_series.insert(*remote_id, series_id);
+            if !matches!(self.db.remote_series.insert(*remote_id, series_id), Some(id) if id == series_id)
+            {
+                self.db.changes.set.insert(Change::Remotes);
+            }
         }
 
         for episode in &data.episodes {
             for &remote_id in &episode.remote_ids {
-                self.db.remote_episodes.insert(remote_id, episode.id);
+                if !matches!(self.db.remote_episodes.insert(remote_id, episode.id), Some(id) if id == episode.id)
+                {
+                    self.db.changes.set.insert(Change::Remotes);
+                }
+
                 self.db
-                    .episodes_remotes
+                    .remote_episodes_rev
                     .entry(episode.id)
                     .or_default()
                     .insert(remote_id);
@@ -1063,7 +1084,6 @@ impl Service {
         }
 
         self.db.changes.set.insert(Change::Series);
-        self.db.changes.set.insert(Change::Remotes);
         self.db.changes.remove.remove(&series_id);
         self.db.changes.add.insert(series_id);
     }
@@ -1171,7 +1191,10 @@ fn load_database(paths: &Paths) -> Result<Database> {
                 }
                 RemoteId::Episode { uuid, remote } => {
                     db.remote_episodes.insert(remote, uuid);
-                    db.episodes_remotes.entry(uuid).or_default().insert(remote);
+                    db.remote_episodes_rev
+                        .entry(uuid)
+                        .or_default()
+                        .insert(remote);
                 }
             }
         }

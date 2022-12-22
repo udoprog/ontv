@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::runtime;
+use uuid::Uuid;
 
 use crate::model::{Raw, RemoteSeriesId, SeasonNumber};
 use crate::search::Tokens;
@@ -56,7 +57,15 @@ pub(crate) fn import_trakt_watched(
 
         // TODO: use more databases.
         let series_id = match service.existing_by_remote_ids(ids) {
-            Some(series_id) => series_id,
+            Some(series_id) => {
+                if service.series(series_id).is_none() && import_missing {
+                    let Some(..) = runtime.block_on(download_series(service, &entry, tmdb_remote_id))? else {
+                        continue;
+                    };
+                }
+
+                series_id
+            }
             None => {
                 if !import_missing {
                     log::warn!(
@@ -66,24 +75,11 @@ pub(crate) fn import_trakt_watched(
                     continue;
                 };
 
-                log::info!("downloading `{}`", entry.show.title);
-
-                let (series_id, remote_id, new_series) =
-                    runtime.block_on(service.download_series_by_remote(tmdb_remote_id));
-                service.download_complete(series_id, remote_id);
-
-                let new_series = match new_series {
-                    Ok(new_series) => new_series,
-                    Err(error) => {
-                        log::error!("failed to download `{}`: {error}", entry.show.title);
-                        continue;
-                    }
+                let Some(id) = runtime.block_on(download_series(service, &entry, tmdb_remote_id))? else {
+                    continue;
                 };
 
-                let series_id = new_series.series_id();
-                service.insert_new_series(new_series);
-                runtime.block_on(service.save_changes())?;
-                series_id
+                id
             }
         };
 
@@ -121,6 +117,30 @@ pub(crate) fn import_trakt_watched(
 
     runtime.shutdown_background();
     Ok(())
+}
+
+async fn download_series(
+    service: &mut Service,
+    entry: &Entry,
+    remote_id: RemoteSeriesId,
+) -> Result<Option<Uuid>> {
+    log::info!("downloading `{}`", entry.show.title);
+
+    let (series_id, remote_id, new_series) = service.download_series_by_remote(remote_id).await;
+    service.download_complete(series_id, remote_id);
+
+    let new_series = match new_series {
+        Ok(new_series) => new_series,
+        Err(error) => {
+            log::error!("failed to download `{}`: {error}", entry.show.title);
+            return Ok(None);
+        }
+    };
+
+    let series_id = new_series.series_id();
+    service.insert_new_series(new_series);
+    service.save_changes().await?;
+    Ok(Some(series_id))
 }
 
 #[derive(Debug, Deserialize, Serialize)]

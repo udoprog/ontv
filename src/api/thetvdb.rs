@@ -285,9 +285,8 @@ impl Client {
                     absolute_number: row.absolute_number,
                     // NB: thetvdb.com uses season 0 as specials season.
                     season: match row.aired_season {
-                        Some(0) => SeasonNumber::Specials,
-                        Some(number) => SeasonNumber::Number(number),
-                        None => SeasonNumber::Unknown,
+                        Some(n) if n > 0 => SeasonNumber::Number(n),
+                        _ => SeasonNumber::Specials,
                     },
                     number: row.aired_episode_number,
                     aired: row.first_aired,

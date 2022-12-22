@@ -21,7 +21,7 @@ impl State {
                 .pending()
                 .rev()
                 .take(5)
-                .flat_map(|p| p.series.poster),
+                .flat_map(|p| p.season.and_then(|s| s.poster).or(p.series.poster)),
         );
     }
 
@@ -30,7 +30,10 @@ impl State {
         let mut pending = row![];
 
         for PendingRef {
-            series, episode, ..
+            series,
+            season,
+            episode,
+            ..
         } in service.pending().rev().take(5)
         {
             let mut actions = row![].spacing(SPACE);
@@ -57,14 +60,17 @@ impl State {
                 .width(Length::FillPortion(2)),
             );
 
-            let handle = match series.poster.and_then(|i| assets.image(&i)) {
+            let handle = match season
+                .and_then(|s| s.poster)
+                .or(series.poster)
+                .and_then(|i| assets.image(&i))
+            {
                 Some(handle) => handle,
                 None => assets.missing_poster(),
             };
 
             let mut episode_number = match episode.season {
                 SeasonNumber::Number(number) => format!("{}x{}", number, episode.number),
-                SeasonNumber::Unknown => format!("{}", episode.number),
                 SeasonNumber::Specials => format!("Special {}", episode.number),
             };
 
