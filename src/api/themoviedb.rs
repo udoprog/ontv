@@ -371,7 +371,7 @@ impl Client {
         season_number: u32,
         episode: EpisodeDetail,
         lookup: &impl common::LookupEpisodeId,
-        remotes: R,
+        _remotes: R,
     ) -> Result<(
         usize,
         BTreeSet<RemoteEpisodeId>,
@@ -388,9 +388,10 @@ impl Client {
         );
 
         let id = if let Some(id) = lookup.lookup([remote_id]) {
-            if let Some(remotes) = remotes(id) {
+            // TODO: enable this once again at some point?
+            /*if let Some(remotes) = remotes(id) {
                 return Ok((index, remotes.clone(), remote_id, id, episode));
-            }
+            }*/
 
             Some(id)
         } else {

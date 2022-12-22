@@ -34,18 +34,16 @@ pub(crate) struct Config {
     pub(crate) tmdb_api_key: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "type")]
 pub(crate) enum RemoteId {
     Series {
         uuid: Uuid,
-        #[serde(flatten)]
-        remote: RemoteSeriesId,
+        remotes: BTreeSet<RemoteSeriesId>,
     },
     Episode {
         uuid: Uuid,
-        #[serde(flatten)]
-        remote: RemoteEpisodeId,
+        remotes: BTreeSet<RemoteEpisodeId>,
     },
 }
 

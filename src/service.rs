@@ -151,6 +151,8 @@ struct Database {
     config: Config,
     /// Remote series.
     remote_series: BTreeMap<RemoteSeriesId, Uuid>,
+    /// Episode IDs to remotes.
+    remote_series_rev: HashMap<Uuid, BTreeSet<RemoteSeriesId>>,
     /// Remote episodes.
     remote_episodes: BTreeMap<RemoteEpisodeId, Uuid>,
     /// Episode IDs to remotes.
@@ -172,25 +174,15 @@ struct Database {
 }
 
 struct Paths {
-    /// Mutex to avoid clobbering the filesystem with multiple concurrent writes - but only from the same application.
     lock: tokio::sync::Mutex<()>,
-    /// Path to configuration file.
     config: Box<Path>,
-    /// Path where remote mappings are stored.
     remotes: Box<Path>,
-    /// Path where download queue is stored.
     queue: Box<Path>,
-    /// Images configuration directory.
     images: Box<Path>,
-    /// Path where series are stored.
     series: Box<Path>,
-    /// Watch history.
     watched: Box<Path>,
-    /// Pending history.
     pending: Box<Path>,
-    /// Path where episodes are stored.
     episodes: Box<Path>,
-    /// Path where seasons are stored.
     seasons: Box<Path>,
 }
 
@@ -690,18 +682,25 @@ impl Service {
         }
 
         let remotes = if changes.set.contains(Change::Remotes) {
-            let mut remotes =
-                Vec::with_capacity(&self.db.remote_series.len() + self.db.remote_episodes.len());
+            let mut output = Vec::with_capacity(
+                &self.db.remote_series_rev.len() + self.db.remote_episodes_rev.len(),
+            );
 
-            for (&remote, &uuid) in &self.db.remote_series {
-                remotes.push(RemoteId::Series { uuid, remote });
+            for (&uuid, remotes) in &self.db.remote_series_rev {
+                output.push(RemoteId::Series {
+                    uuid,
+                    remotes: remotes.clone(),
+                });
             }
 
-            for (&remote, &uuid) in &self.db.remote_episodes {
-                remotes.push(RemoteId::Episode { uuid, remote });
+            for (&uuid, remotes) in &self.db.remote_episodes_rev {
+                output.push(RemoteId::Episode {
+                    uuid,
+                    remotes: remotes.clone(),
+                });
             }
 
-            Some(remotes)
+            Some(output)
         } else {
             None
         };
@@ -993,11 +992,17 @@ impl Service {
     pub(crate) fn insert_new_series(&mut self, data: NewSeries) {
         let series_id = data.series.id;
 
-        for remote_id in &data.series.remote_ids {
-            if !matches!(self.db.remote_series.insert(*remote_id, series_id), Some(id) if id == series_id)
+        for &remote_id in &data.series.remote_ids {
+            if !matches!(self.db.remote_series.insert(remote_id, series_id), Some(id) if id == series_id)
             {
                 self.db.changes.set.insert(Change::Remotes);
             }
+
+            self.db
+                .remote_series_rev
+                .entry(series_id)
+                .or_default()
+                .insert(remote_id);
         }
 
         for episode in &data.episodes {
@@ -1139,15 +1144,23 @@ fn load_database(paths: &Paths) -> Result<Database> {
     if let Some(remotes) = load_array::<RemoteId>(&paths.remotes)? {
         for remote_id in remotes {
             match remote_id {
-                RemoteId::Series { uuid, remote } => {
-                    db.remote_series.insert(remote, uuid);
+                RemoteId::Series { uuid, remotes } => {
+                    for remote_id in remotes {
+                        db.remote_series.insert(remote_id, uuid);
+                        db.remote_series_rev
+                            .entry(uuid)
+                            .or_default()
+                            .insert(remote_id);
+                    }
                 }
-                RemoteId::Episode { uuid, remote } => {
-                    db.remote_episodes.insert(remote, uuid);
-                    db.remote_episodes_rev
-                        .entry(uuid)
-                        .or_default()
-                        .insert(remote);
+                RemoteId::Episode { uuid, remotes } => {
+                    for remote_id in remotes {
+                        db.remote_episodes.insert(remote_id, uuid);
+                        db.remote_episodes_rev
+                            .entry(uuid)
+                            .or_default()
+                            .insert(remote_id);
+                    }
                 }
             }
         }
