@@ -41,6 +41,8 @@ use crate::utils::{TimedOut, Timeout};
 
 // Check for remote updates every 60 seconds.
 const UPDATE_TIMEOUT: u64 = 60;
+// Number of images to process in parallel.
+const IMAGE_BATCH: usize = 10;
 
 #[derive(Parser)]
 struct Opts {
@@ -109,6 +111,8 @@ struct Main {
     exit_after_save: bool,
     // Should exit.
     should_exit: bool,
+    // Images to load.
+    images: Vec<Image>,
 }
 
 struct Flags {
@@ -136,6 +140,7 @@ impl Application for Main {
             image_loader: Singleton::default(),
             exit_after_save: false,
             should_exit: false,
+            images: Vec::new(),
         };
 
         this.prepare();
@@ -487,11 +492,23 @@ impl Main {
             return Command::none();
         }
 
-        let Some(id) = self.state.assets.next_image() else {
-            return Command::none();
-        };
+        self.images.clear();
 
-        let future = self.image_loader.set(self.state.service.load_image(id));
+        while self.images.len() < IMAGE_BATCH {
+            let Some(id) = self.state.assets.next_image() else {
+                break;
+            };
+
+            self.images.push(id);
+        }
+
+        if self.images.is_empty() {
+            return Command::none();
+        }
+
+        let future = self
+            .image_loader
+            .set(self.state.service.load_images(&self.images));
         Command::perform(future, translate)
     }
 }

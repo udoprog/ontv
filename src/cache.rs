@@ -64,46 +64,39 @@ impl CacheId for TvdbImage {
 
 /// Helper to load a cached image, or download it using the provided client if
 /// needed.
-pub(crate) async fn images<I, C>(path: &Path, client: &C, ids: I) -> Result<Vec<(Image, Handle)>>
+pub(crate) async fn image<I, C>(path: &Path, client: &C, id: I) -> Result<(Image, Handle)>
 where
-    C: CacheClient<I::Item>,
-    I: IntoIterator,
-    I::Item: fmt::Display + CacheId,
-    Image: From<I::Item>,
+    C: CacheClient<I>,
+    I: fmt::Display + CacheId,
+    Image: From<I>,
 {
     use tokio::fs;
 
-    let mut output = Vec::new();
+    let hash = id.hash128();
+    let cache_path = path.join(format!("{:032x}.{ext}", hash, ext = id.ext()));
 
-    for id in ids {
-        let hash = id.hash128();
-        let cache_path = path.join(format!("{:032x}.{ext}", hash, ext = id.ext()));
+    let data = match fs::read(&cache_path).await {
+        Ok(data) => data,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            log::debug!("downloading: {id}: {}", cache_path.display());
+            let data = client.download_image(&id).await?;
 
-        let data = match fs::read(&cache_path).await {
-            Ok(data) => data,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                log::debug!("downloading: {id}: {}", cache_path.display());
-                let data = client.download_image(&id).await?;
-
-                if let Some(parent) = cache_path.parent() {
-                    if !matches!(fs::metadata(parent).await, Ok(m) if m.is_dir()) {
-                        log::debug!("creating image cache directory: {}", parent.display());
-                        fs::create_dir_all(parent).await?;
-                    }
+            if let Some(parent) = cache_path.parent() {
+                if !matches!(fs::metadata(parent).await, Ok(m) if m.is_dir()) {
+                    log::debug!("creating image cache directory: {}", parent.display());
+                    fs::create_dir_all(parent).await?;
                 }
-
-                fs::write(&cache_path, &data).await?;
-                data
             }
-            Err(e) => return Err(e.into()),
-        };
 
-        log::debug!("loaded: {id} ({} bytes)", data.len());
-        let handle = Handle::from_memory(data);
-        output.push((Image::from(id), handle));
-    }
+            fs::write(&cache_path, &data).await?;
+            data
+        }
+        Err(e) => return Err(e.into()),
+    };
 
-    Ok(output)
+    log::debug!("loaded: {id} ({} bytes)", data.len());
+    let handle = Handle::from_memory(data);
+    Ok((Image::from(id), handle))
 }
 
 /// Generate a 16-byte hash.

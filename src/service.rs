@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Context, Error, Result};
 use chrono::{DateTime, Duration, Utc};
+use futures::stream::FuturesUnordered;
 use iced_native::image::Handle;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -1064,19 +1065,39 @@ impl Service {
     }
 
     /// Ensure that a collection of the given image ids are loaded.
-    pub(crate) fn load_image(
+    pub(crate) fn load_images(
         &self,
-        id: Image,
+        ids: &[Image],
     ) -> impl Future<Output = Result<Vec<(Image, Handle)>>> {
+        use futures::StreamExt;
+
         let paths = self.paths.clone();
         let tvdb = self.tvdb.clone();
         let tmdb = self.tmdb.clone();
+        let ids = ids.to_vec();
 
         async move {
-            Ok(match id {
-                Image::Tvdb(id) => cache::images(&paths.images, &tvdb, [id]).await?,
-                Image::Tmdb(id) => cache::images(&paths.images, &tmdb, [id]).await?,
-            })
+            let mut output = Vec::with_capacity(ids.len());
+            let mut futures = FuturesUnordered::new();
+
+            for id in ids {
+                let paths = paths.clone();
+                let tvdb = tvdb.clone();
+                let tmdb = tmdb.clone();
+
+                futures.push(async move {
+                    Ok::<_, Error>(match id {
+                        Image::Tvdb(id) => cache::image(&paths.images, &tvdb, id).await?,
+                        Image::Tmdb(id) => cache::image(&paths.images, &tmdb, id).await?,
+                    })
+                });
+            }
+
+            while let Some(result) = futures.next().await {
+                output.push(result?);
+            }
+
+            Ok(output)
         }
     }
 
