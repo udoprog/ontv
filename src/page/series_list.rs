@@ -25,10 +25,10 @@ impl State {
     pub(crate) fn prepare(&mut self, service: &Service, assets: &mut Assets) {
         if let Some(filtered) = &self.filtered {
             let series = service.all_series();
-            let images = filtered.iter().flat_map(|&i| Some(series.get(i)?.poster));
+            let images = filtered.iter().flat_map(|&i| series.get(i)?.poster);
             assets.mark(images);
         } else {
-            assets.mark(service.all_series().iter().map(|s| s.poster));
+            assets.mark(service.all_series().iter().flat_map(|s| s.poster));
         }
     }
 
@@ -58,7 +58,7 @@ impl State {
     }
 
     pub(crate) fn view(&self, service: &Service, assets: &Assets) -> Column<'static, Message> {
-        let mut series = column![];
+        let mut rows = Column::new();
 
         let mut it;
         let mut it2;
@@ -71,25 +71,25 @@ impl State {
             &mut it2
         };
 
-        for s in iter {
-            let handle = match assets.image(&s.poster) {
+        for series in iter {
+            let poster = match series.poster.and_then(|i| assets.image(&i)) {
                 Some(handle) => handle,
                 None => assets.missing_poster(),
             };
 
-            let graphic = button(image(handle).height(Length::Units(POSTER_HEIGHT)))
-                .on_press(Message::Navigate(Page::Series(s.id)))
+            let graphic = button(image(poster).height(Length::Units(POSTER_HEIGHT)))
+                .on_press(Message::Navigate(Page::Series(series.id)))
                 .style(theme::Button::Text)
                 .padding(0);
 
-            let episodes = service.episodes(s.id);
+            let episodes = service.episodes(series.id);
 
-            let actions = crate::page::series::actions(s).spacing(SPACE);
+            let actions = crate::page::series::actions(series, service).spacing(SPACE);
 
-            let title = button(text(&s.title).size(SUBTITLE_SIZE))
+            let title = button(text(&series.title).size(SUBTITLE_SIZE))
                 .padding(0)
                 .style(theme::Button::Text)
-                .on_press(Message::Navigate(Page::Series(s.id)));
+                .on_press(Message::Navigate(Page::Series(series.id)));
 
             let mut content = column![].width(Length::Fill);
 
@@ -102,11 +102,11 @@ impl State {
                 .spacing(SPACE),
             );
 
-            if let Some(overview) = &s.overview {
+            if let Some(overview) = &series.overview {
                 content = content.push(text(overview));
             }
 
-            series = series.push(
+            rows = rows.push(
                 centered(
                     row![graphic, content.spacing(GAP)]
                         .spacing(GAP)
@@ -122,11 +122,10 @@ impl State {
         })
         .width(Length::Fill);
 
-        column![
-            vertical_space(Length::Shrink),
-            centered(row![filter].width(Length::Fill), None),
-            series.spacing(GAP2)
-        ]
-        .spacing(GAP)
+        Column::new()
+            .push(vertical_space(Length::Shrink))
+            .push(centered(row![filter].width(Length::Fill), None))
+            .push(rows.spacing(GAP2))
+            .spacing(GAP)
     }
 }

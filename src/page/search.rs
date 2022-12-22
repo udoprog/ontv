@@ -75,29 +75,7 @@ impl State {
         message: M,
     ) -> Command<Message> {
         match message {
-            M::Search => {
-                self.page = 0;
-
-                let query = self.text.clone();
-
-                let translate = |out| match out {
-                    Ok(series) => Message::Search(M::Result(series)),
-                    Err(error) => Message::error(error),
-                };
-
-                match self.kind {
-                    SearchKind::Tvdb => {
-                        let tvdb = service.tvdb.clone();
-                        let op = async move { tvdb.search_by_name(&query).await };
-                        Command::perform(op, translate)
-                    }
-                    SearchKind::Tmdb => {
-                        let tmdb = service.tmdb.clone();
-                        let op = async move { tmdb.search_series(&query).await };
-                        Command::perform(op, translate)
-                    }
-                }
-            }
+            M::Search => self.search(service),
             M::Change(text) => {
                 self.text = text;
                 Command::none()
@@ -114,7 +92,35 @@ impl State {
             }
             M::SearchKindChanged(kind) => {
                 self.kind = kind;
-                Command::none()
+                self.search(service)
+            }
+        }
+    }
+
+    fn search(&mut self, service: &mut Service) -> Command<Message> {
+        if self.text.is_empty() {
+            return Command::none();
+        }
+
+        self.page = 0;
+
+        let query = self.text.clone();
+
+        let translate = |out| match out {
+            Ok(series) => Message::Search(M::Result(series)),
+            Err(error) => Message::error(error),
+        };
+
+        match self.kind {
+            SearchKind::Tvdb => {
+                let tvdb = service.tvdb.clone();
+                let op = async move { tvdb.search_by_name(&query).await };
+                Command::perform(op, translate)
+            }
+            SearchKind::Tmdb => {
+                let tmdb = service.tmdb.clone();
+                let op = async move { tmdb.search_series(&query).await };
+                Command::perform(op, translate)
             }
         }
     }
@@ -129,15 +135,35 @@ impl State {
                 None => assets.missing_poster(),
             };
 
-            let track = if let Some(s) = service.get_series_by_remote(series.id) {
-                button(text("Remove").size(ACTION_SIZE))
-                    .style(theme::Button::Destructive)
-                    .on_press(Message::RemoveSeries(s.id))
+            let mut actions = Row::new();
+
+            if service.is_downloading(&series.id) {
+                actions = actions.push(
+                    button(text("Downloading...").size(ACTION_SIZE)).style(theme::Button::Primary),
+                );
             } else {
-                button(text("Add").size(ACTION_SIZE))
-                    .style(theme::Button::Positive)
-                    .on_press(Message::AddSeriesByRemote(series.id))
-            };
+                if let Some(s) = service.get_series_by_remote(series.id) {
+                    if s.remote_id != Some(series.id) {
+                        actions = actions.push(
+                            button(text("Switch").size(ACTION_SIZE))
+                                .style(theme::Button::Primary)
+                                .on_press(Message::SwitchSeries(s.id, series.id)),
+                        );
+                    }
+
+                    actions = actions.push(
+                        button(text("Remove").size(ACTION_SIZE))
+                            .style(theme::Button::Destructive)
+                            .on_press(Message::RemoveSeries(s.id)),
+                    );
+                } else {
+                    actions = actions.push(
+                        button(text("Add").size(ACTION_SIZE))
+                            .style(theme::Button::Positive)
+                            .on_press(Message::AddSeriesByRemote(series.id)),
+                    );
+                }
+            }
 
             let overview = series
                 .overview
@@ -156,7 +182,12 @@ impl State {
                 row![
                     image(handle).height(Length::Units(POSTER_HEIGHT)),
                     column![
-                        column![text(&series.name).size(24), first_aired, track,].spacing(SPACE),
+                        column![
+                            text(&series.name).size(24),
+                            first_aired,
+                            actions.spacing(SPACE)
+                        ]
+                        .spacing(SPACE),
                         text(overview),
                     ]
                     .spacing(GAP)

@@ -11,15 +11,18 @@ static MISSING_SCRENCAP: &[u8] = include_bytes!("../assets/missing_screencap.png
 /// Keeping track of assets that needs to be stored in-memory or loaded from the
 /// filesystem.
 pub(crate) struct Assets {
+    /// Handle for missing posters.
     missing_poster: Handle,
+    /// Handle for missing banners.
     missing_banner: Handle,
+    /// Handle for missing screen caps.
     missing_screencap: Handle,
     /// Set to clear image cache on next commit.
     clear: bool,
     /// Image queue to load.
-    pub(crate) image_ids: VecDeque<Image>,
+    image_ids: VecDeque<Image>,
     /// Images marked for loading.
-    pub(crate) marked: Vec<Image>,
+    marked: Vec<Image>,
     /// Images stored in-memory.
     images: HashMap<Image, Handle>,
     /// Assets to remove.
@@ -125,5 +128,18 @@ impl Assets {
     /// Get a placeholder image for a missing screencap.
     pub(crate) fn missing_screencap(&self) -> Handle {
         self.missing_screencap.clone()
+    }
+
+    /// Get the next image to load.
+    pub(crate) fn next_image(&mut self) -> Option<Image> {
+        loop {
+            let image = self.image_ids.pop_front()?;
+
+            if self.images.contains_key(&image) {
+                continue;
+            }
+
+            return Some(image);
+        }
     }
 }

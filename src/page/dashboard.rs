@@ -16,7 +16,13 @@ pub(crate) struct State {}
 impl State {
     /// Prepare data that is needed for the view.
     pub(crate) fn prepare(&mut self, service: &Service, assets: &mut Assets) {
-        assets.mark(service.pending().rev().take(5).map(|p| p.series.poster));
+        assets.mark(
+            service
+                .pending()
+                .rev()
+                .take(5)
+                .flat_map(|p| p.series.poster),
+        );
     }
 
     /// Generate the view for the settings page.
@@ -51,7 +57,7 @@ impl State {
                 .width(Length::FillPortion(2)),
             );
 
-            let handle = match assets.image(&series.poster) {
+            let handle = match series.poster.and_then(|i| assets.image(&i)) {
                 Some(handle) => handle,
                 None => assets.missing_poster(),
             };

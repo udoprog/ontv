@@ -7,7 +7,9 @@ use uuid::Uuid;
 use crate::assets::Assets;
 use crate::message::{Message, Page};
 use crate::model::{RemoteSeriesId, Season, Series};
-use crate::params::{centered, style, ACTION_SIZE, GAP, GAP2, SPACE, SUBTITLE_SIZE, TITLE_SIZE};
+use crate::params::{
+    centered, style, ACTION_SIZE, GAP, GAP2, POSTER_HEIGHT, SPACE, SUBTITLE_SIZE, TITLE_SIZE,
+};
 use crate::service::Service;
 
 #[derive(Debug, Clone)]
@@ -21,8 +23,13 @@ pub(crate) struct State;
 impl State {
     /// Prepare data that is needed for the view.
     pub(crate) fn prepare(&mut self, service: &Service, assets: &mut Assets, id: Uuid) {
-        if let Some(s) = service.series(id) {
-            prepare_series_banner(assets, s);
+        if let Some(series) = service.series(id) {
+            prepare_series_banner(assets, series);
+            assets.mark(
+                service
+                    .seasons(series.id)
+                    .flat_map(|season| season.poster.or(series.poster)),
+            );
         }
     }
 
@@ -76,23 +83,43 @@ impl State {
             top = top.push(remotes.spacing(SPACE));
         }
 
-        let mut seasons = column![];
+        let mut cols = column![];
 
         for season in service.seasons(series.id) {
+            let poster = match season
+                .poster
+                .or(series.poster)
+                .and_then(|i| assets.image(&i))
+            {
+                Some(poster) => poster,
+                None => assets.missing_poster(),
+            };
+
+            let graphic = button(image(poster).height(Length::Units(POSTER_HEIGHT)))
+                .on_press(Message::Navigate(Page::Season(series.id, season.number)))
+                .style(theme::Button::Text)
+                .padding(0);
+
             let title = button(season.number.title().size(SUBTITLE_SIZE))
                 .padding(0)
                 .style(theme::Button::Text)
                 .on_press(Message::Navigate(Page::Season(series.id, season.number)));
 
-            seasons = seasons.push(
+            cols = cols.push(
                 centered(
-                    column![
-                        title,
-                        season_info(service, series, season)
-                            .spacing(GAP)
-                            .width(Length::Fill)
-                    ]
-                    .spacing(SPACE),
+                    Row::new()
+                        .push(graphic)
+                        .push(
+                            Column::new()
+                                .push(title)
+                                .push(
+                                    season_info(service, series, season)
+                                        .spacing(GAP)
+                                        .width(Length::Fill),
+                                )
+                                .spacing(SPACE),
+                        )
+                        .spacing(GAP),
                     Some(style::weak),
                 )
                 .padding(GAP),
@@ -105,46 +132,55 @@ impl State {
             count => text(format!("{count} episodes")),
         };
 
-        let mut header = column![top.spacing(GAP), actions(series).spacing(SPACE), info,];
+        let mut header = column![
+            top.spacing(GAP),
+            actions(series, service).spacing(SPACE),
+            info,
+        ];
 
         if let Some(overview) = &series.overview {
             header = header.push(text(overview));
         }
 
         let header = centered(header.spacing(GAP), None).padding(GAP);
-        column![header, seasons.spacing(GAP2)].spacing(GAP2)
+        column![header, cols.spacing(GAP2)].spacing(GAP2)
     }
 }
 
 /// Generate buttons which perform actions on the given series.
-pub(crate) fn actions(s: &Series) -> Row<'static, Message> {
+pub(crate) fn actions(series: &Series, service: &Service) -> Row<'static, Message> {
     let mut row = row![];
 
-    if s.tracked {
+    if series.tracked {
         row = row.push(
             button(text("Untrack").size(ACTION_SIZE))
                 .style(theme::Button::Destructive)
-                .on_press(Message::Untrack(s.id)),
+                .on_press(Message::Untrack(series.id)),
         );
     } else {
         row = row.push(
             button(text("Track").size(ACTION_SIZE))
                 .style(theme::Button::Positive)
-                .on_press(Message::Track(s.id)),
+                .on_press(Message::Track(series.id)),
         );
     }
 
-    row = row.push(
-        button(text("Refresh").size(ACTION_SIZE))
-            .style(theme::Button::Positive)
-            .on_press(Message::RefreshSeries(s.id)),
-    );
+    if service.is_downloading_id(&series.id) {
+        row = row
+            .push(button(text("Downloading...").size(ACTION_SIZE)).style(theme::Button::Primary));
+    } else {
+        row = row.push(
+            button(text("Refresh").size(ACTION_SIZE))
+                .style(theme::Button::Positive)
+                .on_press(Message::RefreshSeries(series.id)),
+        );
 
-    row = row.push(
-        button(text("Remove").size(ACTION_SIZE))
-            .style(theme::Button::Destructive)
-            .on_press(Message::RemoveSeries(s.id)),
-    );
+        row = row.push(
+            button(text("Remove").size(ACTION_SIZE))
+                .style(theme::Button::Destructive)
+                .on_press(Message::RemoveSeries(series.id)),
+        );
+    }
 
     row
 }
@@ -194,12 +230,12 @@ pub(crate) fn season_info(
 
 /// Prepare assets needed for banner.
 pub(crate) fn prepare_series_banner(assets: &mut Assets, s: &Series) {
-    assets.mark([s.banner.unwrap_or(s.poster)]);
+    assets.mark(s.banner);
 }
 
 /// Render a banner for the series.
 pub(crate) fn series_banner(assets: &Assets, series: &Series) -> Column<'static, Message> {
-    let handle = match assets.image(&series.banner.unwrap_or(series.poster)) {
+    let handle = match series.banner.and_then(|i| assets.image(&i)) {
         Some(handle) => handle,
         None => assets.missing_banner(),
     };

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -6,11 +6,12 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use bytes::Bytes;
 use chrono::{DateTime, NaiveDate, Utc};
-use reqwest::{header, Method, RequestBuilder, Response, Url};
+use reqwest::{Method, RequestBuilder, Response, Url};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::api::common;
 use crate::model::{
     Episode, Image, Raw, RemoteEpisodeId, RemoteSeriesId, SearchSeries, SeasonNumber, Series,
     TvdbImage,
@@ -152,21 +153,23 @@ impl Client {
             .send()
             .await?;
 
-        Ok(parse_last_modified(&res).context("last-modified header")?)
+        Ok(common::parse_last_modified(&res).context("last-modified header")?)
     }
 
     /// Download series information.
-    pub(crate) async fn series<A>(&self, id: u32, lookup: A) -> Result<Series>
-    where
-        A: Fn(RemoteSeriesId) -> Option<Uuid>,
-    {
+    pub(crate) async fn series(
+        &self,
+        id: u32,
+        lookup: impl common::LookupSeriesId,
+    ) -> Result<Series> {
         let res = self
             .request_with_auth(Method::GET, &["series", &id.to_string()])
             .await?
             .send()
             .await?;
 
-        let last_modified = parse_last_modified(&res).context("last-modified header")?;
+        let last_etag = common::parse_etag(&res);
+        let last_modified = common::parse_last_modified(&res).context("last-modified header")?;
         let bytes: Bytes = handle_res(res).await?;
 
         if log::log_enabled!(log::Level::Trace) {
@@ -203,22 +206,22 @@ impl Client {
         }
 
         // Try to lookup the series by known remote ids.
-        let id = remote_ids
-            .iter()
-            .flat_map(move |id| lookup(*id))
-            .next()
+        let id = lookup
+            .lookup(remote_ids.iter().copied())
             .unwrap_or_else(Uuid::new_v4);
 
         return Ok(Series {
             id,
             title: value.series_name.to_owned(),
+            first_air_date: None,
             overview: value.overview,
             banner,
-            poster,
+            poster: Some(poster),
             fanart,
             remote_id: Some(remote_id),
             remote_ids,
             tracked: true,
+            last_etag,
             last_modified,
             last_sync: BTreeMap::new(),
         });
@@ -246,10 +249,11 @@ impl Client {
     }
 
     /// Download all series episodes.
-    pub(crate) async fn series_episodes<A>(&self, id: u32, mut alloc: A) -> Result<Vec<Episode>>
-    where
-        A: 'static + Send + FnMut(RemoteEpisodeId) -> Option<Uuid>,
-    {
+    pub(crate) async fn series_episodes(
+        &self,
+        id: u32,
+        lookup: impl common::LookupEpisodeId,
+    ) -> Result<Vec<Episode>> {
         let path = ["series", &id.to_string(), "episodes"];
 
         return self
@@ -262,18 +266,16 @@ impl Client {
                 };
 
                 let remote_id = RemoteEpisodeId::Tvdb { id: row.id };
-                let mut remote_ids = Vec::from([remote_id]);
+                let mut remote_ids = BTreeSet::from([remote_id]);
 
                 if let Some(imdb_id) = row.imdb_id.filter(|id| !id.is_empty()) {
-                    remote_ids.push(RemoteEpisodeId::Imdb {
+                    remote_ids.insert(RemoteEpisodeId::Imdb {
                         id: Raw::new(&imdb_id).context("id overflow")?,
                     });
                 }
 
-                let id = remote_ids
-                    .iter()
-                    .flat_map(|id| alloc(*id))
-                    .next()
+                let id = lookup
+                    .lookup(remote_ids.iter().copied())
                     .unwrap_or_else(Uuid::new_v4);
 
                 Ok(Episode {
@@ -460,17 +462,6 @@ impl Client {
         let res = self.client.get(url).send().await?;
         Ok(res.bytes().await?.to_vec())
     }
-}
-
-/// Parse out last modified header if present.
-fn parse_last_modified(res: &Response) -> Result<Option<DateTime<Utc>>> {
-    let Some(last_modified) = res.headers().get(header::LAST_MODIFIED) else {
-        return Ok(None);
-    };
-
-    let last_modified = DateTime::parse_from_rfc2822(last_modified.to_str()?)?;
-    let last_modified = last_modified.naive_utc();
-    Ok(Some(DateTime::from_utc(last_modified, Utc)))
 }
 
 /// Handle converting response to JSON.

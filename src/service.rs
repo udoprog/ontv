@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::future::Future;
 use std::path::Path;
@@ -144,6 +144,8 @@ struct Database {
     remote_series: BTreeMap<RemoteSeriesId, Uuid>,
     /// Remote episodes.
     remote_episodes: BTreeMap<RemoteEpisodeId, Uuid>,
+    /// Episode IDs to remotes.
+    episodes_remotes: HashMap<Uuid, BTreeSet<RemoteEpisodeId>>,
     /// Series database.
     series: SeriesDatabase,
     /// Episodes collection.
@@ -192,6 +194,10 @@ pub struct Service {
     pub(crate) tvdb: thetvdb::Client,
     pub(crate) tmdb: themoviedb::Client,
     do_not_save: bool,
+    /// Set of series which are in the process of being downloaded.
+    downloading: HashSet<RemoteSeriesId>,
+    /// Series IDs in the process of being downloaded.
+    downloading_ids: HashSet<Uuid>,
 }
 
 impl Service {
@@ -223,6 +229,8 @@ impl Service {
             tvdb,
             tmdb,
             do_not_save: false,
+            downloading: HashSet::new(),
+            downloading_ids: HashSet::new(),
         };
 
         Ok(this)
@@ -256,6 +264,16 @@ impl Service {
     /// Get download queue.
     pub(crate) fn queue(&self) -> &[Queued] {
         &self.db.queue.data
+    }
+
+    /// Indicates that a series is in the process of downloading.
+    pub(crate) fn is_downloading(&self, remote_id: &RemoteSeriesId) -> bool {
+        self.downloading.contains(remote_id)
+    }
+
+    /// Indicates that a series is in the process of downloading.
+    pub(crate) fn is_downloading_id(&self, series_id: &Uuid) -> bool {
+        self.downloading_ids.contains(series_id)
     }
 
     /// Test if episode is watched.
@@ -809,10 +827,17 @@ impl Service {
     pub(crate) fn refresh_series(
         &mut self,
         series_id: Uuid,
-    ) -> Option<impl Future<Output = Result<NewSeries>>> {
+    ) -> Option<impl Future<Output = (Option<Uuid>, RemoteSeriesId, Result<NewSeries>)>> {
         let series = self.db.series.get(&series_id)?;
         let remote_id = series.remote_id?;
-        Some(self.download_series(remote_id, false))
+        self.downloading_ids.insert(series_id);
+
+        let op = self.download_series(remote_id, false);
+
+        Some(async move {
+            let (_, remote_id, result) = op.await;
+            (Some(series_id), remote_id, result)
+        })
     }
 
     /// Remove the given series by ID.
@@ -832,39 +857,65 @@ impl Service {
 
     /// Enable tracking of the series with the given id.
     pub(crate) fn download_series_by_remote(
-        &self,
-        id: RemoteSeriesId,
-    ) -> impl Future<Output = Result<NewSeries>> {
-        self.download_series(id, true)
+        &mut self,
+        remote_id: RemoteSeriesId,
+    ) -> impl Future<Output = (Option<Uuid>, RemoteSeriesId, Result<NewSeries>)> {
+        self.download_series(remote_id, true)
     }
 
     /// Download series using a remote identifier.
     fn download_series(
-        &self,
+        &mut self,
         remote_id: RemoteSeriesId,
         refresh_pending: bool,
-    ) -> impl Future<Output = Result<NewSeries>> {
+    ) -> impl Future<Output = (Option<Uuid>, RemoteSeriesId, Result<NewSeries>)> {
+        self.downloading.insert(remote_id);
+
         let tvdb = self.tvdb.clone();
+        let tmdb = self.tmdb.clone();
         let series = self.db.remote_series.clone();
         let episodes = self.db.remote_episodes.clone();
+        let episodes_remotes = self.db.episodes_remotes.clone();
 
-        async move {
-            let lookup_series =
-                move |q| Some(*series.iter().find(|(remote_id, _)| **remote_id == q)?.1);
+        let lookup_series =
+            move |q| Some(*series.iter().find(|(remote_id, _)| **remote_id == q)?.1);
 
+        let id = lookup_series(remote_id);
+
+        if let Some(id) = id {
+            self.downloading_ids.insert(id);
+        }
+
+        let op = async move {
             let lookup_episode =
                 move |q| Some(*episodes.iter().find(|(remote_id, _)| **remote_id == q)?.1);
 
-            let (series, episodes, seasons) = match remote_id {
+            let (series, seasons, episodes) = match remote_id {
                 RemoteSeriesId::Tvdb { id } => {
                     let series = tvdb.series(id, lookup_series);
                     let episodes = tvdb.series_episodes(id, lookup_episode);
                     let (series, episodes) = tokio::try_join!(series, episodes)?;
                     let seasons = episodes_into_seasons(&episodes);
-                    (series, episodes, seasons)
+                    (series, seasons, episodes)
                 }
-                RemoteSeriesId::Tmdb { .. } => {
-                    bail!("cannot download series data from tmdb")
+                RemoteSeriesId::Tmdb { id } => {
+                    let (series, seasons) = tmdb.series(id, lookup_series).await?;
+
+                    let mut episodes = Vec::new();
+
+                    for season in &seasons {
+                        let new_episodes = tmdb
+                            .episodes(
+                                id,
+                                season.number,
+                                |q| lookup_episode(q),
+                                |id| episodes_remotes.get(&id),
+                            )
+                            .await?;
+                        episodes.extend(new_episodes);
+                    }
+
+                    (series, seasons, episodes)
                 }
                 RemoteSeriesId::Imdb { .. } => {
                     bail!("cannot download series data from imdb")
@@ -879,7 +930,9 @@ impl Service {
             };
 
             Ok::<_, Error>(data)
-        }
+        };
+
+        async move { (id, remote_id, op.await) }
     }
 
     /// If the series is already loaded in the local database, simply mark it as tracked.
@@ -918,6 +971,15 @@ impl Service {
         self.db.changes.set.insert(Change::Pending);
     }
 
+    /// Download completed, whether it was successful or not.
+    pub(crate) fn download_complete(&mut self, series_id: Option<Uuid>, remote_id: RemoteSeriesId) {
+        self.downloading.remove(&remote_id);
+
+        if let Some(series_id) = series_id {
+            self.downloading_ids.remove(&series_id);
+        }
+    }
+
     /// Insert a new tracked song.
     pub(crate) fn insert_new_series(&mut self, data: NewSeries) {
         let series_id = data.series.id;
@@ -927,8 +989,13 @@ impl Service {
         }
 
         for episode in &data.episodes {
-            for remote_id in &episode.remote_ids {
-                self.db.remote_episodes.insert(*remote_id, episode.id);
+            for &remote_id in &episode.remote_ids {
+                self.db.remote_episodes.insert(remote_id, episode.id);
+                self.db
+                    .episodes_remotes
+                    .entry(episode.id)
+                    .or_default()
+                    .insert(remote_id);
             }
         }
 
@@ -986,9 +1053,9 @@ impl Service {
     where
         I: IntoIterator<Item = RemoteSeriesId>,
     {
-        for q in ids {
-            if let Some(id) = self.db.remote_series.iter().find(|(id, _)| **id == q) {
-                return Some(*id.1);
+        for remote_id in ids {
+            if let Some(&id) = self.db.remote_series.get(&remote_id) {
+                return Some(id);
             }
         }
 
@@ -1002,41 +1069,6 @@ impl Service {
         filter: Option<&str>,
         remove: bool,
     ) -> Result<()> {
-        #[derive(Debug, Deserialize, Serialize)]
-        struct Episode {
-            last_watched_at: DateTime<Utc>,
-            number: u32,
-        }
-
-        #[derive(Debug, Deserialize, Serialize)]
-        struct Season {
-            number: u32,
-            episodes: Vec<Episode>,
-        }
-
-        #[derive(Debug, Deserialize, Serialize)]
-        struct Ids {
-            imdb: String,
-            slug: String,
-            tmdb: u32,
-            trakt: u32,
-            tvdb: u32,
-            #[serde(default)]
-            tvrage: Option<u32>,
-        }
-
-        #[derive(Debug, Deserialize, Serialize)]
-        struct Show {
-            title: String,
-            ids: Ids,
-        }
-
-        #[derive(Debug, Deserialize, Serialize)]
-        struct Entry {
-            show: Show,
-            seasons: Vec<Season>,
-        }
-
         let filter = filter.map(|filter| crate::search::Tokens::new(filter));
 
         use std::fs::File;
@@ -1114,7 +1146,42 @@ impl Service {
             self.populate_pending(&now, series_id, last);
         }
 
-        Ok(())
+        return Ok(());
+
+        #[derive(Debug, Deserialize, Serialize)]
+        struct Episode {
+            last_watched_at: DateTime<Utc>,
+            number: u32,
+        }
+
+        #[derive(Debug, Deserialize, Serialize)]
+        struct Season {
+            number: u32,
+            episodes: Vec<Episode>,
+        }
+
+        #[derive(Debug, Deserialize, Serialize)]
+        struct Ids {
+            imdb: String,
+            slug: String,
+            tmdb: u32,
+            trakt: u32,
+            tvdb: u32,
+            #[serde(default)]
+            tvrage: Option<u32>,
+        }
+
+        #[derive(Debug, Deserialize, Serialize)]
+        struct Show {
+            title: String,
+            ids: Ids,
+        }
+
+        #[derive(Debug, Deserialize, Serialize)]
+        struct Entry {
+            show: Show,
+            seasons: Vec<Season>,
+        }
     }
 }
 
@@ -1146,6 +1213,7 @@ fn load_database(paths: &Paths) -> Result<Database> {
                 }
                 RemoteId::Episode { uuid, remote } => {
                     db.remote_episodes.insert(remote, uuid);
+                    db.episodes_remotes.entry(uuid).or_default().insert(remote);
                 }
             }
         }
@@ -1406,8 +1474,16 @@ fn episodes_into_seasons(episodes: &[Episode]) -> Vec<Season> {
     let mut map = BTreeMap::new();
 
     for e in episodes {
-        map.entry(e.season)
-            .or_insert_with(|| Season { number: e.season });
+        let season = map.entry(e.season).or_insert_with(|| Season {
+            number: e.season,
+            ..Season::default()
+        });
+
+        season.air_date = match (season.air_date, e.aired) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(t), _) | (_, Some(t)) => Some(t),
+            _ => None,
+        };
     }
 
     map.into_iter().map(|(_, value)| value).collect()

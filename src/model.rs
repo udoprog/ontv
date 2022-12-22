@@ -1,7 +1,8 @@
+mod etag;
 mod hex;
 mod raw;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
@@ -10,6 +11,7 @@ use iced::widget::{text, Text};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub(crate) use self::etag::Etag;
 pub(crate) use self::hex::Hex;
 pub(crate) use self::raw::Raw;
 
@@ -87,11 +89,15 @@ pub(crate) struct Series {
     pub(crate) id: Uuid,
     /// Title of the series.
     pub(crate) title: String,
+    /// First air date of the series.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) first_air_date: Option<NaiveDate>,
     /// Overview of the series.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) overview: Option<String>,
     /// Poster image.
-    pub(crate) poster: Image,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) poster: Option<Image>,
     /// Banner image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) banner: Option<Image>,
@@ -104,6 +110,9 @@ pub(crate) struct Series {
     /// Locally known last modified timestamp.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) last_modified: Option<DateTime<Utc>>,
+    /// Locally known last etag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) last_etag: Option<Etag>,
     /// Last sync time for each remote.
     #[serde(
         default,
@@ -240,6 +249,14 @@ pub struct Season {
     /// The number of the season.
     #[serde(default)]
     pub(crate) number: SeasonNumber,
+    #[serde(default)]
+    pub(crate) air_date: Option<NaiveDate>,
+    #[serde(default)]
+    pub(crate) name: Option<String>,
+    #[serde(default)]
+    pub(crate) overview: Option<String>,
+    #[serde(default)]
+    pub(crate) poster: Option<Image>,
 }
 
 /// An episode in a series.
@@ -272,8 +289,8 @@ pub struct Episode {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) remote_id: Option<RemoteEpisodeId>,
     /// Remote episode ids.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) remote_ids: Vec<RemoteEpisodeId>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub(crate) remote_ids: BTreeSet<RemoteEpisodeId>,
 }
 
 impl Episode {

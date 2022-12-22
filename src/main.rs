@@ -26,8 +26,10 @@ use iced::widget::{
 use iced::{Alignment, Application, Command, Element, Length, Settings};
 use iced_native::image::Handle;
 use message::ErrorMessage;
+use model::RemoteSeriesId;
 use params::{ACTION_SIZE, WARNING_COLOR};
 use utils::Singleton;
+use uuid::Uuid;
 
 use crate::assets::Assets;
 use crate::message::{Message, Page};
@@ -51,6 +53,9 @@ struct Opts {
     /// Override any existing watch history.
     #[arg(long)]
     import_remove: bool,
+    /// Ensure that import history is saved.
+    #[arg(long)]
+    import_save: bool,
 }
 
 pub fn main() -> Result<()> {
@@ -61,7 +66,10 @@ pub fn main() -> Result<()> {
 
     if let Some(path) = opts.import_trakt_watched {
         service.import_trakt_watched(&path, opts.import_filter.as_deref(), opts.import_remove)?;
-        service.do_not_save();
+
+        if !opts.import_save {
+            service.do_not_save();
+        }
     }
 
     let mut settings = Settings::with_flags(Flags { service });
@@ -168,14 +176,7 @@ impl Application for Main {
                 return Command::none();
             }
             Message::Error(error) => {
-                log::error!("error: {error}");
-                self.loading = false;
-                self.errors.push_back(error);
-
-                if self.errors.len() > ERRORS {
-                    self.errors.pop_front();
-                }
-
+                self.handle_error(error);
                 Command::none()
             }
             Message::Save(timed_out) => {
@@ -239,8 +240,7 @@ impl Application for Main {
                     self.history.pop();
                 }
 
-                self.history.push(page);
-                self.history_index += 1;
+                self.push_history(page);
                 Command::none()
             }
             Message::History(relative) => {
@@ -253,36 +253,35 @@ impl Application for Main {
                 self.history_index = self.history_index.min(self.history.len().saturating_sub(1));
                 Command::none()
             }
-            Message::SeriesDownloadToTrack(data) => {
+            Message::SeriesDownloadToTrack(id, remote_id, data) => {
+                self.service.download_complete(id, remote_id);
                 self.service.insert_new_series(data);
+                Command::none()
+            }
+            Message::SeriesDownloadFailed(id, remote_id, error) => {
+                self.service.download_complete(id, remote_id);
+                self.handle_error(error);
                 Command::none()
             }
             Message::RefreshSeries(id) => {
                 if let Some(future) = self.service.refresh_series(id) {
-                    Command::perform(future, |result| match result {
-                        Ok(new_data) => Message::SeriesDownloadToTrack(new_data),
-                        Err(e) => Message::error(e),
+                    Command::perform(future, |(id, remote_id, result)| match result {
+                        Ok(new_data) => Message::SeriesDownloadToTrack(id, remote_id, new_data),
+                        Err(e) => Message::SeriesDownloadFailed(id, remote_id, e.into()),
                     })
                 } else {
                     Command::none()
                 }
             }
-            Message::RemoveSeries(id) => {
-                self.service.remove_series(id);
+            Message::SwitchSeries(series_id, remote_id) => {
+                self.remove_series(series_id);
+                self.add_series_by_remote(remote_id)
+            }
+            Message::RemoveSeries(series_id) => {
+                self.remove_series(series_id);
                 Command::none()
             }
-            Message::AddSeriesByRemote(id) => {
-                if self.service.set_tracked_by_remote(id) {
-                    Command::none()
-                } else {
-                    let translate = |result| match result {
-                        Ok(data) => Message::SeriesDownloadToTrack(data),
-                        Err(e) => Message::error(e),
-                    };
-
-                    Command::perform(self.service.download_series_by_remote(id), translate)
-                }
-            }
+            Message::AddSeriesByRemote(remote_id) => self.add_series_by_remote(remote_id),
             Message::Watch(series, episode) => {
                 let now = Utc::now();
                 self.service.watch(series, episode, now);
@@ -379,7 +378,7 @@ impl Application for Main {
     fn view(&self) -> Element<Message> {
         let mut menu = column![].spacing(HALF_GAP).padding(GAP).max_width(200);
 
-        let Some(&page) = self.history.get(self.history_index) else {
+        let Some(&page) = self.page() else {
             return text("missing history entry").into();
         };
 
@@ -499,7 +498,7 @@ impl Application for Main {
 impl Main {
     // Call prepare on the appropriate components to prepare asset loading.
     fn prepare(&mut self) {
-        let Some(page) = self.history.get(self.history_index) else {
+        let Some(page) = self.page() else {
             return;
         };
 
@@ -548,12 +547,56 @@ impl Main {
             return Command::none();
         }
 
-        let Some(id) = self.assets.image_ids.pop_front() else {
+        let Some(id) = self.assets.next_image() else {
             return Command::none();
         };
 
         let future = self.image_loader.set(self.service.load_image(id));
         Command::perform(future, translate)
+    }
+
+    fn handle_error(&mut self, error: ErrorMessage) {
+        log::error!("error: {error}");
+        self.loading = false;
+        self.errors.push_back(error);
+
+        if self.errors.len() > ERRORS {
+            self.errors.pop_front();
+        }
+    }
+}
+
+impl Main {
+    fn page(&self) -> Option<&Page> {
+        self.history.get(self.history_index)
+    }
+
+    fn push_history(&mut self, page: Page) {
+        self.history.push(page);
+        self.history_index += 1;
+    }
+
+    fn remove_series(&mut self, series_id: Uuid) {
+        if matches!(self.page(), Some(&Page::Series(id) | &Page::Season(id, _)) if id == series_id)
+        {
+            self.push_history(Page::Dashboard);
+        }
+
+        self.service.remove_series(series_id);
+    }
+
+    fn add_series_by_remote(&mut self, remote_id: RemoteSeriesId) -> Command<Message> {
+        if self.service.set_tracked_by_remote(remote_id) {
+            return Command::none();
+        }
+
+        Command::perform(
+            self.service.download_series_by_remote(remote_id),
+            |(id, remote_id, result)| match result {
+                Ok(data) => Message::SeriesDownloadToTrack(id, remote_id, data),
+                Err(error) => Message::SeriesDownloadFailed(id, remote_id, error.into()),
+            },
+        )
     }
 }
 

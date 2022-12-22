@@ -87,9 +87,13 @@ pub(crate) enum Message {
     /// Navigate history by the specified stride.
     History(isize),
     /// Series tracked.
-    SeriesDownloadToTrack(NewSeries),
+    SeriesDownloadToTrack(Option<Uuid>, RemoteSeriesId, NewSeries),
+    /// Remote series failed to download.
+    SeriesDownloadFailed(Option<Uuid>, RemoteSeriesId, ErrorMessage),
     /// Refresh series data.
     RefreshSeries(Uuid),
+    /// Switch series to use the given remote.
+    SwitchSeries(Uuid, RemoteSeriesId),
     /// Remove the given series from the database.
     RemoveSeries(Uuid),
     /// Start tracking the series with the given remote ID.
