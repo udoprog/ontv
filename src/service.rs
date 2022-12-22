@@ -144,7 +144,27 @@ impl SeriesDatabase {
     /// Remove the series by the given identifier.
     fn remove(&mut self, id: &SeriesId) -> Option<Series> {
         let index = self.by_id.remove(id)?;
-        Some(self.data.remove(index))
+        let value = self.data.swap_remove(index);
+        let data = &mut self.data[index..];
+
+        data.sort_by(|a, b| a.title.cmp(&b.title));
+
+        for (n, s) in data.iter().enumerate() {
+            self.by_id.insert(s.id, index + n);
+        }
+
+        Some(value)
+    }
+
+    /// Insert the given series.
+    fn push(&mut self, series: Series) {
+        self.data.push(series);
+        self.data.sort_by(|a, b| a.title.cmp(&b.title));
+        self.by_id.clear();
+
+        for (index, s) in self.data.iter().enumerate() {
+            self.by_id.insert(s.id, index);
+        }
     }
 }
 
@@ -1044,13 +1064,7 @@ impl Service {
         if let Some(current) = self.db.series.get_mut(&data.series.id) {
             *current = data.series;
         } else {
-            self.db.series.data.push(data.series);
-            self.db.series.data.sort_by(|a, b| a.title.cmp(&b.title));
-            self.db.series.by_id.clear();
-
-            for (index, s) in self.db.series.data.iter().enumerate() {
-                self.db.series.by_id.insert(s.id, index);
-            }
+            self.db.series.push(data.series);
         }
 
         if data.refresh_pending {
