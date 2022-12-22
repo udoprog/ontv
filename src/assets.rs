@@ -117,7 +117,7 @@ impl Assets {
 
     /// Get an image, will return the default handle if the given image doesn't exist.
     pub(crate) fn image(&self, id: &Image) -> Option<Handle> {
-        self.images.get(&id).cloned()
+        self.images.get(id).cloned()
     }
 
     /// Get a placeholder image for a missing banner.

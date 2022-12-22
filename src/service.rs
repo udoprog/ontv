@@ -308,25 +308,24 @@ impl Service {
 
     /// Get the pending episode for the given series.
     pub(crate) fn get_pending(&self, series_id: &SeriesId) -> Option<&Pending> {
-        self.db
-            .pending
-            .iter()
-            .filter(|p| p.series == *series_id)
-            .next()
+        self.db.pending.iter().find(|p| p.series == *series_id)
     }
 
     /// Return list of pending episodes.
     pub(crate) fn pending(&self) -> impl DoubleEndedIterator<Item = PendingRef<'_>> {
         self.db.pending.iter().flat_map(|p| {
             let series = self.db.series.get(&p.series)?;
+
             let episode = self
                 .episodes(&p.series)
                 .iter()
                 .find(|e| e.id == p.episode)?;
+
             let season = self
                 .seasons(&p.series)
                 .iter()
                 .find(|s| s.number == episode.season);
+
             Some(PendingRef {
                 series,
                 season,
@@ -365,7 +364,7 @@ impl Service {
             for remote_id in &s.remote_ids {
                 // Reduce the number of API requests by ensuring we don't check
                 // for updates more than each CACHE_TIME interval.
-                if let Some(last_sync) = s.last_sync.get(&remote_id) {
+                if let Some(last_sync) = s.last_sync.get(remote_id) {
                     if now.signed_duration_since(*last_sync).num_seconds() < CACHE_TIME {
                         continue;
                     }
@@ -526,7 +525,7 @@ impl Service {
 
         let mut it = episodes.iter();
 
-        while let Some(episode) = it.next() {
+        for episode in it.by_ref() {
             if episode.id == *episode_id {
                 break;
             }
@@ -560,13 +559,7 @@ impl Service {
         self.db.changes.set.insert(Change::Pending);
 
         // Try to modify in-place.
-        if let Some(pending) = self
-            .db
-            .pending
-            .iter_mut()
-            .filter(|p| p.series == *series_id)
-            .next()
-        {
+        if let Some(pending) = self.db.pending.iter_mut().find(|p| p.series == *series_id) {
             pending.episode = *episode_id;
             pending.timestamp = now;
         } else {
@@ -641,7 +634,7 @@ impl Service {
         self.db.pending.retain(|p| p.series != *series_id);
         self.db.changes.set.insert(Change::Pending);
 
-        let Some(episodes) = self.db.episodes.get(&series_id) else {
+        let Some(episodes) = self.db.episodes.get(series_id) else {
             return;
         };
 
@@ -711,7 +704,7 @@ impl Service {
 
         let remotes = if changes.set.contains(Change::Remotes) {
             let mut output = Vec::with_capacity(
-                &self.db.remote_series_rev.len() + self.db.remote_episodes_rev.len(),
+                self.db.remote_series_rev.len() + self.db.remote_episodes_rev.len(),
             );
 
             for (&uuid, remotes) in &self.db.remote_series_rev {
@@ -769,16 +762,16 @@ impl Service {
             }
 
             for series_id in remove_series {
-                let episodes = paths.episodes.join(format!("{}.json", series_id));
-                let seasons = paths.seasons.join(format!("{}.json", series_id));
+                let episodes = paths.episodes.join(format!("{series_id}.json"));
+                let seasons = paths.seasons.join(format!("{series_id}.json"));
                 let a = remove_file("episodes", &episodes);
                 let b = remove_file("episodes", &seasons);
                 let _ = tokio::try_join!(a, b)?;
             }
 
             for (series_id, episodes, seasons) in add_series {
-                let episodes_path = paths.episodes.join(format!("{}.json", series_id));
-                let seasons_path = paths.seasons.join(format!("{}.json", series_id));
+                let episodes_path = paths.episodes.join(format!("{series_id}.json"));
+                let seasons_path = paths.seasons.join(format!("{series_id}.json"));
                 let a = save_array("episodes", &episodes_path, episodes);
                 let b = save_array("seasons", &seasons_path, seasons);
                 let _ = tokio::try_join!(a, b)?;
@@ -818,7 +811,7 @@ impl Service {
                 };
 
                 if e.id == *last {
-                    last_timestamp = self.watched(&e.id).into_iter().map(|w| w.timestamp).max();
+                    last_timestamp = self.watched(&e.id).iter().map(|w| w.timestamp).max();
                     break it.next();
                 }
             }
@@ -832,11 +825,8 @@ impl Service {
                     continue;
                 }
 
-                last_timestamp = self
-                    .watched(&episode.id)
-                    .into_iter()
-                    .map(|w| w.timestamp)
-                    .max();
+                last_timestamp = self.watched(&episode.id).iter().map(|w| w.timestamp).max();
+
                 last = None;
             }
 
@@ -952,12 +942,9 @@ impl Service {
 
                     for season in &seasons {
                         let new_episodes = tmdb
-                            .episodes(
-                                id,
-                                season.number,
-                                |q| lookup_episode(q),
-                                |id| episodes_remotes.get(&id),
-                            )
+                            .episodes(id, season.number, &lookup_episode, |id| {
+                                episodes_remotes.get(&id)
+                            })
                             .await?;
                         episodes.extend(new_episodes);
                     }
@@ -1135,7 +1122,7 @@ impl Service {
 
     /// Remove watch history matching the given series.
     pub(crate) fn clear_watches(&mut self, series_id: SeriesId) {
-        for (_, values) in &mut self.db.watched {
+        for values in self.db.watched.values_mut() {
             values.retain(|w| w.series != series_id);
         }
 
@@ -1170,10 +1157,9 @@ pub(crate) fn load_config(path: &Path) -> Result<Option<Config>> {
 fn load_database(paths: &Paths) -> Result<Database> {
     let mut db = Database::default();
 
-    db.config = match load_config(&paths.config)? {
-        Some(settings) => settings,
-        None => Default::default(),
-    };
+    if let Some(config) = load_config(&paths.config)? {
+        db.config = config;
+    }
 
     if let Some(remotes) = load_array::<RemoteId>(&paths.remotes)? {
         for remote_id in remotes {
@@ -1261,7 +1247,7 @@ fn load_series(path: &Path) -> Result<Option<Vec<Series>>> {
 /// Remove the given file.
 async fn remove_file(what: &'static str, path: &Path) -> Result<()> {
     log::trace!("{what}: removing: {}", path.display());
-    let _ = tokio::fs::remove_file(path);
+    let _ = tokio::fs::remove_file(path).await;
     Ok(())
 }
 
@@ -1415,7 +1401,7 @@ fn load_array<T>(path: &Path) -> Result<Option<Vec<T>>>
 where
     T: DeserializeOwned,
 {
-    let f = match std::fs::File::open(&path) {
+    let f = match std::fs::File::open(path) {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(Error::from(e)).with_context(|| anyhow!("{}", path.display())),
@@ -1444,7 +1430,7 @@ where
             continue;
         }
 
-        output.push(serde_json::from_str(&line)?);
+        output.push(serde_json::from_str(line)?);
     }
 
     Ok(output)
@@ -1467,5 +1453,5 @@ fn episodes_into_seasons(episodes: &[Episode]) -> Vec<Season> {
         };
     }
 
-    map.into_iter().map(|(_, value)| value).collect()
+    map.into_values().collect()
 }

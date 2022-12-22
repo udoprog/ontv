@@ -21,7 +21,7 @@ pub(crate) fn import_trakt_watched(
         .enable_all()
         .build()?;
 
-    let filter = filter.map(|filter| Tokens::new(filter));
+    let filter = filter.map(Tokens::new);
 
     use std::fs::File;
     let f = File::open(path)?;

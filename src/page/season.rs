@@ -96,7 +96,7 @@ impl Season {
 
         let mut episodes = column![];
 
-        let pending = s.service.get_pending(&series_id).map(|p| p.episode);
+        let pending = s.service.get_pending(series_id).map(|p| p.episode);
 
         for episode in s
             .service
@@ -123,7 +123,7 @@ impl Season {
 
             let mut actions = row![].spacing(SPACE);
 
-            let watch_text = match &watched[..] {
+            let watch_text = match watched {
                 [] => text("First watch"),
                 _ => text("Watch again"),
             };
@@ -154,7 +154,7 @@ impl Season {
                         actions = actions.push(prompt);
                     }
                     _ => {
-                        let remove_watch_text = match &watched[..] {
+                        let remove_watch_text = match watched {
                             [_] => text("Remove watch"),
                             _ => text("Remove last watch"),
                         };
@@ -183,13 +183,13 @@ impl Season {
             let mut show_info = row![].spacing(SPACE);
 
             if let Some(air_date) = episode.aired {
-                show_info = show_info.push(text(format!("Aired: {}", air_date)).size(ACTION_SIZE));
+                show_info = show_info.push(text(format!("Aired: {air_date}")).size(ACTION_SIZE));
             }
 
-            let watched = match &watched[..] {
-                &[] => text("Never watched").style(theme::Text::Color(WARNING_COLOR)),
-                &[once] => text(format!("Watched once on {}", once.timestamp.date_naive())),
-                all @ &[.., last] => text(format!(
+            let watched = match watched {
+                [] => text("Never watched").style(theme::Text::Color(WARNING_COLOR)),
+                [once] => text(format!("Watched once on {}", once.timestamp.date_naive())),
+                all @ [.., last] => text(format!(
                     "Watched {} times, last on {}",
                     all.len(),
                     last.timestamp.date_naive()

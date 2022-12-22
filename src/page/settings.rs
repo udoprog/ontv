@@ -49,7 +49,7 @@ impl Settings {
             column![text("Theme:")].spacing(SPACE),
             |column, theme| {
                 column.push(radio(
-                    format!("{:?}", theme),
+                    format!("{theme:?}"),
                     *theme,
                     Some(config.theme),
                     |theme| Message::Settings(M::ThemeChanged(theme)),

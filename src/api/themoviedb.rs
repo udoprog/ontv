@@ -184,7 +184,7 @@ impl Client {
 
         let mut remote_ids = Vec::from([remote_id]);
 
-        for remote_id in external_ids.into_remote_series() {
+        for remote_id in external_ids.as_remote_series() {
             remote_ids.push(remote_id?);
         }
 
@@ -405,7 +405,7 @@ impl Client {
 
         let mut remotes = BTreeSet::from([remote_id]);
 
-        for remote_id in external_ids.into_remote_episodes() {
+        for remote_id in external_ids.as_remote_episodes() {
             remotes.insert(remote_id?);
         }
 
@@ -468,7 +468,7 @@ struct ExternalIds {
 }
 impl ExternalIds {
     /// Coerce into remote series ids.
-    pub(crate) fn into_remote_series(&self) -> impl Iterator<Item = Result<RemoteSeriesId>> {
+    pub(crate) fn as_remote_series(&self) -> impl Iterator<Item = Result<RemoteSeriesId>> {
         let a = self.tvdb_id.map(|id| Ok(RemoteSeriesId::Tvdb { id }));
 
         let b = self.imdb_id.as_ref().and_then(|id| {
@@ -488,7 +488,7 @@ impl ExternalIds {
     }
 
     /// Coerce into remote episode ids.
-    pub(crate) fn into_remote_episodes(&self) -> impl Iterator<Item = Result<RemoteEpisodeId>> {
+    pub(crate) fn as_remote_episodes(&self) -> impl Iterator<Item = Result<RemoteEpisodeId>> {
         let a = self.tvdb_id.map(|id| Ok(RemoteEpisodeId::Tvdb { id }));
 
         let b = self.imdb_id.as_ref().and_then(|id| {

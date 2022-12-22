@@ -46,7 +46,7 @@ impl Queue {
 
             while let Some(d) = it.next() {
                 let Some(series) = state.service.series(&d.series_id) else {
-                    page = page.push(text(format!("{:?} (no series)", d)));
+                    page = page.push(text(format!("{d:?} (no series)")));
                     continue;
                 };
 

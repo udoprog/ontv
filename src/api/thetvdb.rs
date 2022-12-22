@@ -152,7 +152,7 @@ impl Client {
             .send()
             .await?;
 
-        Ok(common::parse_last_modified(&res).context("last-modified header")?)
+        common::parse_last_modified(&res).context("last-modified header")
     }
 
     /// Download series information.

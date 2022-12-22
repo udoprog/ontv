@@ -156,8 +156,8 @@ impl Series {
         }
 
         let info = match s.service.episodes(&series.id).len() {
-            0 => text(format!("No episodes")),
-            1 => text(format!("One episode")),
+            0 => text("No episodes"),
+            1 => text("One episode"),
             count => text(format!("{count} episodes")),
         };
 

@@ -161,35 +161,29 @@ impl Search {
                 actions = actions.push(
                     button(text("Downloading...").size(ACTION_SIZE)).style(theme::Button::Primary),
                 );
-            } else {
-                if let Some(s) = s.service.get_series_by_remote(series.id) {
-                    if s.remote_id != Some(series.id) {
-                        actions = actions.push(
-                            button(text("Switch").size(ACTION_SIZE))
-                                .style(theme::Button::Primary)
-                                .on_press(Message::SwitchSeries(s.id, series.id)),
-                        );
-                    }
-
+            } else if let Some(s) = s.service.get_series_by_remote(series.id) {
+                if s.remote_id != Some(series.id) {
                     actions = actions.push(
-                        button(text("Remove").size(ACTION_SIZE))
-                            .style(theme::Button::Destructive)
-                            .on_press(Message::RemoveSeries(s.id)),
-                    );
-                } else {
-                    actions = actions.push(
-                        button(text("Add").size(ACTION_SIZE))
-                            .style(theme::Button::Positive)
-                            .on_press(Message::AddSeriesByRemote(series.id)),
+                        button(text("Switch").size(ACTION_SIZE))
+                            .style(theme::Button::Primary)
+                            .on_press(Message::SwitchSeries(s.id, series.id)),
                     );
                 }
+
+                actions = actions.push(
+                    button(text("Remove").size(ACTION_SIZE))
+                        .style(theme::Button::Destructive)
+                        .on_press(Message::RemoveSeries(s.id)),
+                );
+            } else {
+                actions = actions.push(
+                    button(text("Add").size(ACTION_SIZE))
+                        .style(theme::Button::Positive)
+                        .on_press(Message::AddSeriesByRemote(series.id)),
+                );
             }
 
-            let overview = series
-                .overview
-                .as_ref()
-                .map(|o| o.as_str())
-                .unwrap_or_default();
+            let overview = series.overview.as_deref().unwrap_or_default();
 
             let mut first_aired = column![];
 
@@ -245,8 +239,7 @@ impl Search {
                 .spacing(GAP);
         }
 
-        let query = text_input("Query...", &self.text, |value| Message::Change(value))
-            .on_submit(Message::Search);
+        let query = text_input("Query...", &self.text, Message::Change).on_submit(Message::Search);
 
         let submit = button("Search");
 
@@ -260,7 +253,7 @@ impl Search {
         kind = kind.push([SearchKind::Tvdb, SearchKind::Tmdb].iter().fold(
             Row::new().spacing(GAP),
             |column, kind| {
-                column.push(radio(format!("{}", kind), *kind, Some(self.kind), |kind| {
+                column.push(radio(format!("{kind}"), *kind, Some(self.kind), |kind| {
                     Message::SearchKindChanged(kind)
                 }))
             },

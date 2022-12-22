@@ -22,7 +22,7 @@ impl<const N: usize> Hex<N> {
                 _ => return None,
             };
 
-            out[to / 2] |= (b - base + add) << 4 * u8::from(to % 2 == 0);
+            out[to / 2] |= (b - base + add) << (4 * u8::from(to % 2 == 0));
         }
 
         Some(Self(out))

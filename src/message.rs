@@ -49,7 +49,7 @@ impl fmt::Display for ErrorMessage {
         writeln!(f, "{}", self.message)?;
 
         for cause in &self.causes {
-            writeln!(f, "caused by: {}", cause)?;
+            writeln!(f, "caused by: {cause}")?;
         }
 
         Ok(())

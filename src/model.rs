@@ -292,7 +292,7 @@ impl SeasonNumber {
     pub(crate) fn title(&self) -> Text<'static> {
         match self {
             SeasonNumber::Specials => text("Specials"),
-            SeasonNumber::Number(number) => text(format!("Season {}", number)),
+            SeasonNumber::Number(number) => text(format!("Season {number}")),
         }
     }
 
@@ -300,7 +300,7 @@ impl SeasonNumber {
     pub(crate) fn short(&self) -> Text<'static> {
         match self {
             SeasonNumber::Specials => text("S"),
-            SeasonNumber::Number(number) => text(format!("S{}", number)),
+            SeasonNumber::Number(number) => text(format!("S{number}")),
         }
     }
 }
@@ -310,7 +310,7 @@ impl fmt::Display for SeasonNumber {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SeasonNumber::Specials => write!(f, "Specials"),
-            SeasonNumber::Number(number) => write!(f, "Season {}", number),
+            SeasonNumber::Number(number) => write!(f, "Season {number}"),
         }
     }
 }
@@ -621,21 +621,21 @@ impl Image {
 
         let kind = match &array[..] {
             // blank/77092.jpg
-            &["blank", series_id] => TvdbImageKind::Blank(series_id.parse()?),
+            ["blank", series_id] => TvdbImageKind::Blank(series_id.parse()?),
             // images/missing/series.jpg
-            &["images", "missing", "series"] => TvdbImageKind::Missing,
-            &["v4", "series", series_id, kind, rest] => {
+            ["images", "missing", "series"] => TvdbImageKind::Missing,
+            ["v4", "series", series_id, kind, rest] => {
                 let kind = ArtKind::parse(kind)?;
                 let id = Hex::from_hex(rest).context("bad id")?;
                 TvdbImageKind::V4(series_id.parse()?, kind, id)
             }
-            &["series", series_id, kind, id] => {
+            ["series", series_id, kind, id] => {
                 let series_id = series_id.parse()?;
                 let kind = ArtKind::parse(kind)?;
                 let id = Hex::from_hex(id).context("bad id")?;
                 TvdbImageKind::Legacy(series_id, kind, id)
             }
-            &["posters", rest] => {
+            ["posters", rest] => {
                 if let Some((series_id, suffix)) = rest.split_once('-') {
                     let series_id = series_id.parse()?;
                     let suffix = Raw::new(suffix).context("suffix overflow")?;
@@ -645,7 +645,7 @@ impl Image {
                     TvdbImageKind::Banner(id)
                 }
             }
-            &["graphical", rest] => {
+            ["graphical", rest] => {
                 if let Some((series_id, suffix)) = rest.split_once('-') {
                     let series_id = series_id.parse()?;
                     let suffix = Raw::new(suffix).context("suffix overflow")?;
@@ -655,7 +655,7 @@ impl Image {
                     TvdbImageKind::Graphical(id)
                 }
             }
-            &["fanart", "original", rest] => {
+            ["fanart", "original", rest] => {
                 if let Some((series_id, suffix)) = rest.split_once('-') {
                     let series_id = series_id.parse()?;
                     let suffix = Raw::new(suffix).context("suffix overflow")?;
@@ -666,11 +666,11 @@ impl Image {
                 }
             }
             // Example: v4/episode/8538342/screencap/63887bf74c84e.jpg
-            &["v4", "episode", episode_id, "screencap", rest] => {
+            ["v4", "episode", episode_id, "screencap", rest] => {
                 let id = Hex::from_hex(rest).context("bad id")?;
                 TvdbImageKind::ScreenCap(episode_id.parse()?, id)
             }
-            &["episodes", episode_id, rest] => {
+            ["episodes", episode_id, rest] => {
                 TvdbImageKind::Episodes(episode_id.parse()?, rest.parse()?)
             }
             _ => {
