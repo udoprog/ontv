@@ -16,9 +16,11 @@ pub(crate) struct State {
     /// Asset loader.
     pub(crate) assets: Assets,
     // History entries.
-    history: Vec<Page>,
+    history: Vec<(Page, f32)>,
     // Current history entry.
     history_index: usize,
+    // History has changed.
+    history_changed: bool,
     /// Errors accumulated.
     errors: VecDeque<ErrorMessage>,
     /// Indicates that the whole application is busy loading something.
@@ -36,8 +38,9 @@ impl State {
         Self {
             service,
             assets,
-            history: vec![Page::Dashboard],
+            history: vec![(Page::Dashboard, 0.0)],
             history_index: 0,
+            history_changed: false,
             errors: VecDeque::new(),
             loading: false,
             downloading: HashSet::new(),
@@ -47,7 +50,7 @@ impl State {
 
     /// Get the current page.
     pub(crate) fn page(&self) -> Option<&Page> {
-        self.history.get(self.history_index)
+        Some(&self.history.get(self.history_index)?.0)
     }
 
     /// Push a history entry.
@@ -58,8 +61,38 @@ impl State {
             self.history.pop();
         }
 
-        self.history.push(page);
+        self.history.push((page, 0.0));
         self.history_index += 1;
+        self.history_changed = true;
+    }
+
+    /// Update scroll location in history.
+    pub(crate) fn history_scroll(&mut self, scroll: f32) {
+        if let Some((_, s)) = self.history.get_mut(self.history_index) {
+            *s = scroll;
+        }
+    }
+
+    /// Navigate the current history.
+    pub(crate) fn history(&mut self, relative: isize) {
+        if relative > 0 {
+            self.history_index = self.history_index.saturating_add(relative as usize);
+        } else if relative < 0 {
+            self.history_index = self.history_index.saturating_sub(-relative as usize);
+        }
+
+        self.history_index = self.history_index.min(self.history.len().saturating_sub(1));
+        self.history_changed = true;
+    }
+
+    /// Acquire history scroll to restore.
+    pub(crate) fn take_history_scroll(&mut self) -> Option<f32> {
+        if !self.history_changed {
+            return None;
+        }
+
+        self.history_changed = false;
+        Some(self.history.get(self.history_index)?.1)
     }
 
     /// Handle an error.
@@ -82,17 +115,6 @@ impl State {
         }
 
         self.service.remove_series(series_id);
-    }
-
-    /// Navigate the current history.
-    pub(crate) fn history(&mut self, relative: isize) {
-        if relative > 0 {
-            self.history_index = self.history_index.saturating_add(relative as usize);
-        } else if relative < 0 {
-            self.history_index = self.history_index.saturating_sub(-relative as usize);
-        }
-
-        self.history_index = self.history_index.min(self.history.len().saturating_sub(1));
     }
 
     /// Download completed, whether it was successful or not.

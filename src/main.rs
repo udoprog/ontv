@@ -50,8 +50,6 @@ enum Message {
     Series(page::series::Message),
     Season(page::season::Message),
     Queue(page::queue::Message),
-    /// Do nothing.
-    Noop,
     /// Error during operation.
     Error(ErrorMessage),
     /// Save application changes.
@@ -66,6 +64,8 @@ enum Message {
     Navigate(Page),
     /// Navigate history by the specified stride.
     History(isize),
+    /// A scroll happened.
+    Scroll(f32),
     /// Images have been loaded in the background.
     ImagesLoaded(Result<Vec<(ImageKey, Handle)>, ErrorMessage>),
 }
@@ -139,6 +139,8 @@ struct Main {
     should_exit: bool,
     // Images to load.
     images: Vec<ImageKey>,
+    /// The identifier used for the main scrollable.
+    scrollable_id: scrollable::Id,
 }
 
 struct Flags {
@@ -167,6 +169,7 @@ impl Application for Main {
             exit_after_save: false,
             should_exit: false,
             images: Vec::new(),
+            scrollable_id: scrollable::Id::unique(),
         };
 
         this.prepare();
@@ -255,9 +258,6 @@ impl Application for Main {
                 .queue
                 .update(&mut self.state, message)
                 .map(Message::Queue),
-            Message::Noop => {
-                return Command::none();
-            }
             Message::Error(error) => {
                 self.state.handle_error(error);
                 Command::none()
@@ -322,6 +322,10 @@ impl Application for Main {
                 self.state.history(relative);
                 Command::none()
             }
+            Message::Scroll(offset) => {
+                self.state.history_scroll(offset);
+                Command::none()
+            }
             Message::ImagesLoaded(loaded) => {
                 match loaded {
                     Ok(loaded) => {
@@ -347,7 +351,14 @@ impl Application for Main {
         };
 
         self.prepare();
-        Command::batch([self.handle_image_loading(), save_database, command])
+
+        let scroll = if let Some(scroll) = self.state.take_history_scroll() {
+            scrollable::snap_to(self.scrollable_id.clone(), scroll)
+        } else {
+            Command::none()
+        };
+
+        Command::batch([self.handle_image_loading(), save_database, command, scroll])
     }
 
     #[inline]
@@ -463,7 +474,12 @@ impl Application for Main {
         };
 
         window = window.push(horizontal_rule(1));
-        window = window.push(scrollable(page).height(Length::Fill));
+        window = window.push(
+            scrollable(page)
+                .id(self.scrollable_id.clone())
+                .on_scroll(Message::Scroll)
+                .height(Length::Fill),
+        );
 
         let mut status_bar = Row::new();
 
@@ -548,8 +564,8 @@ impl Main {
         fn translate(value: Option<Result<Vec<(ImageKey, Handle)>>>) -> Message {
             match value {
                 Some(Ok(value)) => Message::ImagesLoaded(Ok(value)),
+                None => Message::ImagesLoaded(Ok(Vec::new())),
                 Some(Err(e)) => Message::ImagesLoaded(Err(e.into())),
-                None => Message::Noop,
             }
         }
 
