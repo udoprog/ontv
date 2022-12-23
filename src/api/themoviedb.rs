@@ -8,6 +8,7 @@ use bytes::Bytes;
 use chrono::NaiveDate;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use reqwest::StatusCode;
 use reqwest::{Method, RequestBuilder, Response, Url};
 use serde::Deserialize;
 
@@ -389,11 +390,6 @@ impl Client {
         );
 
         let id = if let Some(id) = lookup.lookup([remote_id]) {
-            // TODO: enable this once again at some point?
-            /*if let Some(remotes) = remotes(id) {
-                return Ok((index, remotes.clone(), remote_id, id, episode));
-            }*/
-
             Some(id)
         } else {
             None
@@ -402,6 +398,18 @@ impl Client {
         let external_ids = self
             .episode_external_ids(series_id, season_number, episode.episode_number)
             .await?;
+
+        let external_ids = match external_ids {
+            Some(external_ids) => external_ids,
+            None => {
+                log::warn!(
+                    "missing external ids for: series: {series_id}, season: {season_number}, episode: {}",
+                    episode.episode_number
+                );
+
+                ExternalIds::default()
+            }
+        };
 
         let mut remotes = BTreeSet::from([remote_id]);
 
@@ -425,7 +433,7 @@ impl Client {
         season_id: u32,
         season_number: u32,
         episode_number: u32,
-    ) -> Result<ExternalIds> {
+    ) -> Result<Option<ExternalIds>> {
         let path = [
             "tv",
             &season_id.to_string(),
@@ -438,9 +446,13 @@ impl Client {
 
         let external_ids = self.request_with_auth(Method::GET, &path).send().await?;
 
+        if external_ids.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
         let external_ids = handle_res(external_ids).await?;
         let external_ids: ExternalIds = serde_json::from_slice(&external_ids)?;
-        Ok(external_ids)
+        Ok(Some(external_ids))
     }
 }
 
@@ -461,11 +473,12 @@ fn process_image(image: Option<&str>) -> Result<Option<Image>> {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 struct ExternalIds {
     imdb_id: Option<String>,
     tvdb_id: Option<u32>,
 }
+
 impl ExternalIds {
     /// Coerce into remote series ids.
     pub(crate) fn as_remote_series(&self) -> impl Iterator<Item = Result<RemoteSeriesId>> {

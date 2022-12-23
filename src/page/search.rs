@@ -1,7 +1,7 @@
 use core::fmt;
 
 use anyhow::Result;
-use iced::widget::{button, column, image, radio, row, text, text_input, Column, Row};
+use iced::widget::{button, image, radio, text, text_input, Column, Row};
 use iced::{theme, Alignment, Element};
 use iced::{Command, Length};
 
@@ -152,7 +152,7 @@ impl Search {
 
     /// Generate the view for the settings page.
     pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
-        let mut results = column![];
+        let mut results = Column::new();
 
         for series in self.series.iter().skip(self.page * PER_PAGE).take(PER_PAGE) {
             let handle = match series
@@ -193,7 +193,7 @@ impl Search {
 
             let overview = series.overview.as_deref().unwrap_or_default();
 
-            let mut first_aired = column![];
+            let mut first_aired = Column::new();
 
             if let Some(date) = series.first_aired {
                 first_aired =
@@ -201,24 +201,25 @@ impl Search {
             }
 
             results = results.push(
-                row![
-                    image(handle).height(Length::Units(IMAGE_HEIGHT)),
-                    column![
-                        column![
-                            text(&series.name).size(24),
-                            first_aired,
-                            actions.spacing(SPACE)
-                        ]
-                        .spacing(SPACE),
-                        text(overview),
-                    ]
-                    .spacing(GAP)
-                ]
-                .spacing(GAP),
+                Row::new()
+                    .push(image(handle).height(Length::Units(IMAGE_HEIGHT)))
+                    .push(
+                        Column::new()
+                            .push(
+                                Column::new()
+                                    .push(text(&series.name).size(24))
+                                    .push(first_aired)
+                                    .push(actions.spacing(SPACE))
+                                    .spacing(SPACE),
+                            )
+                            .push(text(overview))
+                            .spacing(GAP),
+                    )
+                    .spacing(GAP),
             );
         }
 
-        let mut pages = row![];
+        let mut pages = Row::new();
 
         if self.series.len() > PER_PAGE {
             let mut prev = button("previous page").style(theme::Button::Positive);
@@ -269,7 +270,7 @@ impl Search {
 
         let page = Column::new()
             .push(text("Search").size(TITLE_SIZE))
-            .push(row![query, submit])
+            .push(Row::new().push(query).push(submit))
             .push(kind.spacing(SPACE))
             .push(results.spacing(GAP2))
             .push(pages)

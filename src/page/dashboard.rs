@@ -1,6 +1,6 @@
 use chrono::Utc;
 use iced::alignment::Horizontal;
-use iced::widget::{button, column, container, image, row, text, vertical_space};
+use iced::widget::{button, container, image, text, vertical_space, Column, Row};
 use iced::{theme, Command, Element};
 use iced::{Alignment, Length};
 
@@ -60,7 +60,7 @@ impl Dashboard {
     }
 
     pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
-        let mut pending = row![];
+        let mut pending = Row::new();
 
         for PendingRef {
             series,
@@ -69,7 +69,7 @@ impl Dashboard {
             ..
         } in s.service.pending().rev().take(5)
         {
-            let mut actions = row![].spacing(SPACE);
+            let mut actions = Row::new();
 
             actions = actions.push(
                 button(
@@ -112,7 +112,7 @@ impl Dashboard {
                 write!(episode_number, " ({number})").unwrap();
             }
 
-            let mut episode_aired = row![];
+            let mut episode_aired = Row::new();
 
             let episode_info = if let Some(name) = &episode.name {
                 text(format!("{episode_number}: {name}"))
@@ -154,25 +154,31 @@ impl Dashboard {
 
             pending = pending.push(
                 container(
-                    column![
-                        column![
-                            row![series_name, season_name].spacing(SPACE),
-                            image,
-                            actions,
-                        ]
-                        .width(Length::Fill)
+                    Column::new()
+                        .push(
+                            Column::new()
+                                .push(
+                                    Row::new()
+                                        .push(series_name)
+                                        .push(season_name)
+                                        .spacing(SPACE),
+                                )
+                                .push(image)
+                                .push(actions.spacing(SPACE))
+                                .width(Length::Fill)
+                                .align_items(Alignment::Center)
+                                .spacing(SPACE),
+                        )
+                        .push(
+                            Column::new()
+                                .push(episode_info.horizontal_alignment(Horizontal::Center))
+                                .push(episode_aired)
+                                .align_items(Alignment::Center)
+                                .spacing(SPACE),
+                        )
+                        .spacing(GAP)
                         .align_items(Alignment::Center)
-                        .spacing(SPACE),
-                        column![
-                            episode_info.horizontal_alignment(Horizontal::Center),
-                            episode_aired,
-                        ]
-                        .align_items(Alignment::Center)
-                        .spacing(SPACE),
-                    ]
-                    .spacing(GAP)
-                    .align_items(Alignment::Center)
-                    .width(Length::Fill),
+                        .width(Length::Fill),
                 )
                 .width(Length::FillPortion(1)),
             );
@@ -187,14 +193,16 @@ impl Dashboard {
             .width(Length::Fill)
             .size(SUBTITLE_SIZE);
 
-        column![
-            vertical_space(Length::Shrink),
-            centered(up_next_title, None),
-            centered(pending.padding(GAP).spacing(GAP), Some(style::weak)),
-            centered(scheduled_title, None),
-            vertical_space(Length::Shrink),
-        ]
-        .spacing(GAP)
-        .into()
+        Column::new()
+            .push(vertical_space(Length::Shrink))
+            .push(centered(up_next_title, None))
+            .push(centered(
+                pending.padding(GAP).spacing(GAP),
+                Some(style::weak),
+            ))
+            .push(centered(scheduled_title, None))
+            .push(vertical_space(Length::Shrink))
+            .spacing(GAP)
+            .into()
     }
 }

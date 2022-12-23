@@ -1,6 +1,6 @@
-use iced::widget::{button, column, image, row, text, Column, Row};
-use iced::Length;
+use iced::widget::{button, image, text, Column, Row};
 use iced::{theme, Command, Element};
+use iced::{Alignment, Length};
 
 use crate::cache::ImageHint;
 use crate::comps;
@@ -93,13 +93,13 @@ impl Series {
     /// Render view of series.
     pub(crate) fn view(&self, s: &State, series_id: &SeriesId) -> Element<'static, Message> {
         let Some(series) = s.service.series(series_id) else {
-            return column![text("no series")].into();
+            return Column::new().into();
         };
 
         let mut top = Column::new().push(self.banner.view(s, series).map(Message::SeriesBanner));
 
         if !series.remote_ids.is_empty() {
-            let mut remotes = row![];
+            let mut remotes = Row::new();
 
             for remote_id in &series.remote_ids {
                 remotes = remotes.push(
@@ -112,7 +112,7 @@ impl Series {
             top = top.push(remotes.spacing(SPACE));
         }
 
-        let mut cols = column![];
+        let mut cols = Column::new();
 
         for (index, (season, c)) in s
             .service
@@ -167,7 +167,7 @@ impl Series {
         };
 
         let mut header = Column::new()
-            .push(top.spacing(GAP))
+            .push(top.align_items(Alignment::Center).spacing(GAP))
             .push(self.series.view(s, series).map(Message::SeriesActions))
             .push(info);
 

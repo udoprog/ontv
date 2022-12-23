@@ -3,7 +3,7 @@ use iced::{theme, Alignment, Command, Element, Length};
 
 use crate::message::Page;
 use crate::model::{Series, SeriesId};
-use crate::params::TITLE_SIZE;
+use crate::params::{GAP, TITLE_SIZE};
 use crate::state::State;
 
 #[derive(Debug, Clone)]
@@ -49,6 +49,7 @@ impl SeriesBanner {
         Column::new()
             .push(banner)
             .push(title)
+            .spacing(GAP)
             .width(Length::Fill)
             .align_items(Alignment::Center)
             .into()

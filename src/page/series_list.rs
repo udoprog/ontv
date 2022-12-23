@@ -1,4 +1,4 @@
-use iced::widget::{button, image, row, text, text_input, vertical_space, Column, Row};
+use iced::widget::{button, image, text, text_input, vertical_space, Column, Row};
 use iced::{theme, Command};
 use iced::{Element, Length};
 
@@ -141,7 +141,9 @@ impl SeriesList {
 
             rows = rows.push(
                 centered(
-                    row![graphic, content.spacing(GAP)]
+                    Row::new()
+                        .push(graphic)
+                        .push(content.spacing(GAP))
                         .spacing(GAP)
                         .width(Length::Fill),
                     Some(style::weak),

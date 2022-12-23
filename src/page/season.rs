@@ -1,7 +1,7 @@
 use chrono::Utc;
 use iced::alignment::Horizontal;
-use iced::widget::{button, column, container, image, row, text, Column, Row};
-use iced::{theme, Command};
+use iced::widget::{button, container, image, text, Column, Row};
+use iced::{theme, Alignment, Command};
 use iced::{Element, Length};
 
 use crate::cache::ImageHint;
@@ -30,13 +30,13 @@ pub(crate) enum Message {
 pub(crate) struct Season {
     remove_watch: Option<(SeriesId, EpisodeId)>,
     season_info: comps::SeasonInfo,
-    series_banner: comps::SeriesBanner,
+    banner: comps::SeriesBanner,
 }
 
 impl Season {
     /// Prepare data that is needed for the view.
     pub(crate) fn prepare(&mut self, s: &mut State, series_id: &SeriesId, season: SeasonNumber) {
-        self.series_banner.prepare(s, series_id);
+        self.banner.prepare(s, series_id);
 
         for e in s
             .service
@@ -77,10 +77,9 @@ impl Season {
             Message::SeasonInfo(message) => {
                 self.season_info.update(s, message).map(Message::SeasonInfo)
             }
-            Message::SeriesBanner(message) => self
-                .series_banner
-                .update(s, message)
-                .map(Message::SeriesBanner),
+            Message::SeriesBanner(message) => {
+                self.banner.update(s, message).map(Message::SeriesBanner)
+            }
         }
     }
 
@@ -92,14 +91,14 @@ impl Season {
         season: &SeasonNumber,
     ) -> Element<'static, Message> {
         let Some(series) = s.service.series(series_id) else {
-            return column![text("no such series")].into();
+            return Column::new().into();
         };
 
         let Some(season) = s.service.seasons(series_id).iter().find(|s| s.number == *season) else {
-            return column![text("no such season")].into();
+            return Column::new().into();
         };
 
-        let mut episodes = column![];
+        let mut episodes = Column::new();
 
         let pending = s.service.get_pending(series_id).map(|p| p.episode);
 
@@ -117,7 +116,7 @@ impl Season {
                 None => s.assets.missing_screencap(),
             };
 
-            let mut name = row![].spacing(SPACE);
+            let mut name = Row::new().spacing(SPACE);
 
             name = name.push(text(format!("{}", episode.number)));
 
@@ -129,7 +128,7 @@ impl Season {
 
             let watched = s.service.watched(&episode.id);
 
-            let mut actions = row![].spacing(SPACE);
+            let mut actions = Row::new().spacing(SPACE);
 
             let watch_text = match watched {
                 [] => text("First watch"),
@@ -188,7 +187,7 @@ impl Season {
                 );
             }
 
-            let mut show_info = row![].spacing(SPACE);
+            let mut show_info = Row::new().spacing(SPACE);
 
             if let Some(air_date) = episode.aired {
                 show_info = show_info.push(text(format!("Aired: {air_date}")).size(ACTION_SIZE));
@@ -206,19 +205,24 @@ impl Season {
 
             show_info = show_info.push(watched.size(ACTION_SIZE));
 
-            let info_top = column![name, actions, show_info].spacing(SPACE);
-            let info = column![info_top, overview];
+            let info_top = Column::new()
+                .push(name)
+                .push(actions)
+                .push(show_info)
+                .spacing(SPACE);
+            let info = Column::new().push(info_top).push(overview);
 
             let image = container(image(screencap))
                 .max_width(IMAGE_HEIGHT as u32)
                 .max_height(IMAGE_HEIGHT as u32)
                 .align_x(Horizontal::Center);
 
-            let image = column![image,];
-
             episodes = episodes.push(
                 centered(
-                    row![image, info.width(Length::Fill).spacing(GAP)].spacing(GAP),
+                    Row::new()
+                        .push(image)
+                        .push(info.width(Length::Fill).spacing(GAP))
+                        .spacing(GAP),
                     Some(style::weak),
                 )
                 .padding(GAP),
@@ -228,12 +232,9 @@ impl Season {
         let season_title = season.number.title().size(SUBTITLE_SIZE);
 
         let banner = Column::new()
-            .push(
-                self.series_banner
-                    .view(s, series)
-                    .map(Message::SeriesBanner),
-            )
+            .push(self.banner.view(s, series).map(Message::SeriesBanner))
             .push(season_title)
+            .align_items(Alignment::Center)
             .spacing(GAP);
 
         let top = self
