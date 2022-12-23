@@ -10,7 +10,7 @@ use crate::search::Tokens;
 use crate::service::Service;
 
 /// Import trakt watched history from the given path.
-pub(crate) fn import_trakt_watched(
+pub fn import_trakt_watched(
     service: &mut Service,
     path: &Path,
     filter: Option<&str>,

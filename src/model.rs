@@ -96,6 +96,16 @@ pub(crate) struct Config {
     #[serde(default)]
     pub(crate) tmdb_api_key: String,
 }
+impl Config {
+    /// Build iced theme.
+    #[inline]
+    pub(crate) fn theme(&self) -> iced::Theme {
+        match self.theme {
+            ThemeType::Light => iced::Theme::Light,
+            ThemeType::Dark => iced::Theme::Dark,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "type")]

@@ -7,9 +7,8 @@ use iced::{Element, Length};
 use crate::cache::ImageHint;
 use crate::comps;
 use crate::model::{EpisodeId, SeasonNumber, SeriesId};
-use crate::params::{
-    centered, style, ACTION_SIZE, GAP, GAP2, SCREENCAP_HEIGHT, SPACE, SUBTITLE_SIZE, WARNING_COLOR,
-};
+use crate::params::{centered, ACTION_SIZE, GAP, GAP2, SCREENCAP_HEIGHT, SPACE, SUBTITLE_SIZE};
+use crate::style;
 
 use crate::state::State;
 
@@ -193,7 +192,7 @@ impl Season {
             }
 
             let watched = match watched {
-                [] => text("Never watched").style(theme::Text::Color(WARNING_COLOR)),
+                [] => text("Never watched").style(s.warning_text()),
                 [once] => text(format!("Watched once on {}", once.timestamp.date_naive())),
                 all @ [.., last] => text(format!(
                     "Watched {} times, last on {}",

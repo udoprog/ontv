@@ -138,13 +138,11 @@ impl Search {
 
         match self.kind {
             SearchKind::Tvdb => {
-                let tvdb = s.service.tvdb.clone();
-                let op = async move { tvdb.search_by_name(&query).await };
+                let op = s.service.search_tvdb(&query);
                 Command::perform(op, translate)
             }
             SearchKind::Tmdb => {
-                let tmdb = s.service.tmdb.clone();
-                let op = async move { tmdb.search_series(&query).await };
+                let op = s.service.search_tmdb(&query);
                 Command::perform(op, translate)
             }
         }

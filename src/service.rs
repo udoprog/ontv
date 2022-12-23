@@ -8,6 +8,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, bail, Context, Error, Result};
 use chrono::{DateTime, Duration, Utc};
 use futures::stream::FuturesUnordered;
+use iced::Theme;
 use iced_native::image::Handle;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -19,8 +20,8 @@ use crate::assets::ImageKey;
 use crate::cache::{self};
 
 use crate::model::{
-    Config, Episode, EpisodeId, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season,
-    SeasonNumber, Series, SeriesId, ThemeType, Watched,
+    Config, Episode, EpisodeId, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, SearchSeries,
+    Season, SeasonNumber, Series, SeriesId, ThemeType, Watched,
 };
 
 /// Data encapsulating a newly added series.
@@ -214,14 +215,15 @@ struct Paths {
 pub struct Service {
     paths: Arc<Paths>,
     db: Database,
-    pub(crate) tvdb: thetvdb::Client,
-    pub(crate) tmdb: themoviedb::Client,
+    tvdb: thetvdb::Client,
+    tmdb: themoviedb::Client,
     do_not_save: bool,
+    current_theme: Theme,
 }
 
 impl Service {
     /// Construct and setup in-memory state of
-    pub(crate) fn new() -> Result<Self> {
+    pub fn new() -> Result<Self> {
         let dirs = directories_next::ProjectDirs::from("se.tedro", "setbac", "OnTV")
             .context("missing project dirs")?;
 
@@ -242,12 +244,15 @@ impl Service {
         let tvdb = thetvdb::Client::new(&db.config.tvdb_legacy_apikey)?;
         let tmdb = themoviedb::Client::new(&db.config.tmdb_api_key)?;
 
+        let current_theme = db.config.theme();
+
         let this = Self {
             paths: Arc::new(paths),
             db,
             tvdb,
             tmdb,
             do_not_save: false,
+            current_theme,
         };
 
         Ok(this)
@@ -877,10 +882,16 @@ impl Service {
         &self.db.config
     }
 
+    /// Get the current theme.
+    pub(crate) fn theme(&self) -> &Theme {
+        &self.current_theme
+    }
+
     /// Set the theme configuration option.
     pub(crate) fn set_theme(&mut self, theme: ThemeType) {
         self.db.config.theme = theme;
         self.db.changes.set.insert(Change::Config);
+        self.current_theme = self.db.config.theme();
     }
 
     /// Set the theme configuration option.
@@ -1119,7 +1130,7 @@ impl Service {
     }
 
     /// Prevents the service from saving anything to the filesystem.
-    pub(crate) fn do_not_save(&mut self) {
+    pub fn do_not_save(&mut self) {
         self.do_not_save = true;
     }
 
@@ -1177,6 +1188,26 @@ impl Service {
         P: FnMut(&Episode) -> bool,
     {
         self.episodes(series_id).iter().find(move |&e| predicate(e))
+    }
+
+    /// Search tvdb.
+    pub(crate) fn search_tvdb(
+        &self,
+        query: &str,
+    ) -> impl Future<Output = Result<Vec<SearchSeries>>> {
+        let tvdb = self.tvdb.clone();
+        let query = query.to_owned();
+        async move { tvdb.search_by_name(&query).await }
+    }
+
+    /// Search tmdb.
+    pub(crate) fn search_tmdb(
+        &self,
+        query: &str,
+    ) -> impl Future<Output = Result<Vec<SearchSeries>>> {
+        let tmdb = self.tmdb.clone();
+        let query = query.to_owned();
+        async move { tmdb.search_series(&query).await }
     }
 }
 

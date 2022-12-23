@@ -7,9 +7,10 @@ use iced::{Alignment, Length};
 use crate::cache::ImageHint;
 use crate::message::Page;
 use crate::model::{EpisodeId, SeasonNumber, SeriesId};
-use crate::params::{centered, style, ACTION_SIZE, GAP, SMALL_SIZE, SPACE, SUBTITLE_SIZE};
+use crate::params::{centered, ACTION_SIZE, GAP, SMALL_SIZE, SPACE, SUBTITLE_SIZE};
 use crate::service::PendingRef;
 use crate::state::State;
+use crate::style;
 
 /// Dashboard gets a bit more leeway, since the image is dynamically scaled.
 const POSTER_HINT: ImageHint = ImageHint::Width(512);

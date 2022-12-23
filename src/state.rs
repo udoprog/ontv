@@ -24,7 +24,7 @@ pub(crate) struct State {
     /// Errors accumulated.
     errors: VecDeque<ErrorMessage>,
     /// Indicates that the whole application is busy loading something.
-    loading: bool,
+    saving: bool,
     /// Set of series which are in the process of being downloaded.
     downloading: HashSet<RemoteSeriesId>,
     /// Series IDs in the process of being downloaded.
@@ -34,7 +34,7 @@ pub(crate) struct State {
 impl State {
     /// Construct a new empty application state.
     #[inline]
-    pub(crate) fn new(service: Service, assets: Assets) -> Self {
+    pub fn new(service: Service, assets: Assets) -> Self {
         Self {
             service,
             assets,
@@ -42,7 +42,7 @@ impl State {
             history_index: 0,
             history_changed: false,
             errors: VecDeque::new(),
-            loading: false,
+            saving: false,
             downloading: HashSet::new(),
             downloading_ids: HashSet::new(),
         }
@@ -99,7 +99,7 @@ impl State {
     pub(crate) fn handle_error(&mut self, error: ErrorMessage) {
         log::error!("error: {error}");
 
-        self.loading = false;
+        self.saving = false;
         self.errors.push_back(error);
 
         if self.errors.len() > ERRORS {
@@ -178,12 +178,17 @@ impl State {
     }
 
     #[inline]
-    pub(crate) fn is_loading(&self) -> bool {
-        self.loading
+    pub(crate) fn is_saving(&self) -> bool {
+        self.saving
     }
 
     #[inline]
-    pub(crate) fn set_loading(&mut self, loading: bool) {
-        self.loading = loading;
+    pub(crate) fn set_saving(&mut self, saving: bool) {
+        self.saving = saving;
+    }
+
+    #[inline]
+    pub(crate) fn warning_text(&self) -> iced::theme::Text {
+        crate::style::warning_text(self.service.theme())
     }
 }

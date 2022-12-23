@@ -1,6 +1,8 @@
 use chrono::Duration;
 use iced::widget::{Column, Container, Text};
-use iced::{Color, Element};
+use iced::Element;
+
+use crate::style;
 
 pub(crate) const SPACE: u16 = 5;
 pub(crate) const HALF_GAP: u16 = 10;
@@ -20,9 +22,6 @@ pub(crate) const IMAGE_HEIGHT: u16 = 200;
 
 /// Standard screencap height.
 pub(crate) const SCREENCAP_HEIGHT: u16 = 270;
-
-/// Warning color.
-pub(crate) const WARNING_COLOR: Color = Color::from_rgba(0.5, 0.0, 0.0, 1.0);
 
 /// Build a default container.
 pub(crate) fn default_container<'a, E, M: 'a>(content: E) -> Column<'a, M>
@@ -51,6 +50,7 @@ where
     use iced::Length;
 
     let content = container(content).max_width(CONTAINER_WIDTH);
+
     let mut container = container(content)
         .align_x(Horizontal::Center)
         .width(Length::Fill);
@@ -87,26 +87,6 @@ pub(crate) fn duration_display(d: Duration) -> Text<'static> {
                 n => Text::new(format!("in {n} minutes")),
             },
             n => Text::new(format!("in {n} seconds")),
-        }
-    }
-}
-
-pub(crate) mod style {
-    use iced::widget::container;
-    use iced::{Background, Theme};
-
-    pub(crate) type StyleSheet = fn(theme: &Theme) -> container::Appearance;
-
-    /// Weaker background color.
-    pub(crate) fn weak(theme: &Theme) -> container::Appearance {
-        let extended = theme.extended_palette();
-
-        let pair = extended.background.weak;
-
-        container::Appearance {
-            background: Some(Background::Color(pair.color)),
-            text_color: Some(pair.text),
-            ..Default::default()
         }
     }
 }
