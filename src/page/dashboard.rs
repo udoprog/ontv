@@ -1,22 +1,27 @@
 use chrono::Utc;
 use iced::alignment::Horizontal;
-use iced::widget::{button, container, image, text, vertical_space, Column, Row};
+use iced::widget::{button, container, horizontal_rule, image, text, vertical_space, Column, Row};
 use iced::{theme, Command, Element};
 use iced::{Alignment, Length};
 
 use crate::cache::ImageHint;
 use crate::message::Page;
-use crate::model::{EpisodeId, SeasonNumber, SeriesId};
+use crate::model::{EpisodeId, Image, SeasonNumber, SeriesId};
 use crate::params::{centered, ACTION_SIZE, GAP, SMALL_SIZE, SPACE, SUBTITLE_SIZE};
 use crate::service::PendingRef;
 use crate::state::State;
 use crate::style;
+use crate::utils::Hoverable;
 
 /// Dashboard gets a bit more leeway, since the image is dynamically scaled.
 const POSTER_HINT: ImageHint = ImageHint::Width(512);
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
+    /// Hover a scheduled series.
+    HoverScheduled(SeriesId),
+    /// Hover a scheduled series.
+    UnhoverScheduled(SeriesId),
     /// Skip an episode.
     Skip(SeriesId, EpisodeId),
     /// Watch an episode.
@@ -26,11 +31,33 @@ pub(crate) enum Message {
 }
 
 /// The state for the settings page.
-#[derive(Default)]
-pub(crate) struct Dashboard;
+pub(crate) struct Dashboard {
+    schedule_focus: Option<(SeriesId, Option<Image>)>,
+}
 
 impl Dashboard {
+    pub(crate) fn new(s: &State) -> Self {
+        let mut schedule_focus = None;
+
+        if let Some(scheduled) = s
+            .service
+            .schedule()
+            .first()
+            .and_then(|d| d.schedule.first())
+        {
+            if let Some(series) = s.service.series(&scheduled.series_id) {
+                schedule_focus = Some((series.id, series.poster));
+            }
+        }
+
+        Self { schedule_focus }
+    }
+
     pub(crate) fn prepare(&mut self, s: &mut State) {
+        if let Some(id) = self.schedule_focus.and_then(|d| d.1) {
+            s.assets.mark_with_hint([id], POSTER_HINT);
+        }
+
         s.assets.mark_with_hint(
             s.service
                 .pending()
@@ -43,6 +70,14 @@ impl Dashboard {
 
     pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
         match message {
+            Message::HoverScheduled(series_id) => {
+                if let Some(series) = s.service.series(&series_id) {
+                    self.schedule_focus = Some((series_id, series.poster));
+                }
+
+                Command::none()
+            }
+            Message::UnhoverScheduled(_) => Command::none(),
             Message::Skip(series_id, episode_id) => {
                 let now = Utc::now();
                 s.service.skip(&series_id, &episode_id, now);
@@ -138,9 +173,7 @@ impl Dashboard {
             .on_press(Message::Navigate(Page::Series(series.id)));
 
             let season_name = button(
-                episode
-                    .season
-                    .short()
+                text(episode.season.short())
                     .horizontal_alignment(Horizontal::Center)
                     .size(ACTION_SIZE),
             )
@@ -185,11 +218,89 @@ impl Dashboard {
             );
         }
 
+        let mut scheduled = Row::new();
+        let mut first = true;
+
+        for day in s.service.schedule() {
+            let mut column = Column::new();
+            column = column.push(text(day.date));
+
+            let mut it = day
+                .schedule
+                .iter()
+                .flat_map(|sched| {
+                    s.service
+                        .series(&sched.series_id)
+                        .into_iter()
+                        .map(move |series| (series, sched))
+                })
+                .peekable();
+
+            if let Some((series_id, id)) = self.schedule_focus.filter(|_| first) {
+                let poster = match id.and_then(|id| s.assets.image_with_hint(&id, POSTER_HINT)) {
+                    Some(image) => image,
+                    None => s.assets.missing_poster(),
+                };
+
+                scheduled = scheduled.push(
+                    button(image(poster))
+                        .padding(0)
+                        .style(theme::Button::Text)
+                        .on_press(Message::Navigate(Page::Series(series_id)))
+                        .width(Length::FillPortion(1)),
+                );
+
+                first = false;
+            }
+
+            while let Some((series, schedule)) = it.next() {
+                let mut series_column = Column::new();
+                let mut episodes = Column::new();
+
+                for episode_id in &schedule.episodes {
+                    let Some(episode) = s.service.episodes(&schedule.series_id).iter().find(|e| e.id == *episode_id) else {
+                        continue;
+                    };
+
+                    let name = match &episode.name {
+                        Some(name) => {
+                            format!("{}x{} {name}", episode.season.short(), episode.number)
+                        }
+                        None => format!("{}x{}", episode.season.short(), episode.number),
+                    };
+
+                    episodes = episodes.push(text(name).size(SMALL_SIZE));
+                }
+
+                let title = button(text(&series.title))
+                    .padding(0)
+                    .style(theme::Button::Text)
+                    .on_press(Message::Navigate(Page::Series(series.id)));
+
+                series_column = series_column.push(Hoverable::new(
+                    title.into(),
+                    Message::HoverScheduled(series.id),
+                    Message::UnhoverScheduled(series.id),
+                ));
+
+                series_column = series_column.push(episodes.spacing(SPACE));
+
+                column = column.push(series_column.spacing(SPACE));
+
+                if it.peek().is_some() {
+                    column = column.push(horizontal_rule(1));
+                }
+            }
+
+            scheduled = scheduled.push(column.width(Length::FillPortion(1)).spacing(GAP));
+        }
+
         let up_next_title = text("Up next...")
             .horizontal_alignment(Horizontal::Left)
             .width(Length::Fill)
             .size(SUBTITLE_SIZE);
-        let scheduled_title = text("Scheduled...")
+
+        let scheduled_title = text("Next week...")
             .horizontal_alignment(Horizontal::Left)
             .width(Length::Fill)
             .size(SUBTITLE_SIZE);
@@ -202,6 +313,7 @@ impl Dashboard {
                 Some(style::weak),
             ))
             .push(centered(scheduled_title, None))
+            .push(centered(scheduled.padding(GAP).spacing(GAP), None))
             .push(vertical_space(Length::Shrink))
             .spacing(GAP)
             .into()

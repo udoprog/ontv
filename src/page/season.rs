@@ -321,7 +321,7 @@ impl Season {
             );
         }
 
-        let season_title = season.number.title().size(SUBTITLE_SIZE);
+        let season_title = text(season.number).size(SUBTITLE_SIZE);
 
         let banner = Column::new()
             .push(self.banner.view(s, series).map(Message::SeriesBanner))

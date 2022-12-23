@@ -6,7 +6,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Context, Error, Result};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Days, Duration, Local, NaiveDate, Utc};
 use futures::stream::FuturesUnordered;
 use iced::Theme;
 use iced_native::image::Handle;
@@ -20,8 +20,8 @@ use crate::assets::ImageKey;
 use crate::cache::{self};
 
 use crate::model::{
-    Config, Episode, EpisodeId, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, SearchSeries,
-    Season, SeasonNumber, Series, SeriesId, ThemeType, Watched,
+    Config, Episode, EpisodeId, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, ScheduledDay,
+    ScheduledSeries, SearchSeries, Season, SeasonNumber, Series, SeriesId, ThemeType, Watched,
 };
 
 /// Data encapsulating a newly added series.
@@ -219,6 +219,7 @@ pub struct Service {
     tmdb: themoviedb::Client,
     do_not_save: bool,
     current_theme: Theme,
+    schedule: Vec<ScheduledDay>,
 }
 
 impl Service {
@@ -246,16 +247,24 @@ impl Service {
 
         let current_theme = db.config.theme();
 
-        let this = Self {
+        let mut this = Self {
             paths: Arc::new(paths),
             db,
             tvdb,
             tmdb,
             do_not_save: false,
             current_theme,
+            schedule: Vec::new(),
         };
 
+        let now = Local::now();
+        this.build_schedule(now.date_naive());
         Ok(this)
+    }
+
+    /// A scheduled day.
+    pub(crate) fn schedule(&self) -> &[ScheduledDay] {
+        &self.schedule
     }
 
     /// Get a single series.
@@ -693,6 +702,12 @@ impl Service {
     /// Save changes made.
     pub(crate) fn save_changes(&mut self) -> impl Future<Output = Result<()>> {
         let changes = std::mem::take(&mut self.db.changes);
+
+        if changes.set.contains(Change::Series) {
+            // Series change means that we have to rebuild the schedule.
+            let now = Local::now();
+            self.build_schedule(now.date_naive());
+        }
 
         let config = changes
             .set
@@ -1213,6 +1228,59 @@ impl Service {
         let tmdb = self.tmdb.clone();
         let query = query.to_owned();
         async move { tmdb.search_series(&query).await }
+    }
+
+    /// Build schedule information.
+    pub(crate) fn build_schedule(&mut self, now: NaiveDate) {
+        let Some(end) = now.checked_add_days(Days::new(7)) else {
+            return;
+        };
+
+        let mut current = now;
+        let end = end;
+        let mut days = Vec::new();
+
+        while current <= end {
+            let mut schedule = Vec::new();
+
+            for series in self.all_series() {
+                let mut scheduled_episodes = Vec::new();
+
+                for e in self.episodes(&series.id) {
+                    let Some(air_date) = &e.aired else {
+                        continue;
+                    };
+
+                    if *air_date != current {
+                        continue;
+                    }
+
+                    scheduled_episodes.push(e.id);
+                }
+
+                if !scheduled_episodes.is_empty() {
+                    schedule.push(ScheduledSeries {
+                        series_id: series.id,
+                        episodes: scheduled_episodes,
+                    });
+                }
+            }
+
+            if !schedule.is_empty() {
+                days.push(ScheduledDay {
+                    date: current,
+                    schedule,
+                });
+            }
+
+            let Some(next) = current.checked_add_days(Days::new(1)) else {
+                break;
+            };
+
+            current = next;
+        }
+
+        self.schedule = days;
     }
 }
 

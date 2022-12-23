@@ -8,7 +8,6 @@ use std::str::FromStr;
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use chrono::{DateTime, NaiveDate, Utc};
-use iced::widget::{text, Text};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -280,7 +279,7 @@ pub(crate) struct Watched {
 /// Season number.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum SeasonNumber {
+pub(crate) enum SeasonNumber {
     /// Season used for non-numbered episodes.
     #[default]
     Specials,
@@ -295,18 +294,20 @@ impl SeasonNumber {
     }
 
     /// Build season title.
-    pub(crate) fn title(&self) -> Text<'static> {
-        match self {
-            SeasonNumber::Specials => text("Specials"),
-            SeasonNumber::Number(number) => text(format!("Season {number}")),
-        }
+    pub(crate) fn short(&self) -> SeasonShort<'_> {
+        SeasonShort { season: self }
     }
+}
 
-    /// Build season title.
-    pub(crate) fn short(&self) -> Text<'static> {
-        match self {
-            SeasonNumber::Specials => text("S"),
-            SeasonNumber::Number(number) => text(format!("S{number}")),
+pub(crate) struct SeasonShort<'a> {
+    season: &'a SeasonNumber,
+}
+
+impl fmt::Display for SeasonShort<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.season {
+            SeasonNumber::Specials => "S".fmt(f),
+            SeasonNumber::Number(n) => n.fmt(f),
         }
     }
 }
@@ -324,7 +325,7 @@ impl fmt::Display for SeasonNumber {
 /// A season in a series.
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub struct Season {
+pub(crate) struct Season {
     /// The number of the season.
     #[serde(default, skip_serializing_if = "SeasonNumber::is_special")]
     pub(crate) number: SeasonNumber,
@@ -341,7 +342,7 @@ pub struct Season {
 /// An episode in a series.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub struct Episode {
+pub(crate) struct Episode {
     /// Uuid of the watched episode.
     pub(crate) id: EpisodeId,
     /// Name of the episode.
@@ -718,4 +719,16 @@ pub(crate) struct SearchSeries {
     pub(crate) poster: Option<Image>,
     pub(crate) overview: Option<String>,
     pub(crate) first_aired: Option<NaiveDate>,
+}
+
+/// A series that is scheduled to be aired.
+pub(crate) struct ScheduledSeries {
+    pub(crate) series_id: SeriesId,
+    pub(crate) episodes: Vec<EpisodeId>,
+}
+
+/// A scheduled day.
+pub(crate) struct ScheduledDay {
+    pub(crate) date: NaiveDate,
+    pub(crate) schedule: Vec<ScheduledSeries>,
 }

@@ -93,9 +93,12 @@ impl iced::Application for Application {
     type Flags = Flags;
 
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
+        let state = State::new(flags.service, Assets::new());
+        let current = Current::Dashboard(page::dashboard::Dashboard::new(&state));
+
         let mut this = Application {
-            state: State::new(flags.service, Assets::new()),
-            current: Current::Dashboard(page::dashboard::Dashboard::default()),
+            state,
+            current,
             database_timeout: Timeout::default(),
             update_timeout: Timeout::default(),
             image_loader: Singleton::default(),
@@ -287,7 +290,7 @@ impl iced::Application for Application {
 
         let scroll = if let Some((page, scroll)) = self.state.history_change() {
             self.current = match page {
-                Page::Dashboard => Current::Dashboard(page::Dashboard::default()),
+                Page::Dashboard => Current::Dashboard(page::Dashboard::new(&self.state)),
                 Page::Search => Current::Search(page::Search::default()),
                 Page::SeriesList => Current::SeriesList(page::SeriesList::default()),
                 Page::Series(series_id) => Current::Series(page::Series::new(series_id)),
@@ -372,7 +375,7 @@ impl iced::Application for Application {
             }
 
             for season in self.state.service.seasons(&series_id) {
-                let title = season.number.title();
+                let title = text(season.number);
 
                 let (watched, total) = self
                     .state

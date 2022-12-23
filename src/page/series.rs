@@ -147,7 +147,7 @@ impl Series {
                 .style(theme::Button::Text)
                 .padding(0);
 
-            let title = button(season.number.title().size(SUBTITLE_SIZE))
+            let title = button(text(season.number).size(SUBTITLE_SIZE))
                 .padding(0)
                 .style(theme::Button::Text)
                 .on_press(Message::Navigate(Page::Season(series.id, season.number)));
