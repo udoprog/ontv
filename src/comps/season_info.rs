@@ -1,54 +1,64 @@
-use chrono::Utc;
-use iced::widget::{button, text, Column, Row};
+use iced::widget::{text, Column, Row};
 use iced::{theme, Command, Element, Length};
 
 use crate::component::Component;
+use crate::comps;
 use crate::model::{SeasonNumber, SeriesId};
-use crate::params::{ACTION_SIZE, GAP, SPACE};
-
+use crate::params::{GAP, SPACE};
 use crate::state::State;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     /// Weatch the remainder of all unwatched episodes in the specified season.
-    WatchRemainingSeason,
+    WatchRemaining(comps::confirm::Message),
     /// Remove all matching season watches.
-    RemoveSeasonWatches,
+    RemoveWatches(comps::confirm::Message),
 }
 
-#[derive(Clone)]
 pub(crate) struct SeasonInfo {
     series_id: SeriesId,
     season: SeasonNumber,
+    watch_remaining: comps::confirm::Confirm,
+    remove_watches: comps::confirm::Confirm,
 }
 
 impl Component<(SeriesId, SeasonNumber)> for SeasonInfo {
     #[inline]
     fn new((series_id, season): (SeriesId, SeasonNumber)) -> Self {
-        Self { series_id, season }
+        Self {
+            series_id,
+            season,
+            watch_remaining: comps::confirm::Confirm::new(comps::confirm::Props::new(
+                comps::confirm::Kind::WatchRemaining { series_id, season },
+            )),
+            remove_watches: comps::confirm::Confirm::new(comps::confirm::Props::new(
+                comps::confirm::Kind::RemoveSeason { series_id, season },
+            )),
+        }
     }
 
     #[inline]
     fn changed(&mut self, (series_id, season): (SeriesId, SeasonNumber)) {
         self.series_id = series_id;
         self.season = season;
+        self.watch_remaining.changed(comps::confirm::Props::new(
+            comps::confirm::Kind::WatchRemaining { series_id, season },
+        ));
+        self.remove_watches.changed(comps::confirm::Props::new(
+            comps::confirm::Kind::RemoveSeason { series_id, season },
+        ));
     }
 }
 
 impl SeasonInfo {
     pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
         match message {
-            Message::WatchRemainingSeason => {
-                let now = Utc::now();
-                s.service
-                    .watch_remaining_season(&self.series_id, &self.season, now);
-                Command::none()
-            }
-            Message::RemoveSeasonWatches => {
-                let now = Utc::now();
-                s.service
-                    .remove_season_watches(&self.series_id, &self.season, now);
-                Command::none()
+            Message::WatchRemaining(m) => self
+                .watch_remaining
+                .update(s, m)
+                .map(Message::WatchRemaining),
+            Message::RemoveWatches(m) => {
+                self.remove_watches.update(s, m).map(Message::RemoveWatches)
             }
         }
     }
@@ -59,17 +69,17 @@ impl SeasonInfo {
 
         if watched < total {
             actions = actions.push(
-                button(text("Watch remaining").size(ACTION_SIZE))
-                    .style(theme::Button::Primary)
-                    .on_press(Message::WatchRemainingSeason),
+                self.watch_remaining
+                    .view("Watch remaining", theme::Button::Positive)
+                    .map(Message::WatchRemaining),
             );
         }
 
         if watched != 0 {
             actions = actions.push(
-                button(text("Remove watches").size(ACTION_SIZE))
-                    .style(theme::Button::Destructive)
-                    .on_press(Message::RemoveSeasonWatches),
+                self.remove_watches
+                    .view("Remove watches", theme::Button::Destructive)
+                    .map(Message::RemoveWatches),
             );
         }
 

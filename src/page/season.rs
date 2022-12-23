@@ -18,7 +18,8 @@ const SCREENCAP_HINT: ImageHint = ImageHint::Fill(480, SCREENCAP_HEIGHT as u32);
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
-    RemoveWatch(usize, usize, comps::remove_watch::Message),
+    RemoveLastWatch(usize, comps::confirm::Message),
+    RemoveWatch(usize, usize, comps::confirm::Message),
     Watch(SeriesId, EpisodeId),
     SelectPending(SeriesId, EpisodeId),
     SeasonInfo(comps::season_info::Message),
@@ -26,24 +27,57 @@ pub(crate) enum Message {
 }
 
 struct EpisodeState {
-    remove_watches: Vec<comps::RemoveWatch>,
+    remove_last_watch: Option<comps::Confirm>,
+    remove_watches: Vec<comps::Confirm>,
 }
 
 impl Component<(SeriesId, EpisodeId, &[Watched])> for EpisodeState {
     #[inline]
     fn new((series_id, episode_id, watched): (SeriesId, EpisodeId, &[Watched])) -> Self {
         Self {
+            remove_last_watch: watched.last().map(move |w| {
+                comps::Confirm::new(comps::confirm::Props::new(
+                    comps::confirm::Kind::RemoveWatch {
+                        series_id,
+                        episode_id,
+                        watch_id: w.id,
+                    },
+                ))
+            }),
             remove_watches: watched
                 .iter()
-                .map(move |w| comps::RemoveWatch::new((series_id, episode_id, w.id)))
+                .map(move |w| {
+                    comps::Confirm::new(
+                        comps::confirm::Props::new(comps::confirm::Kind::RemoveWatch {
+                            series_id,
+                            episode_id,
+                            watch_id: w.id,
+                        })
+                        .with_ordering(comps::confirm::Ordering::Left),
+                    )
+                })
                 .collect(),
         }
     }
 
     #[inline]
     fn changed(&mut self, (series_id, episode_id, watched): (SeriesId, EpisodeId, &[Watched])) {
-        self.remove_watches
-            .init_from_iter(watched.iter().map(|w| (series_id, episode_id, w.id)))
+        self.remove_last_watch
+            .init_from_iter(watched.last().map(move |w| {
+                comps::confirm::Props::new(comps::confirm::Kind::RemoveWatch {
+                    series_id,
+                    episode_id,
+                    watch_id: w.id,
+                })
+            }));
+        self.remove_watches.init_from_iter(watched.iter().map(|w| {
+            comps::confirm::Props::new(comps::confirm::Kind::RemoveWatch {
+                series_id,
+                episode_id,
+                watch_id: w.id,
+            })
+            .with_ordering(comps::confirm::Ordering::Left)
+        }));
     }
 }
 
@@ -90,14 +124,25 @@ impl Season {
 
     pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
         match message {
+            Message::RemoveLastWatch(index, message) => {
+                if let Some(c) = self
+                    .episodes
+                    .get_mut(index)
+                    .and_then(|data| data.remove_last_watch.as_mut())
+                {
+                    c.update(s, message)
+                        .map(move |m| Message::RemoveLastWatch(index, m))
+                } else {
+                    Command::none()
+                }
+            }
             Message::RemoveWatch(index, n, message) => {
-                if let Some(remove_watch) = self
+                if let Some(c) = self
                     .episodes
                     .get_mut(index)
                     .and_then(|data| data.remove_watches.get_mut(n))
                 {
-                    remove_watch
-                        .update(s, message)
+                    c.update(s, message)
                         .map(move |m| Message::RemoveWatch(index, n, m))
                 } else {
                     Command::none()
@@ -177,18 +222,16 @@ impl Season {
                     .on_press(Message::Watch(series.id, episode.id)),
             );
 
-            let remove_last = match (watched, data.remove_watches.last()) {
+            let remove_last = match (watched, &data.remove_last_watch) {
                 ([_], Some(c)) => Some(("Remove watch", c)),
                 ([.., _], Some(c)) => Some(("Remove last watch", c)),
                 _ => None,
             };
 
             if let Some((watch_text, c)) = remove_last {
-                let n = data.remove_watches.len().saturating_sub(1);
-
                 actions = actions.push(
-                    c.view(watch_text)
-                        .map(move |m| Message::RemoveWatch(index, n, m)),
+                    c.view(watch_text, theme::Button::Destructive)
+                        .map(move |m| Message::RemoveLastWatch(index, m)),
                 );
             }
 
@@ -252,7 +295,7 @@ impl Season {
                     );
 
                     row = row.push(
-                        c.view("Remove")
+                        c.view("Remove", theme::Button::Destructive)
                             .map(move |m| Message::RemoveWatch(index, n, m)),
                     );
 
