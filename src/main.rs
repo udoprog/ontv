@@ -149,7 +149,39 @@ impl Application for Main {
 
     #[inline]
     fn title(&self) -> String {
-        String::from("Styling - Iced")
+        const BASE: &str = "OnTV";
+
+        if let Some(page) = self.state.page() {
+            match page {
+                Page::Dashboard => {
+                    return format!("{BASE} - Dashboard");
+                }
+                Page::Search => {
+                    return format!("{BASE} - Search");
+                }
+                Page::SeriesList => {
+                    return format!("{BASE} - Series overview");
+                }
+                Page::Series(id) => {
+                    if let Some(series) = self.state.service.series(&id) {
+                        return format!("{BASE} - {}", series.title);
+                    }
+                }
+                Page::Settings => {
+                    return format!("{BASE} - Settings");
+                }
+                Page::Season(series, season) => {
+                    if let Some(series) = self.state.service.series(&series) {
+                        return format!("{BASE} - {} - {season}", series.title);
+                    }
+                }
+                Page::Queue => {
+                    return format!("{BASE} - Queue");
+                }
+            }
+        }
+
+        BASE.to_string()
     }
 
     fn update(&mut self, message: Message) -> Command<Self::Message> {
@@ -331,7 +363,7 @@ impl Application for Main {
                 n => text(format!("Queue ({n})")),
             };
 
-            top_menu = top_menu.push(menu_item(&page, text, Page::Downloads));
+            top_menu = top_menu.push(menu_item(&page, text, Page::Queue));
         }
 
         let mut menu = Column::new().push(top_menu);
@@ -392,7 +424,7 @@ impl Application for Main {
                 .season
                 .view(&self.state, &series_id, &season)
                 .map(Message::Season),
-            Page::Downloads => self.queue.view(&self.state).into(),
+            Page::Queue => self.queue.view(&self.state).into(),
         };
 
         window = window.push(horizontal_rule(1));
@@ -465,7 +497,7 @@ impl Main {
             Page::Season(series_id, season) => {
                 self.season.prepare(&mut self.state, &series_id, season);
             }
-            Page::Downloads => {
+            Page::Queue => {
                 self.queue.prepare(&mut self.state);
             }
         }

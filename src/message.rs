@@ -17,7 +17,7 @@ pub(crate) enum Page {
     Series(SeriesId),
     Settings,
     Season(SeriesId, SeasonNumber),
-    Downloads,
+    Queue,
 }
 
 /// A detailed error message.
