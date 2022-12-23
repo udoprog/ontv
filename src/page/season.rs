@@ -35,7 +35,6 @@ pub(crate) struct Season {
 }
 
 impl Season {
-    /// Prepare data that is needed for the view.
     pub(crate) fn prepare(&mut self, s: &mut State, series_id: &SeriesId, season: SeasonNumber) {
         self.banner.prepare(s, series_id);
 
@@ -49,7 +48,6 @@ impl Season {
         }
     }
 
-    /// Handle series messages.
     pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
         match message {
             Message::RemoveWatch(season_id, episode_id) => {

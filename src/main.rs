@@ -22,25 +22,53 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::Parser;
 use iced::theme::{self, Theme};
-use iced::widget::{button, horizontal_rule, row, scrollable, text, Button, Column, Row};
+use iced::widget::{button, horizontal_rule, scrollable, text, Button, Column, Row};
 use iced::{Alignment, Application, Command, Element, Length, Settings};
 use iced_native::image::Handle;
 
-use params::{ACTION_SIZE, WARNING_COLOR};
-use utils::Singleton;
-
-use crate::assets::{Assets, ImageKey};
-use crate::message::{Message, Page};
-use crate::model::ThemeType;
-use crate::params::{GAP, HALF_GAP, SPACE, SUB_MENU_SIZE};
-use crate::service::Service;
-use crate::state::State;
-use crate::utils::{TimedOut, Timeout};
+use assets::{Assets, ImageKey};
+use message::{ErrorMessage, Page};
+use model::ThemeType;
+use params::{ACTION_SIZE, GAP, HALF_GAP, SPACE, SUB_MENU_SIZE, WARNING_COLOR};
+use service::{Queued, Service};
+use state::State;
+use utils::{Singleton, TimedOut, Timeout};
 
 // Check for remote updates every 60 seconds.
 const UPDATE_TIMEOUT: u64 = 60;
 // Number of images to process in parallel.
 const IMAGE_BATCH: usize = 10;
+
+#[derive(Debug, Clone)]
+enum Message {
+    /// Platform-specific events.
+    CloseRequested,
+    Settings(page::settings::Message),
+    Dashboard(page::dashboard::Message),
+    Search(page::search::Message),
+    SeriesList(page::series_list::Message),
+    Series(page::series::Message),
+    Season(page::season::Message),
+    Queue(page::queue::Message),
+    /// Do nothing.
+    Noop,
+    /// Error during operation.
+    Error(ErrorMessage),
+    /// Save application changes.
+    Save(TimedOut),
+    /// Application state was saved.
+    Saved,
+    /// Check for updates.
+    CheckForUpdates(TimedOut),
+    /// Update download queue with the given items.
+    UpdateDownloadQueue(Vec<Queued>),
+    /// Request to navigate to the specified page.
+    Navigate(Page),
+    /// Navigate history by the specified stride.
+    History(isize),
+    /// Images have been loaded in the background.
+    ImagesLoaded(Result<Vec<(ImageKey, Handle)>, ErrorMessage>),
+}
 
 #[derive(Parser)]
 struct Opts {
@@ -199,7 +227,10 @@ impl Application for Main {
 
                 return Command::none();
             }
-            Message::Settings(message) => self.settings.update(&mut self.state, message),
+            Message::Settings(message) => self
+                .settings
+                .update(&mut self.state, message)
+                .map(Message::Settings),
             Message::Dashboard(message) => self
                 .dashboard
                 .update(&mut self.state, message)
@@ -220,6 +251,10 @@ impl Application for Main {
                 .season
                 .update(&mut self.state, message)
                 .map(Message::Season),
+            Message::Queue(message) => self
+                .queue
+                .update(&mut self.state, message)
+                .map(Message::Queue),
             Message::Noop => {
                 return Command::none();
             }
@@ -238,7 +273,7 @@ impl Application for Main {
 
                 Command::perform(self.state.service.save_changes(), |result| match result {
                     Ok(()) => Message::Saved,
-                    Err(error) => Message::error(error),
+                    Err(error) => Message::Error(error.into()),
                 })
             }
             Message::Saved => {
@@ -257,7 +292,7 @@ impl Application for Main {
                         let a = Command::perform(self.state.service.find_updates(now), |output| {
                             match output {
                                 Ok(update) => Message::UpdateDownloadQueue(update),
-                                Err(error) => Message::error(error),
+                                Err(error) => Message::Error(error.into()),
                             }
                         });
 
@@ -372,11 +407,11 @@ impl Application for Main {
             let mut sub_menu = Row::new();
 
             if let Some(series) = self.state.service.series(&series_id) {
-                sub_menu = sub_menu.push(row![menu_item(
+                sub_menu = sub_menu.push(menu_item(
                     &page,
                     text(&series.title).size(SUB_MENU_SIZE),
-                    Page::Series(series_id)
-                )]);
+                    Page::Series(series_id),
+                ));
             }
 
             for season in self.state.service.seasons(&series_id) {
@@ -419,12 +454,12 @@ impl Application for Main {
                 .series
                 .view(&self.state, &series_id)
                 .map(Message::Series),
-            Page::Settings => self.settings.view(&self.state).into(),
+            Page::Settings => self.settings.view(&self.state).map(Message::Settings),
             Page::Season(series_id, season) => self
                 .season
                 .view(&self.state, &series_id, &season)
                 .map(Message::Season),
-            Page::Queue => self.queue.view(&self.state).into(),
+            Page::Queue => self.queue.view(&self.state).map(Message::Queue),
         };
 
         window = window.push(horizontal_rule(1));

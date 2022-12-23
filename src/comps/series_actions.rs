@@ -19,7 +19,7 @@ pub(crate) enum Message {
 
 #[derive(Default, Debug, Clone)]
 pub(crate) struct SeriesActions {
-    confirm: bool,
+    _confirm: bool,
 }
 
 impl SeriesActions {

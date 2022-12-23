@@ -1,13 +1,8 @@
 use std::fmt;
 
-use anyhow::{Error, Result};
-use iced_native::image::Handle;
+use anyhow::Error;
 
-use crate::assets::ImageKey;
 use crate::model::{SeasonNumber, SeriesId};
-use crate::page;
-use crate::service::Queued;
-use crate::utils::TimedOut;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Page {
@@ -54,53 +49,5 @@ impl fmt::Display for ErrorMessage {
         }
 
         Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum Message {
-    /// Platform-specific events.
-    CloseRequested,
-    Settings(page::settings::M),
-    Dashboard(page::dashboard::Message),
-    Search(page::search::Message),
-    SeriesList(page::series_list::Message),
-    Series(page::series::Message),
-    Season(page::season::Message),
-    /// Do nothing.
-    Noop,
-    /// Error during operation.
-    Error(ErrorMessage),
-    /// Save application changes.
-    Save(TimedOut),
-    /// Application state was saved.
-    Saved,
-    /// Check for updates.
-    CheckForUpdates(TimedOut),
-    /// Update download queue with the given items.
-    UpdateDownloadQueue(Vec<Queued>),
-    /// Request to navigate to the specified page.
-    Navigate(Page),
-    /// Navigate history by the specified stride.
-    History(isize),
-    /// Images have been loaded in the background.
-    ImagesLoaded(Result<Vec<(ImageKey, Handle)>, ErrorMessage>),
-}
-
-impl From<Result<()>> for Message {
-    #[inline]
-    fn from(result: Result<()>) -> Self {
-        match result {
-            Ok(()) => Message::Noop,
-            Err(error) => Message::error(error),
-        }
-    }
-}
-
-impl Message {
-    /// Construct an error message with detailed information.
-    #[inline]
-    pub(crate) fn error(error: Error) -> Self {
-        Self::Error(ErrorMessage::from(error))
     }
 }
