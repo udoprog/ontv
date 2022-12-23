@@ -3,7 +3,8 @@ use std::fmt;
 use anyhow::{Error, Result};
 use iced_native::image::Handle;
 
-use crate::model::{Image, SeasonNumber, SeriesId};
+use crate::assets::ImageKey;
+use crate::model::{SeasonNumber, SeriesId};
 use crate::page;
 use crate::service::Queued;
 use crate::utils::TimedOut;
@@ -83,7 +84,7 @@ pub(crate) enum Message {
     /// Navigate history by the specified stride.
     History(isize),
     /// Images have been loaded in the background.
-    ImagesLoaded(Result<Vec<(Image, Handle)>, ErrorMessage>),
+    ImagesLoaded(Result<Vec<(ImageKey, Handle)>, ErrorMessage>),
 }
 
 impl From<Result<()>> for Message {

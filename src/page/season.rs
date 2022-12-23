@@ -4,11 +4,16 @@ use iced::widget::{button, column, container, image, row, text, Column, Row};
 use iced::{theme, Command};
 use iced::{Element, Length};
 
+use crate::cache::ImageHint;
 use crate::comps;
 use crate::model::{EpisodeId, SeasonNumber, SeriesId};
-use crate::params::{centered, style, ACTION_SIZE, GAP, GAP2, SPACE, SUBTITLE_SIZE, WARNING_COLOR};
+use crate::params::{
+    centered, style, ACTION_SIZE, GAP, GAP2, IMAGE_HEIGHT, SPACE, SUBTITLE_SIZE, WARNING_COLOR,
+};
 
 use crate::state::State;
+
+const SCREENCAP_HINT: ImageHint = ImageHint::Max(IMAGE_HEIGHT as u32);
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -39,7 +44,7 @@ impl Season {
             .iter()
             .filter(|e| e.season == season)
         {
-            s.assets.mark(e.filename);
+            s.assets.mark_with_hint(e.filename, SCREENCAP_HINT);
         }
     }
 
@@ -104,7 +109,10 @@ impl Season {
             .iter()
             .filter(|e| e.season == season.number)
         {
-            let screencap = match episode.filename.and_then(|image| s.assets.image(&image)) {
+            let screencap = match episode
+                .filename
+                .and_then(|image| s.assets.image_with_hint(&image, SCREENCAP_HINT))
+            {
                 Some(handle) => handle,
                 None => s.assets.missing_screencap(),
             };
@@ -202,8 +210,8 @@ impl Season {
             let info = column![info_top, overview];
 
             let image = container(image(screencap))
-                .max_width(200)
-                .max_height(200)
+                .max_width(IMAGE_HEIGHT as u32)
+                .max_height(IMAGE_HEIGHT as u32)
                 .align_x(Horizontal::Center);
 
             let image = column![image,];

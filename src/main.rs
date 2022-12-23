@@ -31,9 +31,9 @@ use iced_native::image::Handle;
 use params::{ACTION_SIZE, WARNING_COLOR};
 use utils::Singleton;
 
-use crate::assets::Assets;
+use crate::assets::{Assets, ImageKey};
 use crate::message::{Message, Page};
-use crate::model::{Image, ThemeType};
+use crate::model::ThemeType;
 use crate::params::{GAP, GAP2, HALF_GAP, SPACE, SUB_MENU_SIZE};
 use crate::service::Service;
 use crate::state::State;
@@ -112,7 +112,7 @@ struct Main {
     // Should exit.
     should_exit: bool,
     // Images to load.
-    images: Vec<Image>,
+    images: Vec<ImageKey>,
 }
 
 struct Flags {
@@ -480,7 +480,7 @@ impl Main {
     }
 
     fn handle_image_loading(&mut self) -> Command<Message> {
-        fn translate(value: Option<Result<Vec<(Image, Handle)>>>) -> Message {
+        fn translate(value: Option<Result<Vec<(ImageKey, Handle)>>>) -> Message {
             match value {
                 Some(Ok(value)) => Message::ImagesLoaded(Ok(value)),
                 Some(Err(e)) => Message::ImagesLoaded(Err(e.into())),
@@ -495,11 +495,11 @@ impl Main {
         self.images.clear();
 
         while self.images.len() < IMAGE_BATCH {
-            let Some(id) = self.state.assets.next_image() else {
+            let Some(key) = self.state.assets.next_image() else {
                 break;
             };
 
-            self.images.push(id);
+            self.images.push(key);
         }
 
         if self.images.is_empty() {

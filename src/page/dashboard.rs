@@ -4,11 +4,15 @@ use iced::widget::{button, column, container, image, row, text, vertical_space};
 use iced::{theme, Command, Element};
 use iced::{Alignment, Length};
 
+use crate::cache::ImageHint;
 use crate::message::Page;
 use crate::model::{EpisodeId, SeasonNumber, SeriesId};
 use crate::params::{centered, style, ACTION_SIZE, GAP, SMALL_SIZE, SPACE, SUBTITLE_SIZE};
 use crate::service::PendingRef;
 use crate::state::State;
+
+/// Dashboard gets a bit more leeway, since the image is dynamically scaled.
+const POSTER_HINT: ImageHint = ImageHint::Width(512);
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -26,12 +30,13 @@ pub(crate) struct Dashboard;
 
 impl Dashboard {
     pub(crate) fn prepare(&mut self, s: &mut State) {
-        s.assets.mark(
+        s.assets.mark_with_hint(
             s.service
                 .pending()
                 .rev()
                 .take(5)
                 .flat_map(|p| p.season.and_then(|s| s.poster).or(p.series.poster)),
+            POSTER_HINT,
         );
     }
 
@@ -88,10 +93,10 @@ impl Dashboard {
                 .width(Length::FillPortion(2)),
             );
 
-            let handle = match season
+            let poster = match season
                 .and_then(|s| s.poster)
                 .or(series.poster)
-                .and_then(|i| s.assets.image(&i))
+                .and_then(|i| s.assets.image_with_hint(&i, POSTER_HINT))
             {
                 Some(handle) => handle,
                 None => s.assets.missing_poster(),
@@ -141,7 +146,7 @@ impl Dashboard {
             .style(theme::Button::Text)
             .on_press(Message::Navigate(Page::Season(series.id, episode.season)));
 
-            let image = button(image(handle).width(Length::Fill))
+            let image = button(image(poster).width(Length::Fill))
                 .width(Length::Fill)
                 .padding(0)
                 .style(theme::Button::Text)

@@ -2,12 +2,16 @@ use iced::widget::{button, column, image, row, text, Column, Row};
 use iced::Length;
 use iced::{theme, Command, Element};
 
+use crate::cache::ImageHint;
 use crate::comps;
 use crate::message::Page;
 use crate::model::{RemoteSeriesId, SeriesId};
-use crate::params::{centered, style, GAP, GAP2, POSTER_HEIGHT, SPACE, SUBTITLE_SIZE};
+use crate::params::{centered, style, GAP, GAP2, IMAGE_HEIGHT, SPACE, SUBTITLE_SIZE};
 
 use crate::state::State;
+
+/// Posters are defined by their maximum height.
+const POSTER_HINT: ImageHint = ImageHint::Height(IMAGE_HEIGHT as u32);
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -36,11 +40,12 @@ impl Series {
         self.banner.prepare(s, series_id);
 
         if let Some(series) = s.service.series(series_id) {
-            s.assets.mark(
+            s.assets.mark_with_hint(
                 s.service
                     .seasons(&series.id)
                     .iter()
                     .flat_map(|season| season.poster.or(series.poster)),
+                POSTER_HINT,
             );
         }
     }
@@ -119,13 +124,13 @@ impl Series {
             let poster = match season
                 .poster
                 .or(series.poster)
-                .and_then(|i| s.assets.image(&i))
+                .and_then(|i| s.assets.image_with_hint(&i, POSTER_HINT))
             {
                 Some(poster) => poster,
                 None => s.assets.missing_poster(),
             };
 
-            let graphic = button(image(poster).height(Length::Units(POSTER_HEIGHT)))
+            let graphic = button(image(poster).height(Length::Units(IMAGE_HEIGHT)))
                 .on_press(Message::Navigate(Page::Season(series.id, season.number)))
                 .style(theme::Button::Text)
                 .padding(0);

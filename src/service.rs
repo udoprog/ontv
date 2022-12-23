@@ -15,7 +15,8 @@ use uuid::Uuid;
 
 use crate::api::themoviedb;
 use crate::api::thetvdb;
-use crate::cache;
+use crate::assets::ImageKey;
+use crate::cache::{self};
 
 use crate::model::{
     Config, Episode, EpisodeId, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, Season,
@@ -1081,8 +1082,8 @@ impl Service {
     /// Ensure that a collection of the given image ids are loaded.
     pub(crate) fn load_images(
         &self,
-        ids: &[Image],
-    ) -> impl Future<Output = Result<Vec<(Image, Handle)>>> {
+        ids: &[ImageKey],
+    ) -> impl Future<Output = Result<Vec<(ImageKey, Handle)>>> {
         use futures::StreamExt;
 
         let paths = self.paths.clone();
@@ -1094,16 +1095,18 @@ impl Service {
             let mut output = Vec::with_capacity(ids.len());
             let mut futures = FuturesUnordered::new();
 
-            for id in ids {
+            for key in ids {
                 let paths = paths.clone();
                 let tvdb = tvdb.clone();
                 let tmdb = tmdb.clone();
 
                 futures.push(async move {
-                    Ok::<_, Error>(match id {
-                        Image::Tvdb(id) => cache::image(&paths.images, &tvdb, id).await?,
-                        Image::Tmdb(id) => cache::image(&paths.images, &tmdb, id).await?,
-                    })
+                    let handle = match key.id {
+                        Image::Tvdb(id) => cache::image(&paths.images, &tvdb, id, key.hint).await?,
+                        Image::Tmdb(id) => cache::image(&paths.images, &tmdb, id, key.hint).await?,
+                    };
+
+                    Ok::<_, Error>((key, handle))
                 });
             }
 

@@ -5,15 +5,19 @@ use iced::widget::{button, column, image, radio, row, text, text_input, Column, 
 use iced::{theme, Alignment, Element};
 use iced::{Command, Length};
 
+use crate::cache::ImageHint;
 use crate::message::ErrorMessage;
 use crate::model::{RemoteSeriesId, SearchSeries, SeriesId};
 use crate::params::{
-    default_container, ACTION_SIZE, GAP, GAP2, POSTER_HEIGHT, SMALL_SIZE, SPACE, TITLE_SIZE,
+    default_container, ACTION_SIZE, GAP, GAP2, IMAGE_HEIGHT, SMALL_SIZE, SPACE, TITLE_SIZE,
 };
 use crate::service::NewSeries;
 use crate::state::State;
 
+/// Number of results per page.
 const PER_PAGE: usize = 5;
+/// Posters are defined by their maximum height.
+const POSTER_HINT: ImageHint = ImageHint::Height(IMAGE_HEIGHT as u32);
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum SearchKind {
@@ -60,12 +64,13 @@ pub(crate) struct Search {
 impl Search {
     /// Prepare data that is needed for the view.
     pub(crate) fn prepare(&mut self, s: &mut State) {
-        s.assets.mark(
+        s.assets.mark_with_hint(
             self.series
                 .iter()
                 .skip(self.page * PER_PAGE)
                 .take(PER_PAGE)
                 .flat_map(|s| s.poster),
+            POSTER_HINT,
         );
     }
 
@@ -150,7 +155,10 @@ impl Search {
         let mut results = column![];
 
         for series in self.series.iter().skip(self.page * PER_PAGE).take(PER_PAGE) {
-            let handle = match series.poster.and_then(|p| s.assets.image(&p)) {
+            let handle = match series
+                .poster
+                .and_then(|p| s.assets.image_with_hint(&p, POSTER_HINT))
+            {
                 Some(handle) => handle,
                 None => s.assets.missing_poster(),
             };
@@ -194,7 +202,7 @@ impl Search {
 
             results = results.push(
                 row![
-                    image(handle).height(Length::Units(POSTER_HEIGHT)),
+                    image(handle).height(Length::Units(IMAGE_HEIGHT)),
                     column![
                         column![
                             text(&series.name).size(24),

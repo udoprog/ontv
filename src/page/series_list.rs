@@ -2,11 +2,15 @@ use iced::widget::{button, image, row, text, text_input, vertical_space, Column,
 use iced::{theme, Command};
 use iced::{Element, Length};
 
+use crate::cache::ImageHint;
 use crate::comps;
 use crate::message::Page;
-use crate::params::{centered, style, GAP, GAP2, POSTER_HEIGHT, SPACE, SUBTITLE_SIZE};
+use crate::params::{centered, style, GAP, GAP2, IMAGE_HEIGHT, SPACE, SUBTITLE_SIZE};
 
 use crate::state::State;
+
+/// Posters are defined by their maximum height.
+const POSTER_HINT: ImageHint = ImageHint::Height(IMAGE_HEIGHT as u32);
 
 /// Messages generated and handled by [SeriesList].
 #[derive(Debug, Clone)]
@@ -35,10 +39,12 @@ impl SeriesList {
         if let Some(filtered) = &self.filtered {
             let series = s.service.all_series();
             let images = filtered.iter().flat_map(|&i| series.get(i)?.poster);
-            s.assets.mark(images);
+            s.assets.mark_with_hint(images, POSTER_HINT);
         } else {
-            s.assets
-                .mark(s.service.all_series().iter().flat_map(|s| s.poster));
+            s.assets.mark_with_hint(
+                s.service.all_series().iter().flat_map(|s| s.poster),
+                POSTER_HINT,
+            );
         }
     }
 
@@ -95,12 +101,15 @@ impl SeriesList {
         };
 
         for (index, (series, actions)) in iter.zip(&self.actions).enumerate() {
-            let poster = match series.poster.and_then(|i| s.assets.image(&i)) {
+            let poster = match series
+                .poster
+                .and_then(|i| s.assets.image_with_hint(&i, POSTER_HINT))
+            {
                 Some(handle) => handle,
                 None => s.assets.missing_poster(),
             };
 
-            let graphic = button(image(poster).height(Length::Units(POSTER_HEIGHT)))
+            let graphic = button(image(poster).height(Length::Units(IMAGE_HEIGHT)))
                 .on_press(Message::Navigate(Page::Series(series.id)))
                 .style(theme::Button::Text)
                 .padding(0);
