@@ -32,7 +32,7 @@ impl SeriesList {
     /// Prepare the view.
     pub(crate) fn prepare(&mut self, s: &mut State) {
         self.actions
-            .initialize_iter(s.service.all_series().iter().map(|s| s.id));
+            .init_from_iter(s.service.all_series().iter().map(|s| s.id));
 
         if let Some(filtered) = &self.filtered {
             let series = s.service.all_series();

@@ -33,7 +33,7 @@ impl Component<SeriesId> for SeriesActions {
     }
 
     #[inline]
-    fn init(&mut self, series_id: SeriesId) {
+    fn changed(&mut self, series_id: SeriesId) {
         if self.series_id != series_id {
             self.series_id = series_id;
             self.confirm = false;

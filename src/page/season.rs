@@ -7,7 +7,7 @@ use iced::{Element, Length};
 use crate::cache::ImageHint;
 use crate::component::*;
 use crate::comps;
-use crate::model::{EpisodeId, SeasonNumber, SeriesId};
+use crate::model::{EpisodeId, SeasonNumber, SeriesId, Watched};
 use crate::params::{centered, ACTION_SIZE, GAP, GAP2, SCREENCAP_HEIGHT, SPACE, SUBTITLE_SIZE};
 use crate::style;
 
@@ -18,19 +18,39 @@ const SCREENCAP_HINT: ImageHint = ImageHint::Fill(480, SCREENCAP_HEIGHT as u32);
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
-    RemoveWatch(EpisodeId),
-    RemoveLastWatch(SeriesId, EpisodeId),
-    CancelRemoveWatch,
+    RemoveWatch(usize, usize, comps::remove_watch::Message),
     Watch(SeriesId, EpisodeId),
     SelectPending(SeriesId, EpisodeId),
     SeasonInfo(comps::season_info::Message),
     SeriesBanner(comps::series_banner::Message),
 }
 
+struct EpisodeState {
+    remove_watches: Vec<comps::RemoveWatch>,
+}
+
+impl Component<(SeriesId, EpisodeId, &[Watched])> for EpisodeState {
+    #[inline]
+    fn new((series_id, episode_id, watched): (SeriesId, EpisodeId, &[Watched])) -> Self {
+        Self {
+            remove_watches: watched
+                .iter()
+                .map(move |w| comps::RemoveWatch::new((series_id, episode_id, w.id)))
+                .collect(),
+        }
+    }
+
+    #[inline]
+    fn changed(&mut self, (series_id, episode_id, watched): (SeriesId, EpisodeId, &[Watched])) {
+        self.remove_watches
+            .init_from_iter(watched.iter().map(|w| (series_id, episode_id, w.id)))
+    }
+}
+
 pub(crate) struct Season {
     series_id: SeriesId,
     season: SeasonNumber,
-    remove_watch: Option<EpisodeId>,
+    episodes: Vec<EpisodeState>,
     season_info: comps::SeasonInfo,
     banner: comps::SeriesBanner,
 }
@@ -41,13 +61,21 @@ impl Season {
         Self {
             series_id,
             season,
-            remove_watch: None,
+            episodes: Vec::new(),
             season_info: comps::SeasonInfo::new((series_id, season)),
             banner: comps::SeriesBanner::default(),
         }
     }
 
     pub(crate) fn prepare(&mut self, s: &mut State) {
+        self.episodes.init_from_iter(
+            s.service
+                .episodes(&self.series_id)
+                .iter()
+                .filter(|e| e.season == self.season)
+                .map(|e| (self.series_id, e.id, s.service.watched(&e.id))),
+        );
+
         self.banner.prepare(s, &self.series_id);
 
         for e in s
@@ -62,18 +90,18 @@ impl Season {
 
     pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
         match message {
-            Message::RemoveWatch(episode_id) => {
-                self.remove_watch = Some(episode_id);
-                Command::none()
-            }
-            Message::RemoveLastWatch(series_id, episode_id) => {
-                self.remove_watch = None;
-                s.service.remove_last_episode_watch(&series_id, &episode_id);
-                Command::none()
-            }
-            Message::CancelRemoveWatch => {
-                self.remove_watch = None;
-                Command::none()
+            Message::RemoveWatch(index, n, message) => {
+                if let Some(remove_watch) = self
+                    .episodes
+                    .get_mut(index)
+                    .and_then(|data| data.remove_watches.get_mut(n))
+                {
+                    remove_watch
+                        .update(s, message)
+                        .map(move |m| Message::RemoveWatch(index, n, m))
+                } else {
+                    Command::none()
+                }
             }
             Message::Watch(series, episode) => {
                 let now = Utc::now();
@@ -108,11 +136,13 @@ impl Season {
 
         let pending = s.service.get_pending(&series.id).map(|p| p.episode);
 
-        for episode in s
+        for (index, (episode, data)) in s
             .service
             .episodes(&series.id)
             .iter()
             .filter(|e| e.season == season.number)
+            .zip(&self.episodes)
+            .enumerate()
         {
             let screencap = match episode
                 .filename
@@ -147,38 +177,19 @@ impl Season {
                     .on_press(Message::Watch(series.id, episode.id)),
             );
 
-            if !watched.is_empty() {
-                match self.remove_watch {
-                    Some(episode_id) if episode_id == episode.id => {
-                        let mut prompt = Row::new();
+            let remove_last = match (watched, data.remove_watches.last()) {
+                ([_], Some(c)) => Some(("Remove watch", c)),
+                ([.., _], Some(c)) => Some(("Remove last watch", c)),
+                _ => None,
+            };
 
-                        prompt = prompt.push(
-                            button(text("Remove").size(ACTION_SIZE))
-                                .style(theme::Button::Destructive)
-                                .on_press(Message::RemoveLastWatch(series.id, episode_id)),
-                        );
+            if let Some((watch_text, c)) = remove_last {
+                let n = data.remove_watches.len().saturating_sub(1);
 
-                        prompt = prompt.push(
-                            button(text("Cancel").size(ACTION_SIZE))
-                                .style(theme::Button::Secondary)
-                                .on_press(Message::CancelRemoveWatch),
-                        );
-
-                        actions = actions.push(prompt);
-                    }
-                    _ => {
-                        let remove_watch_text = match watched {
-                            [_] => text("Remove watch"),
-                            _ => text("Remove last watch"),
-                        };
-
-                        actions = actions.push(
-                            button(remove_watch_text.size(ACTION_SIZE))
-                                .style(theme::Button::Primary)
-                                .on_press(Message::RemoveWatch(episode.id)),
-                        );
-                    }
-                }
+                actions = actions.push(
+                    c.view(watch_text)
+                        .map(move |m| Message::RemoveWatch(index, n, m)),
+                );
             }
 
             if pending != Some(episode.id) {
@@ -224,7 +235,7 @@ impl Season {
 
                 history = history.push(text("Watch history"));
 
-                for (n, watch) in watched.iter().enumerate() {
+                for ((n, watch), c) in watched.iter().enumerate().zip(&data.remove_watches) {
                     let mut row = Row::new();
 
                     row = row.push(
@@ -238,6 +249,11 @@ impl Season {
                         text(watch.timestamp.date_naive())
                             .size(ACTION_SIZE)
                             .width(Length::Fill),
+                    );
+
+                    row = row.push(
+                        c.view("Remove")
+                            .map(move |m| Message::RemoveWatch(index, n, m)),
                     );
 
                     history = history.push(row.width(Length::Fill).spacing(SPACE));

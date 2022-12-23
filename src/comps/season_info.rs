@@ -29,7 +29,7 @@ impl Component<(SeriesId, SeasonNumber)> for SeasonInfo {
     }
 
     #[inline]
-    fn init(&mut self, (series_id, season): (SeriesId, SeasonNumber)) {
+    fn changed(&mut self, (series_id, season): (SeriesId, SeasonNumber)) {
         self.series_id = series_id;
         self.season = season;
     }

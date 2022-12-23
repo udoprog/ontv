@@ -603,13 +603,18 @@ impl Service {
     }
 
     /// Remove all watches of the given episode.
-    pub(crate) fn remove_last_episode_watch(
+    pub(crate) fn remove_episode_watch(
         &mut self,
         series_id: &SeriesId,
         episode_id: &EpisodeId,
+        watch_id: &Uuid,
     ) {
+        log::trace!(
+            "remove series_id: {series_id}, episode_id: {episode_id}, watch_id: {watch_id}"
+        );
+
         let watched = self.db.watched.entry(*episode_id).or_default();
-        watched.pop();
+        watched.retain(|w| w.id != *watch_id);
         self.db.changes.set.insert(Change::Watched);
 
         if watched.is_empty() {

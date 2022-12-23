@@ -42,7 +42,7 @@ impl Series {
     }
 
     pub(crate) fn prepare(&mut self, s: &mut State) {
-        self.seasons.initialize_iter(
+        self.seasons.init_from_iter(
             s.service
                 .seasons(&self.series_id)
                 .iter()
