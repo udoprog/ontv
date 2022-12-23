@@ -67,6 +67,7 @@ impl Assets {
     }
 
     /// Setup images to load task.
+    #[allow(unused)]
     pub(crate) fn mark<I>(&mut self, ids: I)
     where
         I: IntoIterator<Item = Image>,
@@ -138,6 +139,7 @@ impl Assets {
     }
 
     /// Get an image without a hint.
+    #[allow(unused)]
     pub(crate) fn image(&self, id: &Image) -> Option<Handle> {
         let key = ImageKey {
             id: *id,

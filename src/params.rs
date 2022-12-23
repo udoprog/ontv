@@ -18,6 +18,9 @@ pub(crate) const CONTAINER_WIDTH: u32 = 1200;
 /// Standard poster height used in lists.
 pub(crate) const IMAGE_HEIGHT: u16 = 200;
 
+/// Standard screencap height.
+pub(crate) const SCREENCAP_HEIGHT: u16 = 270;
+
 /// Warning color.
 pub(crate) const WARNING_COLOR: Color = Color::from_rgba(0.5, 0.0, 0.0, 1.0);
 

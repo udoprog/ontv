@@ -1,10 +1,14 @@
 use iced::widget::{button, image, text, Column};
 use iced::{theme, Alignment, Command, Element, Length};
 
+use crate::cache::ImageHint;
 use crate::message::Page;
 use crate::model::{Series, SeriesId};
 use crate::params::{GAP, TITLE_SIZE};
 use crate::state::State;
+
+// Banner dimensions.
+const BANNER: ImageHint = ImageHint::Fill(1600, 300);
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -18,7 +22,7 @@ impl SeriesBanner {
     /// Prepare assets needed for banner.
     pub(crate) fn prepare(&mut self, s: &mut State, series_id: &SeriesId) {
         if let Some(series) = s.service.series(series_id) {
-            s.assets.mark(series.banner);
+            s.assets.mark_with_hint(series.banner, BANNER);
         }
     }
 
@@ -34,7 +38,10 @@ impl SeriesBanner {
 
     /// Generate buttons which perform actions on the given series.
     pub(crate) fn view(&self, s: &State, series: &Series) -> Element<'static, Message> {
-        let handle = match series.banner.and_then(|i| s.assets.image(&i)) {
+        let handle = match series
+            .banner
+            .and_then(|i| s.assets.image_with_hint(&i, BANNER))
+        {
             Some(handle) => handle,
             None => s.assets.missing_banner(),
         };

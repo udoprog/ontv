@@ -22,9 +22,7 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::Parser;
 use iced::theme::{self, Theme};
-use iced::widget::{
-    button, column, container, horizontal_rule, row, scrollable, text, Button, Space,
-};
+use iced::widget::{button, horizontal_rule, row, scrollable, text, Button, Column, Row};
 use iced::{Alignment, Application, Command, Element, Length, Settings};
 use iced_native::image::Handle;
 
@@ -34,7 +32,7 @@ use utils::Singleton;
 use crate::assets::{Assets, ImageKey};
 use crate::message::{Message, Page};
 use crate::model::ThemeType;
-use crate::params::{GAP, GAP2, HALF_GAP, SPACE, SUB_MENU_SIZE};
+use crate::params::{GAP, HALF_GAP, SPACE, SUB_MENU_SIZE};
 use crate::service::Service;
 use crate::state::State;
 use crate::utils::{TimedOut, Timeout};
@@ -313,54 +311,16 @@ impl Application for Main {
     }
 
     fn view(&self) -> Element<Message> {
-        let mut menu = column![].spacing(HALF_GAP).padding(GAP).max_width(200);
+        let mut top_menu = Row::new().spacing(HALF_GAP).align_items(Alignment::Center);
 
         let Some(&page) = self.state.page() else {
             return text("missing history entry").into();
         };
 
-        menu = menu.push(menu_item(&page, text("Dashboard"), Page::Dashboard));
-        menu = menu.push(menu_item(&page, text("Search"), Page::Search));
-        menu = menu.push(menu_item(&page, text("Series"), Page::SeriesList));
-
-        if let Page::Series(series_id) | Page::Season(series_id, _) = page {
-            let mut sub_menu = column![];
-
-            if let Some(series) = self.state.service.series(&series_id) {
-                sub_menu = sub_menu.push(row![
-                    Space::new(Length::Units(SPACE), Length::Shrink),
-                    menu_item(
-                        &page,
-                        text(&series.title).size(SUB_MENU_SIZE),
-                        Page::Series(series_id)
-                    )
-                ]);
-            }
-
-            for season in self.state.service.seasons(&series_id) {
-                let title = season.number.title();
-                let (watched, total) = self
-                    .state
-                    .service
-                    .season_watched(&series_id, &season.number);
-
-                let mut title = row![title.size(SUB_MENU_SIZE)];
-
-                if let Some(p) = watched.saturating_mul(100).checked_div(total) {
-                    title = title
-                        .push(text(format!(" - {p}% ({watched}/{total})")).size(SUB_MENU_SIZE));
-                }
-
-                sub_menu = sub_menu.push(row![
-                    Space::new(Length::Units(HALF_GAP), Length::Shrink),
-                    menu_item(&page, title, Page::Season(series_id, season.number),)
-                ]);
-            }
-
-            menu = menu.push(sub_menu.spacing(SPACE));
-        }
-
-        menu = menu.push(menu_item(&page, text("Settings"), Page::Settings));
+        top_menu = top_menu.push(menu_item(&page, text("Dashboard"), Page::Dashboard));
+        top_menu = top_menu.push(menu_item(&page, text("Search"), Page::Search));
+        top_menu = top_menu.push(menu_item(&page, text("Series"), Page::SeriesList));
+        top_menu = top_menu.push(menu_item(&page, text("Settings"), Page::Settings));
 
         // Build queue element.
         {
@@ -371,13 +331,53 @@ impl Application for Main {
                 n => text(format!("Queue ({n})")),
             };
 
-            menu = menu.push(menu_item(&page, text, Page::Downloads));
+            top_menu = top_menu.push(menu_item(&page, text, Page::Downloads));
         }
 
-        let content = row![menu]
-            .spacing(GAP2)
-            .width(Length::Fill)
-            .height(Length::Fill);
+        let mut menu = Column::new().push(top_menu);
+
+        if let Page::Series(series_id) | Page::Season(series_id, _) = page {
+            let mut sub_menu = Row::new();
+
+            if let Some(series) = self.state.service.series(&series_id) {
+                sub_menu = sub_menu.push(row![menu_item(
+                    &page,
+                    text(&series.title).size(SUB_MENU_SIZE),
+                    Page::Series(series_id)
+                )]);
+            }
+
+            for season in self.state.service.seasons(&series_id) {
+                let title = season.number.title();
+
+                let (watched, total) = self
+                    .state
+                    .service
+                    .season_watched(&series_id, &season.number);
+
+                let mut title = Row::new().push(title.size(SUB_MENU_SIZE));
+
+                if let Some(p) = watched.saturating_mul(100).checked_div(total) {
+                    title = title.push(text(format!(" ({p}%)")).size(SUB_MENU_SIZE));
+                }
+
+                sub_menu = sub_menu.push(menu_item(
+                    &page,
+                    title,
+                    Page::Season(series_id, season.number),
+                ));
+            }
+
+            menu = menu.push(sub_menu.spacing(GAP));
+        }
+
+        let mut window = Column::new();
+
+        window = window.push(
+            menu.align_items(Alignment::Center)
+                .spacing(GAP)
+                .padding(GAP),
+        );
 
         let page: Element<'static, Message> = match page {
             Page::Dashboard => self.dashboard.view(&self.state).map(Message::Dashboard),
@@ -395,13 +395,10 @@ impl Application for Main {
             Page::Downloads => self.queue.view(&self.state).into(),
         };
 
-        let content = content.push(scrollable(page));
+        window = window.push(horizontal_rule(1));
+        window = window.push(scrollable(page).height(Length::Fill));
 
-        let mut window = column![];
-
-        window = window.push(content);
-
-        let mut status_bar = row![];
+        let mut status_bar = Row::new();
 
         if self.state.is_loading() {
             status_bar = status_bar.push(text("loading...").size(ACTION_SIZE));
@@ -427,7 +424,8 @@ impl Application for Main {
                 .padding(SPACE),
         );
 
-        container(window)
+        window
+            .align_items(Alignment::Center)
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
@@ -523,9 +521,11 @@ where
         .style(theme::Button::Text)
         .width(Length::Fill);
 
-    if *at == page {
+    let current = if *at == page {
         current
     } else {
         current.on_press(Message::Navigate(page))
-    }
+    };
+
+    current.width(Length::Shrink)
 }

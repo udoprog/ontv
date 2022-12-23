@@ -15,6 +15,7 @@ const TMDB: u64 = 0xd614d57a2eadc500u64;
 
 /// Whether or not to provide a scaled version of the image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(unused)]
 pub(crate) enum ImageHint {
     /// Ensure that the image is scaled so that it has a max width in the
     /// specified number of pixels.
@@ -24,6 +25,8 @@ pub(crate) enum ImageHint {
     Height(u32),
     /// Specifies a maximum width and height.
     Max(u32),
+    /// Fill the specified dimensions.
+    Fill(u32, u32),
 }
 
 impl fmt::Display for ImageHint {
@@ -33,6 +36,7 @@ impl fmt::Display for ImageHint {
             ImageHint::Width(px) => write!(f, "w{px}"),
             ImageHint::Height(px) => write!(f, "h{px}"),
             ImageHint::Max(px) => write!(f, "x{px}"),
+            ImageHint::Fill(w, h) => write!(f, "f{w}x{h}"),
         }
     }
 }
@@ -143,6 +147,9 @@ where
                 ImageHint::Width(px) => image.resize(px, height, FilterType::Lanczos3),
                 ImageHint::Height(px) => image.resize(width, px, FilterType::Lanczos3),
                 ImageHint::Max(px) => image.resize(px, px, FilterType::Lanczos3),
+                ImageHint::Fill(width, height) => {
+                    image.resize_to_fill(width, height, FilterType::Lanczos3)
+                }
             })
             .await?
         }

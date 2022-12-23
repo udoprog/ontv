@@ -8,12 +8,13 @@ use crate::cache::ImageHint;
 use crate::comps;
 use crate::model::{EpisodeId, SeasonNumber, SeriesId};
 use crate::params::{
-    centered, style, ACTION_SIZE, GAP, GAP2, IMAGE_HEIGHT, SPACE, SUBTITLE_SIZE, WARNING_COLOR,
+    centered, style, ACTION_SIZE, GAP, GAP2, SCREENCAP_HEIGHT, SPACE, SUBTITLE_SIZE, WARNING_COLOR,
 };
 
 use crate::state::State;
 
-const SCREENCAP_HINT: ImageHint = ImageHint::Max(IMAGE_HEIGHT as u32);
+// Force a 16:9 aspect ratio
+const SCREENCAP_HINT: ImageHint = ImageHint::Fill(480, SCREENCAP_HEIGHT as u32);
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -213,8 +214,7 @@ impl Season {
             let info = Column::new().push(info_top).push(overview);
 
             let image = container(image(screencap))
-                .max_width(IMAGE_HEIGHT as u32)
-                .max_height(IMAGE_HEIGHT as u32)
+                .max_height(SCREENCAP_HEIGHT as u32)
                 .align_x(Horizontal::Center);
 
             episodes = episodes.push(
