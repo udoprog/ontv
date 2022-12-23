@@ -16,9 +16,7 @@ pub(crate) use self::etag::Etag;
 pub(crate) use self::hex::Hex;
 pub(crate) use self::raw::Raw;
 
-#[derive(
-    Default, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 #[serde(transparent)]
 pub(crate) struct SeriesId(Uuid);
@@ -47,9 +45,7 @@ impl FromStr for SeriesId {
     }
 }
 
-#[derive(
-    Default, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 #[serde(transparent)]
 pub(crate) struct EpisodeId(Uuid);
@@ -268,7 +264,7 @@ mod btree_as_vec {
 }
 
 /// A season in a series.
-#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct Watched {
     /// Unique identifier for this watch.

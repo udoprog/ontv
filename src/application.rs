@@ -50,16 +50,22 @@ pub(crate) enum Message {
     ImagesLoaded(Result<Vec<(ImageKey, Handle)>, ErrorMessage>),
 }
 
+enum Current {
+    Dashboard(page::Dashboard),
+    Settings(page::Settings),
+    Search(page::Search),
+    Series(page::Series),
+    SeriesList(page::SeriesList),
+    Season(page::Season),
+    Queue(page::Queue),
+}
+
 /// Main application.
 pub(crate) struct Application {
+    /// Application state.
     state: state::State,
-    dashboard: page::Dashboard,
-    settings: page::Settings,
-    search: page::Search,
-    series: page::Series,
-    series_list: page::SeriesList,
-    season: page::Season,
-    queue: page::Queue,
+    /// Current page state.
+    current: Current,
     // Timeout before database changes are saved to the filesystem.
     database_timeout: Timeout,
     // Timeout to populate the update queue.
@@ -89,13 +95,7 @@ impl iced::Application for Application {
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
         let mut this = Application {
             state: State::new(flags.service, Assets::new()),
-            dashboard: page::dashboard::Dashboard::default(),
-            settings: page::settings::Settings::default(),
-            search: page::search::Search::default(),
-            series: page::series::Series::default(),
-            series_list: page::series_list::SeriesList::default(),
-            season: page::season::Season::default(),
-            queue: page::queue::Queue::default(),
+            current: Current::Dashboard(page::dashboard::Dashboard::default()),
             database_timeout: Timeout::default(),
             update_timeout: Timeout::default(),
             image_loader: Singleton::default(),
@@ -151,8 +151,29 @@ impl iced::Application for Application {
     fn update(&mut self, message: Message) -> Command<Self::Message> {
         log::trace!("{message:?}");
 
-        let command = match message {
-            Message::CloseRequested => {
+        let command = match (message, &mut self.current) {
+            (Message::Settings(message), Current::Settings(page)) => {
+                page.update(&mut self.state, message).map(Message::Settings)
+            }
+            (Message::Dashboard(message), Current::Dashboard(page)) => page
+                .update(&mut self.state, message)
+                .map(Message::Dashboard),
+            (Message::Search(message), Current::Search(page)) => {
+                page.update(&mut self.state, message).map(Message::Search)
+            }
+            (Message::SeriesList(message), Current::SeriesList(page)) => page
+                .update(&mut self.state, message)
+                .map(Message::SeriesList),
+            (Message::Series(message), Current::Series(page)) => {
+                page.update(&mut self.state, message).map(Message::Series)
+            }
+            (Message::Season(message), Current::Season(page)) => {
+                page.update(&mut self.state, message).map(Message::Season)
+            }
+            (Message::Queue(message), Current::Queue(page)) => {
+                page.update(&mut self.state, message).map(Message::Queue)
+            }
+            (Message::CloseRequested, _) => {
                 self.exit_after_save = true;
 
                 if self.database_timeout.is_set() {
@@ -163,35 +184,7 @@ impl iced::Application for Application {
 
                 return Command::none();
             }
-            Message::Settings(message) => self
-                .settings
-                .update(&mut self.state, message)
-                .map(Message::Settings),
-            Message::Dashboard(message) => self
-                .dashboard
-                .update(&mut self.state, message)
-                .map(Message::Dashboard),
-            Message::Search(message) => self
-                .search
-                .update(&mut self.state, message)
-                .map(Message::Search),
-            Message::SeriesList(message) => self
-                .series_list
-                .update(&mut self.state, message)
-                .map(Message::SeriesList),
-            Message::Series(message) => self
-                .series
-                .update(&mut self.state, message)
-                .map(Message::Series),
-            Message::Season(message) => self
-                .season
-                .update(&mut self.state, message)
-                .map(Message::Season),
-            Message::Queue(message) => self
-                .queue
-                .update(&mut self.state, message)
-                .map(Message::Queue),
-            Message::Save(timed_out) => {
+            (Message::Save(timed_out), _) => {
                 // To avoid a cancellation loop we need to return here.
                 if !matches!(timed_out, TimedOut::TimedOut) && !self.exit_after_save {
                     return Command::none();
@@ -205,7 +198,7 @@ impl iced::Application for Application {
                     Err(error) => Message::Saved(Err(error.into())),
                 })
             }
-            Message::Saved(result) => {
+            (Message::Saved(result), _) => {
                 if let Err(error) = result {
                     self.state.handle_error(error);
                 }
@@ -217,7 +210,7 @@ impl iced::Application for Application {
                 self.state.set_saving(false);
                 Command::none()
             }
-            Message::CheckForUpdates(timed_out) => {
+            (Message::CheckForUpdates(timed_out), _) => {
                 match timed_out {
                     TimedOut::TimedOut => {
                         let now = Utc::now();
@@ -243,7 +236,7 @@ impl iced::Application for Application {
                     }
                 }
             }
-            Message::UpdateDownloadQueue(result) => {
+            (Message::UpdateDownloadQueue(result), _) => {
                 match result {
                     Ok(queue) => {
                         self.state.service.add_to_queue(queue);
@@ -255,19 +248,19 @@ impl iced::Application for Application {
 
                 Command::none()
             }
-            Message::Navigate(page) => {
+            (Message::Navigate(page), _) => {
                 self.state.push_history(page);
                 Command::none()
             }
-            Message::History(relative) => {
+            (Message::History(relative), _) => {
                 self.state.history(relative);
                 Command::none()
             }
-            Message::Scroll(offset) => {
+            (Message::Scroll(offset), _) => {
                 self.state.history_scroll(offset);
                 Command::none()
             }
-            Message::ImagesLoaded(loaded) => {
+            (Message::ImagesLoaded(loaded), _) => {
                 match loaded {
                     Ok(loaded) => {
                         self.state.assets.insert_images(loaded);
@@ -280,6 +273,7 @@ impl iced::Application for Application {
                 self.image_loader.clear();
                 return self.handle_image_loading();
             }
+            _ => Command::none(),
         };
 
         let save_database = if self.state.service.has_changes() && !self.exit_after_save {
@@ -291,14 +285,25 @@ impl iced::Application for Application {
             Command::none()
         };
 
-        self.prepare();
+        let scroll = if let Some((page, scroll)) = self.state.history_change() {
+            self.current = match page {
+                Page::Dashboard => Current::Dashboard(page::Dashboard::default()),
+                Page::Search => Current::Search(page::Search::default()),
+                Page::SeriesList => Current::SeriesList(page::SeriesList::default()),
+                Page::Series(series_id) => Current::Series(page::Series::new(series_id)),
+                Page::Settings => Current::Settings(page::Settings::default()),
+                Page::Season(series_id, season) => {
+                    Current::Season(page::Season::new(series_id, season))
+                }
+                Page::Queue => Current::Queue(page::Queue::default()),
+            };
 
-        let scroll = if let Some(scroll) = self.state.take_history_scroll() {
             scrollable::snap_to(self.scrollable_id.clone(), scroll)
         } else {
             Command::none()
         };
 
+        self.prepare();
         Command::batch([self.handle_image_loading(), save_database, command, scroll])
     }
 
@@ -398,20 +403,14 @@ impl iced::Application for Application {
                 .padding(GAP),
         );
 
-        let page: Element<'static, Message> = match page {
-            Page::Dashboard => self.dashboard.view(&self.state).map(Message::Dashboard),
-            Page::Search => self.search.view(&self.state).map(Message::Search),
-            Page::SeriesList => self.series_list.view(&self.state).map(Message::SeriesList),
-            Page::Series(series_id) => self
-                .series
-                .view(&self.state, &series_id)
-                .map(Message::Series),
-            Page::Settings => self.settings.view(&self.state).map(Message::Settings),
-            Page::Season(series_id, season) => self
-                .season
-                .view(&self.state, &series_id, &season)
-                .map(Message::Season),
-            Page::Queue => self.queue.view(&self.state).map(Message::Queue),
+        let page: Element<'static, Message> = match &self.current {
+            Current::Dashboard(page) => page.view(&self.state).map(Message::Dashboard),
+            Current::Search(page) => page.view(&self.state).map(Message::Search),
+            Current::SeriesList(page) => page.view(&self.state).map(Message::SeriesList),
+            Current::Series(page) => page.view(&self.state).map(Message::Series),
+            Current::Settings(page) => page.view(&self.state).map(Message::Settings),
+            Current::Season(page) => page.view(&self.state).map(Message::Season),
+            Current::Queue(page) => page.view(&self.state).map(Message::Queue),
         };
 
         window = window.push(horizontal_rule(1));
@@ -474,31 +473,27 @@ impl iced::Application for Application {
 impl Application {
     // Call prepare on the appropriate components to prepare asset loading.
     fn prepare(&mut self) {
-        let Some(page) = self.state.page() else {
-            return;
-        };
-
-        match *page {
-            Page::Dashboard => {
-                self.dashboard.prepare(&mut self.state);
+        match &mut self.current {
+            Current::Dashboard(page) => {
+                page.prepare(&mut self.state);
             }
-            Page::Search => {
-                self.search.prepare(&mut self.state);
+            Current::Search(page) => {
+                page.prepare(&mut self.state);
             }
-            Page::SeriesList => {
-                self.series_list.prepare(&mut self.state);
+            Current::SeriesList(page) => {
+                page.prepare(&mut self.state);
             }
-            Page::Series(series_id) => {
-                self.series.prepare(&mut self.state, &series_id);
+            Current::Series(page) => {
+                page.prepare(&mut self.state);
             }
-            Page::Settings => {
-                self.settings.prepare(&mut self.state);
+            Current::Settings(page) => {
+                page.prepare(&mut self.state);
             }
-            Page::Season(series_id, season) => {
-                self.season.prepare(&mut self.state, &series_id, season);
+            Current::Season(page) => {
+                page.prepare(&mut self.state);
             }
-            Page::Queue => {
-                self.queue.prepare(&mut self.state);
+            Current::Queue(page) => {
+                page.prepare(&mut self.state);
             }
         }
 

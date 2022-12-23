@@ -5,6 +5,7 @@ mod api;
 mod application;
 mod assets;
 mod cache;
+mod component;
 mod comps;
 pub mod import;
 mod message;

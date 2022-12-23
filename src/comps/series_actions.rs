@@ -1,6 +1,7 @@
 use iced::widget::{button, text, Row};
 use iced::{theme, Command, Element};
 
+use crate::component::Component;
 use crate::message::ErrorMessage;
 use crate::model::{RemoteSeriesId, Series, SeriesId};
 use crate::params::{ACTION_SIZE, SPACE};
@@ -9,59 +10,78 @@ use crate::state::State;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
-    Untrack(SeriesId),
-    Track(SeriesId),
-    RefreshSeries(SeriesId),
-    RemoveSeries(SeriesId),
-    SeriesDownloadToTrack(Option<SeriesId>, RemoteSeriesId, NewSeries),
-    SeriesDownloadFailed(Option<SeriesId>, RemoteSeriesId, ErrorMessage),
+    Untrack,
+    Track,
+    RefreshSeries,
+    RemoveSeries,
+    SeriesDownload(SeriesId, RemoteSeriesId, Result<NewSeries, ErrorMessage>),
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct SeriesActions {
-    _confirm: bool,
+    series_id: SeriesId,
+    confirm: bool,
+}
+
+impl Component<SeriesId> for SeriesActions {
+    #[inline]
+    fn new(series_id: SeriesId) -> Self {
+        Self {
+            series_id,
+            confirm: false,
+        }
+    }
+
+    #[inline]
+    fn init(&mut self, series_id: SeriesId) {
+        if self.series_id != series_id {
+            self.series_id = series_id;
+            self.confirm = false;
+        }
+    }
 }
 
 impl SeriesActions {
-    /// Update message.
     pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
         match message {
-            Message::Untrack(series_id) => {
-                s.service.untrack(&series_id);
+            Message::Untrack => {
+                s.service.untrack(&self.series_id);
                 Command::none()
             }
-            Message::Track(series_id) => {
-                s.service.track(&series_id);
+            Message::Track => {
+                s.service.track(&self.series_id);
                 Command::none()
             }
-            Message::RefreshSeries(series_id) => {
-                if let Some(future) = s.refresh_series(&series_id) {
+            Message::RefreshSeries => {
+                if let Some(future) = s.refresh_series(&self.series_id) {
                     Command::perform(future, |(id, remote_id, result)| match result {
-                        Ok(new_data) => Message::SeriesDownloadToTrack(id, remote_id, new_data),
-                        Err(e) => Message::SeriesDownloadFailed(id, remote_id, e.into()),
+                        Ok(new_data) => Message::SeriesDownload(id, remote_id, Ok(new_data)),
+                        Err(e) => Message::SeriesDownload(id, remote_id, Err(e.into())),
                     })
                 } else {
                     Command::none()
                 }
             }
-            Message::RemoveSeries(series_id) => {
-                s.remove_series(&series_id);
+            Message::RemoveSeries => {
+                s.remove_series(&self.series_id);
                 Command::none()
             }
-            Message::SeriesDownloadToTrack(id, remote_id, data) => {
-                s.download_complete(id, remote_id);
-                s.service.insert_new_series(data);
-                Command::none()
-            }
-            Message::SeriesDownloadFailed(id, remote_id, error) => {
-                s.download_complete(id, remote_id);
-                s.handle_error(error);
+            Message::SeriesDownload(series_id, remote_id, result) => {
+                match result {
+                    Ok(data) => {
+                        s.service.insert_new_series(data);
+                    }
+                    Err(error) => {
+                        s.handle_error(error);
+                    }
+                }
+
+                s.download_complete(Some(series_id), remote_id);
                 Command::none()
             }
         }
     }
 
-    /// Generate buttons which perform actions on the given series.
     pub(crate) fn view(&self, s: &State, series: &Series) -> Element<'static, Message> {
         let mut row = Row::new();
 
@@ -69,13 +89,13 @@ impl SeriesActions {
             row = row.push(
                 button(text("Untrack").size(ACTION_SIZE))
                     .style(theme::Button::Destructive)
-                    .on_press(Message::Untrack(series.id)),
+                    .on_press(Message::Untrack),
             );
         } else {
             row = row.push(
                 button(text("Track").size(ACTION_SIZE))
                     .style(theme::Button::Positive)
-                    .on_press(Message::Track(series.id)),
+                    .on_press(Message::Track),
             );
         }
 
@@ -87,13 +107,13 @@ impl SeriesActions {
             row = row.push(
                 button(text("Refresh").size(ACTION_SIZE))
                     .style(theme::Button::Positive)
-                    .on_press(Message::RefreshSeries(series.id)),
+                    .on_press(Message::RefreshSeries),
             );
 
             row = row.push(
                 button(text("Remove").size(ACTION_SIZE))
                     .style(theme::Button::Destructive)
-                    .on_press(Message::RemoveSeries(series.id)),
+                    .on_press(Message::RemoveSeries),
             );
         }
 

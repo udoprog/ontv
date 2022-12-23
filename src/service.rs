@@ -474,7 +474,7 @@ impl Service {
     pub(crate) fn watch_remaining_season(
         &mut self,
         series_id: &SeriesId,
-        season: SeasonNumber,
+        season: &SeasonNumber,
         timestamp: DateTime<Utc>,
     ) {
         let mut last = None;
@@ -485,7 +485,7 @@ impl Service {
             .get(series_id)
             .into_iter()
             .flatten()
-            .filter(|e| e.season == season)
+            .filter(|e| e.season == *season)
         {
             if self.watch_count(&episode.id) > 0 {
                 continue;

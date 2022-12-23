@@ -2,7 +2,8 @@ use chrono::Utc;
 use iced::widget::{button, text, Column, Row};
 use iced::{theme, Command, Element, Length};
 
-use crate::model::{Season, SeasonNumber, Series, SeriesId};
+use crate::component::Component;
+use crate::model::{SeasonNumber, SeriesId};
 use crate::params::{ACTION_SIZE, GAP, SPACE};
 
 use crate::state::State;
@@ -10,44 +11,57 @@ use crate::state::State;
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     /// Weatch the remainder of all unwatched episodes in the specified season.
-    WatchRemainingSeason(SeriesId, SeasonNumber),
+    WatchRemainingSeason,
     /// Remove all matching season watches.
-    RemoveSeasonWatches(SeriesId, SeasonNumber),
+    RemoveSeasonWatches,
 }
 
-#[derive(Default, Clone)]
-pub(crate) struct SeasonInfo {}
+#[derive(Clone)]
+pub(crate) struct SeasonInfo {
+    series_id: SeriesId,
+    season: SeasonNumber,
+}
+
+impl Component<(SeriesId, SeasonNumber)> for SeasonInfo {
+    #[inline]
+    fn new((series_id, season): (SeriesId, SeasonNumber)) -> Self {
+        Self { series_id, season }
+    }
+
+    #[inline]
+    fn init(&mut self, (series_id, season): (SeriesId, SeasonNumber)) {
+        self.series_id = series_id;
+        self.season = season;
+    }
+}
 
 impl SeasonInfo {
     pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
         match message {
-            Message::WatchRemainingSeason(series, season) => {
+            Message::WatchRemainingSeason => {
                 let now = Utc::now();
-                s.service.watch_remaining_season(&series, season, now);
+                s.service
+                    .watch_remaining_season(&self.series_id, &self.season, now);
                 Command::none()
             }
-            Message::RemoveSeasonWatches(series, season) => {
+            Message::RemoveSeasonWatches => {
                 let now = Utc::now();
-                s.service.remove_season_watches(&series, &season, now);
+                s.service
+                    .remove_season_watches(&self.series_id, &self.season, now);
                 Command::none()
             }
         }
     }
 
-    pub(crate) fn view(
-        &self,
-        s: &State,
-        series: &Series,
-        season: &Season,
-    ) -> Element<'static, Message> {
-        let (watched, total) = s.service.season_watched(&series.id, &season.number);
+    pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
+        let (watched, total) = s.service.season_watched(&self.series_id, &self.season);
         let mut actions = Row::new().spacing(SPACE);
 
         if watched < total {
             actions = actions.push(
                 button(text("Watch remaining").size(ACTION_SIZE))
                     .style(theme::Button::Primary)
-                    .on_press(Message::WatchRemainingSeason(series.id, season.number)),
+                    .on_press(Message::WatchRemainingSeason),
             );
         }
 
@@ -55,7 +69,7 @@ impl SeasonInfo {
             actions = actions.push(
                 button(text("Remove watches").size(ACTION_SIZE))
                     .style(theme::Button::Destructive)
-                    .on_press(Message::RemoveSeasonWatches(series.id, season.number)),
+                    .on_press(Message::RemoveSeasonWatches),
             );
         }
 

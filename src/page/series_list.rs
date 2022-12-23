@@ -3,6 +3,7 @@ use iced::{theme, Command};
 use iced::{Element, Length};
 
 use crate::cache::ImageHint;
+use crate::component::*;
 use crate::comps;
 use crate::message::Page;
 use crate::params::{centered, GAP, GAP2, IMAGE_HEIGHT, SPACE, SUBTITLE_SIZE};
@@ -30,11 +31,8 @@ pub(crate) struct SeriesList {
 impl SeriesList {
     /// Prepare the view.
     pub(crate) fn prepare(&mut self, s: &mut State) {
-        let len = s.service.all_series().len();
-
-        if self.actions.len() != len {
-            self.actions.resize(len, comps::SeriesActions::default());
-        }
+        self.actions
+            .initialize_iter(s.service.all_series().iter().map(|s| s.id));
 
         if let Some(filtered) = &self.filtered {
             let series = s.service.all_series();

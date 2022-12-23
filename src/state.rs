@@ -86,13 +86,13 @@ impl State {
     }
 
     /// Acquire history scroll to restore.
-    pub(crate) fn take_history_scroll(&mut self) -> Option<f32> {
+    pub(crate) fn history_change(&mut self) -> Option<(Page, f32)> {
         if !self.history_changed {
             return None;
         }
 
         self.history_changed = false;
-        Some(self.history.get(self.history_index)?.1)
+        Some(*self.history.get(self.history_index)?)
     }
 
     /// Handle an error.
@@ -144,7 +144,7 @@ impl State {
     pub(crate) fn refresh_series(
         &mut self,
         series_id: &SeriesId,
-    ) -> Option<impl Future<Output = (Option<SeriesId>, RemoteSeriesId, Result<NewSeries>)>> {
+    ) -> Option<impl Future<Output = (SeriesId, RemoteSeriesId, Result<NewSeries>)>> {
         let remote_id = self.service.series(series_id)?.remote_id?;
 
         self.downloading.insert(remote_id);
@@ -153,7 +153,7 @@ impl State {
         let (_, op) = self.service.download_series(&remote_id, false);
 
         let series_id = *series_id;
-        Some(async move { (Some(series_id), remote_id, op.await) })
+        Some(async move { (series_id, remote_id, op.await) })
     }
 
     /// Download a series by remote.

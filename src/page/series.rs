@@ -3,6 +3,7 @@ use iced::{theme, Command, Element};
 use iced::{Alignment, Length};
 
 use crate::cache::ImageHint;
+use crate::component::*;
 use crate::comps;
 use crate::message::Page;
 use crate::model::{RemoteSeriesId, SeriesId};
@@ -22,27 +23,38 @@ pub(crate) enum Message {
     SeriesBanner(comps::series_banner::Message),
 }
 
-#[derive(Default)]
 pub(crate) struct Series {
+    series_id: SeriesId,
     series: comps::SeriesActions,
     seasons: Vec<comps::SeasonInfo>,
     banner: comps::SeriesBanner,
 }
 
 impl Series {
-    pub(crate) fn prepare(&mut self, s: &mut State, series_id: &SeriesId) {
-        let len = s.service.seasons(series_id).len();
-
-        if self.seasons.len() != len {
-            self.seasons.resize(len, comps::SeasonInfo::default());
+    #[inline]
+    pub(crate) fn new(series_id: SeriesId) -> Self {
+        Self {
+            series_id,
+            series: comps::SeriesActions::new(series_id),
+            seasons: Vec::new(),
+            banner: comps::SeriesBanner::default(),
         }
+    }
 
-        self.banner.prepare(s, series_id);
+    pub(crate) fn prepare(&mut self, s: &mut State) {
+        self.seasons.initialize_iter(
+            s.service
+                .seasons(&self.series_id)
+                .iter()
+                .map(|s| (self.series_id, s.number)),
+        );
 
-        if let Some(series) = s.service.series(series_id) {
+        self.banner.prepare(s, &self.series_id);
+
+        if let Some(series) = s.service.series(&self.series_id) {
             s.assets.mark_with_hint(
                 s.service
-                    .seasons(&series.id)
+                    .seasons(&self.series_id)
                     .iter()
                     .flat_map(|season| season.poster.or(series.poster)),
                 POSTER_HINT,
@@ -91,8 +103,8 @@ impl Series {
     }
 
     /// Render view of series.
-    pub(crate) fn view(&self, s: &State, series_id: &SeriesId) -> Element<'static, Message> {
-        let Some(series) = s.service.series(series_id) else {
+    pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
+        let Some(series) = s.service.series(&self.series_id) else {
             return Column::new().into();
         };
 
@@ -147,10 +159,7 @@ impl Series {
                         .push(
                             Column::new()
                                 .push(title)
-                                .push(
-                                    c.view(s, series, season)
-                                        .map(move |m| Message::SeasonInfo(index, m)),
-                                )
+                                .push(c.view(s).map(move |m| Message::SeasonInfo(index, m)))
                                 .spacing(SPACE),
                         )
                         .spacing(GAP),
