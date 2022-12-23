@@ -13,6 +13,8 @@ license = "MIT/Apache-2.0"
 keywords = []
 categories = []
 
+exclude = ["assets/*.xcf", "images/"]
+
 [dependencies]
 anyhow = "1.0.68"
 arrayvec = "0.7.2"
