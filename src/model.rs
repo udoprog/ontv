@@ -738,8 +738,6 @@ pub(crate) enum TaskKind {
     CheckForUpdates {
         // Series to download.
         series_id: SeriesId,
-        // Remote to download.
-        remote_id: RemoteSeriesId,
     },
 }
 

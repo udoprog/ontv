@@ -10,7 +10,6 @@ use crate::service::{NewSeries, Service};
 
 #[derive(Debug, Clone)]
 pub(crate) struct SeriesDownload {
-    series_id: SeriesId,
     remote_id: RemoteSeriesId,
     result: Result<NewSeries, ErrorMessage>,
 }
@@ -34,8 +33,6 @@ pub(crate) struct State {
     saving: bool,
     /// Set of series which are in the process of being downloaded.
     downloading: HashSet<RemoteSeriesId>,
-    /// Series IDs in the process of being downloaded.
-    downloading_ids: HashSet<SeriesId>,
 }
 
 impl State {
@@ -51,7 +48,6 @@ impl State {
             errors: VecDeque::new(),
             saving: false,
             downloading: HashSet::new(),
-            downloading_ids: HashSet::new(),
         }
     }
 
@@ -125,26 +121,13 @@ impl State {
     }
 
     /// Download completed, whether it was successful or not.
-    pub(crate) fn download_complete(
-        &mut self,
-        series_id: Option<SeriesId>,
-        remote_id: RemoteSeriesId,
-    ) {
+    pub(crate) fn download_complete(&mut self, remote_id: RemoteSeriesId) {
         self.downloading.remove(&remote_id);
-
-        if let Some(series_id) = series_id {
-            self.downloading_ids.remove(&series_id);
-        }
     }
 
     /// Indicates that a series is in the process of downloading.
     pub(crate) fn is_downloading(&self, remote_id: &RemoteSeriesId) -> bool {
         self.downloading.contains(remote_id)
-    }
-
-    /// Indicates that a series is in the process of downloading.
-    pub(crate) fn is_downloading_id(&self, series_id: &SeriesId) -> bool {
-        self.downloading_ids.contains(series_id)
     }
 
     /// Refresh series data.
@@ -155,15 +138,11 @@ impl State {
         let remote_id = self.service.series(series_id)?.remote_id?;
 
         self.downloading.insert(remote_id);
-        self.downloading_ids.insert(*series_id);
 
-        let (_, op) = self.service.download_series(&remote_id, false);
-
-        let series_id = *series_id;
+        let op = self.service.download_series(&remote_id, false);
 
         Some(async move {
             SeriesDownload {
-                series_id,
                 remote_id,
                 result: op.await.map_err(Into::into),
             }
@@ -174,16 +153,11 @@ impl State {
     pub(crate) fn download_series_by_remote(
         &mut self,
         remote_id: &RemoteSeriesId,
-    ) -> impl Future<Output = (Option<SeriesId>, RemoteSeriesId, Result<NewSeries>)> {
+    ) -> impl Future<Output = (RemoteSeriesId, Result<NewSeries>)> {
         self.downloading.insert(*remote_id);
-        let (id, op) = self.service.download_series_by_remote(remote_id);
-
-        if let Some(id) = id {
-            self.downloading_ids.insert(id);
-        }
-
+        let op = self.service.download_series_by_remote(remote_id);
         let remote_id = *remote_id;
-        async move { (id, remote_id, op.await) }
+        async move { (remote_id, op.await) }
     }
 
     #[inline]
@@ -217,6 +191,6 @@ impl State {
             }
         }
 
-        self.download_complete(Some(download.series_id), download.remote_id);
+        self.download_complete(download.remote_id);
     }
 }

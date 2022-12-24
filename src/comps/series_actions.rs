@@ -2,9 +2,10 @@ use iced::widget::{button, text, Row};
 use iced::{theme, Command, Element};
 
 use crate::component::Component;
-use crate::model::{Series, SeriesId};
+use crate::model::{Series, SeriesId, TaskFinished, TaskKind};
 use crate::params::{ACTION_SIZE, SPACE};
-use crate::state::{SeriesDownload, State};
+use crate::queue::TaskStatus;
+use crate::state::State;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -12,7 +13,6 @@ pub(crate) enum Message {
     Track,
     RefreshSeries,
     RemoveSeries,
-    SeriesDownload(SeriesDownload),
 }
 
 #[derive(Debug, Clone)]
@@ -51,18 +51,16 @@ impl SeriesActions {
                 Command::none()
             }
             Message::RefreshSeries => {
-                if let Some(future) = s.refresh_series(&self.series_id) {
-                    Command::perform(future, Message::SeriesDownload)
-                } else {
-                    Command::none()
-                }
+                s.service.push_task(
+                    TaskKind::CheckForUpdates {
+                        series_id: self.series_id,
+                    },
+                    TaskFinished::None,
+                );
+                Command::none()
             }
             Message::RemoveSeries => {
                 s.remove_series(&self.series_id);
-                Command::none()
-            }
-            Message::SeriesDownload(download) => {
-                s.handle_series_download(download);
                 Command::none()
             }
         }
@@ -85,23 +83,36 @@ impl SeriesActions {
             );
         }
 
-        if s.is_downloading_id(&series.id) {
-            row = row.push(
-                button(text("Downloading...").size(ACTION_SIZE)).style(theme::Button::Primary),
-            );
-        } else {
-            row = row.push(
-                button(text("Refresh").size(ACTION_SIZE))
-                    .style(theme::Button::Positive)
-                    .on_press(Message::RefreshSeries),
-            );
+        let status = s.service.task_status(&TaskKind::CheckForUpdates {
+            series_id: series.id,
+        });
 
-            row = row.push(
-                button(text("Remove").size(ACTION_SIZE))
-                    .style(theme::Button::Destructive)
-                    .on_press(Message::RemoveSeries),
-            );
+        match status {
+            Some(TaskStatus::Pending) => {
+                row = row.push(
+                    button(text("Refresh in queue").size(ACTION_SIZE))
+                        .style(theme::Button::Positive),
+                );
+            }
+            Some(TaskStatus::Running) => {
+                row = row.push(
+                    button(text("Downloading...").size(ACTION_SIZE)).style(theme::Button::Primary),
+                );
+            }
+            None => {
+                row = row.push(
+                    button(text("Refresh").size(ACTION_SIZE))
+                        .style(theme::Button::Positive)
+                        .on_press(Message::RefreshSeries),
+                );
+            }
         }
+
+        row = row.push(
+            button(text("Remove").size(ACTION_SIZE))
+                .style(theme::Button::Destructive)
+                .on_press(Message::RemoveSeries),
+        );
 
         row.spacing(SPACE).into()
     }

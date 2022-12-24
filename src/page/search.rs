@@ -48,8 +48,8 @@ pub(crate) enum Message {
     AddSeriesByRemote(RemoteSeriesId),
     SwitchSeries(SeriesId, RemoteSeriesId),
     RemoveSeries(SeriesId),
-    SeriesDownloadToTrack(Option<SeriesId>, RemoteSeriesId, NewSeries),
-    SeriesDownloadFailed(Option<SeriesId>, RemoteSeriesId, ErrorMessage),
+    SeriesDownloadToTrack(RemoteSeriesId, NewSeries),
+    SeriesDownloadFailed(RemoteSeriesId, ErrorMessage),
 }
 
 /// The state for the settings page.
@@ -109,13 +109,13 @@ impl Search {
                 s.remove_series(&series_id);
                 Command::none()
             }
-            Message::SeriesDownloadToTrack(id, remote_id, data) => {
-                s.download_complete(id, remote_id);
+            Message::SeriesDownloadToTrack(remote_id, data) => {
+                s.download_complete(remote_id);
                 s.service.insert_new_series(data);
                 Command::none()
             }
-            Message::SeriesDownloadFailed(id, remote_id, error) => {
-                s.download_complete(id, remote_id);
+            Message::SeriesDownloadFailed(remote_id, error) => {
+                s.download_complete(remote_id);
                 s.handle_error(error);
                 Command::none()
             }
@@ -291,9 +291,9 @@ impl Search {
 
         Command::perform(
             s.download_series_by_remote(remote_id),
-            |(id, remote_id, result)| match result {
-                Ok(data) => Message::SeriesDownloadToTrack(id, remote_id, data),
-                Err(error) => Message::SeriesDownloadFailed(id, remote_id, error.into()),
+            |(remote_id, result)| match result {
+                Ok(data) => Message::SeriesDownloadToTrack(remote_id, data),
+                Err(error) => Message::SeriesDownloadFailed(remote_id, error.into()),
             },
         )
     }

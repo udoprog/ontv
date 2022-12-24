@@ -37,7 +37,7 @@ impl Queue {
 
         let tasks = state.service.tasks();
 
-        if tasks.is_empty() {
+        if tasks.len() == 0 {
             page = page.push(
                 Row::new()
                     .push(
@@ -60,7 +60,7 @@ impl Queue {
                     .padding(GAP),
             );
 
-            let mut it = tasks.iter().peekable();
+            let mut it = tasks.peekable();
 
             let now = Utc::now();
 
@@ -68,23 +68,22 @@ impl Queue {
                 let mut row = Row::new();
 
                 match &task.kind {
-                    TaskKind::CheckForUpdates {
-                        series_id,
-                        remote_id,
-                    } => {
+                    TaskKind::CheckForUpdates { series_id } => {
                         let mut update = Row::new();
 
                         update = update.push(text("Check for updates"));
 
                         if let Some(series) = state.service.series(series_id) {
-                            update = update
-                                .push(
-                                    button(text(&series.title))
-                                        .style(theme::Button::Text)
-                                        .padding(0)
-                                        .on_press(Message::Navigate(Page::Series(*series_id))),
-                                )
-                                .push(text(remote_id));
+                            update = update.push(
+                                button(text(&series.title))
+                                    .style(theme::Button::Text)
+                                    .padding(0)
+                                    .on_press(Message::Navigate(Page::Series(*series_id))),
+                            );
+
+                            if let Some(remote_id) = series.remote_id {
+                                update = update.push(text(remote_id));
+                            }
                         } else {
                             update = update.push(text(format!("{series_id}")));
                         }
