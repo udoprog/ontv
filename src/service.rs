@@ -76,6 +76,8 @@ enum Change {
     Remotes,
     // Task queue has changed.
     Queue,
+    // Schedule changed.
+    Schedule,
 }
 
 #[derive(Default)]
@@ -220,6 +222,7 @@ pub struct Service {
     do_not_save: bool,
     current_theme: Theme,
     schedule: Vec<ScheduledDay>,
+    now: NaiveDate,
 }
 
 impl Service {
@@ -247,6 +250,8 @@ impl Service {
 
         let current_theme = db.config.theme();
 
+        let now = Local::now();
+
         let mut this = Self {
             paths: Arc::new(paths),
             db,
@@ -255,11 +260,16 @@ impl Service {
             do_not_save: false,
             current_theme,
             schedule: Vec::new(),
+            now: now.date_naive(),
         };
 
-        let now = Local::now();
-        this.build_schedule(now.date_naive());
+        this.build_schedule();
         Ok(this)
+    }
+
+    /// Naive date.
+    pub(crate) fn now(&self) -> NaiveDate {
+        self.now
     }
 
     /// A scheduled day.
@@ -703,10 +713,8 @@ impl Service {
     pub(crate) fn save_changes(&mut self) -> impl Future<Output = Result<()>> {
         let changes = std::mem::take(&mut self.db.changes);
 
-        if changes.set.contains(Change::Series) {
-            // Series change means that we have to rebuild the schedule.
-            let now = Local::now();
-            self.build_schedule(now.date_naive());
+        if changes.set.contains(Change::Series) || changes.set.contains(Change::Schedule) {
+            self.build_schedule();
         }
 
         let config = changes
@@ -1231,16 +1239,17 @@ impl Service {
     }
 
     /// Build schedule information.
-    pub(crate) fn build_schedule(&mut self, now: NaiveDate) {
-        let Some(end) = now.checked_add_days(Days::new(7)) else {
-            return;
-        };
+    pub(crate) fn build_schedule(&mut self) {
+        let mut current = self.now;
 
-        let mut current = now;
-        let end = end;
         let mut days = Vec::new();
 
-        while current <= end {
+        while current
+            .signed_duration_since(self.now)
+            .num_days()
+            .unsigned_abs()
+            <= self.config().schedule_duration_days
+        {
             let mut schedule = Vec::new();
 
             for series in self.all_series() {

@@ -7,7 +7,7 @@ use iced::{Alignment, Length};
 use crate::cache::ImageHint;
 use crate::message::Page;
 use crate::model::{EpisodeId, Image, SeasonNumber, SeriesId};
-use crate::params::{centered, ACTION_SIZE, GAP, SMALL_SIZE, SPACE, SUBTITLE_SIZE};
+use crate::params::{centered, ACTION_SIZE, GAP, GAP2, SMALL_SIZE, SPACE, SUBTITLE_SIZE};
 use crate::service::PendingRef;
 use crate::state::State;
 use crate::style;
@@ -20,8 +20,6 @@ const POSTER_HINT: ImageHint = ImageHint::Width(512);
 pub(crate) enum Message {
     /// Hover a scheduled series.
     HoverScheduled(SeriesId),
-    /// Hover a scheduled series.
-    UnhoverScheduled(SeriesId),
     /// Skip an episode.
     Skip(SeriesId, EpisodeId),
     /// Watch an episode.
@@ -77,7 +75,6 @@ impl Dashboard {
 
                 Command::none()
             }
-            Message::UnhoverScheduled(_) => Command::none(),
             Message::Skip(series_id, episode_id) => {
                 let now = Utc::now();
                 s.service.skip(&series_id, &episode_id, now);
@@ -96,6 +93,35 @@ impl Dashboard {
     }
 
     pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
+        let up_next_title = text("Watch next")
+            .horizontal_alignment(Horizontal::Left)
+            .width(Length::Fill)
+            .size(SUBTITLE_SIZE);
+
+        let pending = self.render_pending(s);
+
+        let scheduled_title = text("Upcoming")
+            .horizontal_alignment(Horizontal::Left)
+            .width(Length::Fill)
+            .size(SUBTITLE_SIZE);
+
+        let scheduled = self.render_scheduled(s);
+
+        Column::new()
+            .push(vertical_space(Length::Shrink))
+            .push(centered(up_next_title, None))
+            .push(centered(
+                pending.padding(GAP).spacing(GAP),
+                Some(style::weak),
+            ))
+            .push(centered(scheduled_title, None))
+            .push(centered(scheduled.padding(GAP).spacing(GAP), None))
+            .push(vertical_space(Length::Shrink))
+            .spacing(GAP2)
+            .into()
+    }
+
+    fn render_pending(&self, s: &State) -> Row<'static, Message> {
         let mut pending = Row::new();
 
         for PendingRef {
@@ -218,12 +244,25 @@ impl Dashboard {
             );
         }
 
-        let mut scheduled = Row::new();
+        pending
+    }
+
+    fn render_scheduled(&self, s: &State) -> Column<'static, Message> {
+        let mut scheduled_rows = Column::new();
+        let mut scheduled_cols = Row::new();
+        let mut scheduled_count = 0;
         let mut first = true;
 
-        for day in s.service.schedule() {
+        for (n, day) in s.service.schedule().iter().enumerate() {
             let mut column = Column::new();
-            column = column.push(text(day.date));
+
+            column = column.push(
+                match day.date.signed_duration_since(s.service.now()).num_days() {
+                    0 => text("Today"),
+                    1 => text("Tomorrow"),
+                    _ => text(day.date),
+                },
+            );
 
             let mut it = day
                 .schedule
@@ -242,7 +281,7 @@ impl Dashboard {
                     None => s.assets.missing_poster(),
                 };
 
-                scheduled = scheduled.push(
+                scheduled_cols = scheduled_cols.push(
                     button(image(poster))
                         .padding(0)
                         .style(theme::Button::Text)
@@ -250,6 +289,7 @@ impl Dashboard {
                         .width(Length::FillPortion(1)),
                 );
 
+                scheduled_count += 1;
                 first = false;
             }
 
@@ -269,7 +309,13 @@ impl Dashboard {
                         None => format!("{}x{}", episode.season.short(), episode.number),
                     };
 
-                    episodes = episodes.push(text(name).size(SMALL_SIZE));
+                    let episode = button(text(name).size(SMALL_SIZE))
+                        .style(theme::Button::Text)
+                        .padding(0)
+                        .on_press(Message::Navigate(Page::Season(series.id, episode.season)));
+
+                    episodes = episodes
+                        .push(Hoverable::new(episode).on_hover(Message::HoverScheduled(series.id)));
                 }
 
                 let title = button(text(&series.title))
@@ -277,11 +323,8 @@ impl Dashboard {
                     .style(theme::Button::Text)
                     .on_press(Message::Navigate(Page::Series(series.id)));
 
-                series_column = series_column.push(Hoverable::new(
-                    title.into(),
-                    Message::HoverScheduled(series.id),
-                    Message::UnhoverScheduled(series.id),
-                ));
+                series_column = series_column
+                    .push(Hoverable::new(title).on_hover(Message::HoverScheduled(series.id)));
 
                 series_column = series_column.push(episodes.spacing(SPACE));
 
@@ -292,30 +335,20 @@ impl Dashboard {
                 }
             }
 
-            scheduled = scheduled.push(column.width(Length::FillPortion(1)).spacing(GAP));
+            scheduled_cols = scheduled_cols.push(column.width(Length::FillPortion(1)).spacing(GAP));
+            scheduled_count += 1;
+
+            if n > 0 && n % 5 == 0 {
+                scheduled_rows = scheduled_rows
+                    .push(std::mem::replace(&mut scheduled_cols, Row::new()).spacing(GAP));
+                scheduled_count = 0;
+            }
         }
 
-        let up_next_title = text("Up next...")
-            .horizontal_alignment(Horizontal::Left)
-            .width(Length::Fill)
-            .size(SUBTITLE_SIZE);
+        if scheduled_count > 0 {
+            scheduled_rows = scheduled_rows.push(scheduled_cols.spacing(GAP));
+        }
 
-        let scheduled_title = text("Next week...")
-            .horizontal_alignment(Horizontal::Left)
-            .width(Length::Fill)
-            .size(SUBTITLE_SIZE);
-
-        Column::new()
-            .push(vertical_space(Length::Shrink))
-            .push(centered(up_next_title, None))
-            .push(centered(
-                pending.padding(GAP).spacing(GAP),
-                Some(style::weak),
-            ))
-            .push(centered(scheduled_title, None))
-            .push(centered(scheduled.padding(GAP).spacing(GAP), None))
-            .push(vertical_space(Length::Shrink))
-            .spacing(GAP)
-            .into()
+        scheduled_rows
     }
 }

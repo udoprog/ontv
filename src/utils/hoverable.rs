@@ -1,64 +1,61 @@
-use iced::{overlay, Padding};
+use iced::overlay;
 use iced_native::event::{self, Event};
 use iced_native::layout;
 use iced_native::renderer;
 use iced_native::widget::tree::{self, Tree};
 use iced_native::{Clipboard, Element, Layout, Length, Point, Rectangle, Shell, Widget};
 
-#[allow(missing_debug_implementations)]
-pub struct Hoverable<'a, Message, Renderer> {
+const WIDTH: Length = Length::Shrink;
+const HEIGHT: Length = Length::Shrink;
+
+#[repr(transparent)]
+struct State {
+    hovered: bool,
+}
+
+pub(crate) struct Hoverable<'a, Message, Renderer> {
     content: Element<'a, Message, Renderer>,
-    on_hover: Message,
-    on_unhover: Message,
-    padding: Padding,
+    on_hover: Option<Message>,
 }
 
 impl<'a, Message, Renderer> Hoverable<'a, Message, Renderer>
 where
     Renderer: iced_native::Renderer,
 {
-    const WIDTH: Length = Length::Shrink;
-    const HEIGHT: Length = Length::Shrink;
-
-    pub fn new(
-        content: Element<'a, Message, Renderer>,
-        on_hover: Message,
-        on_unhover: Message,
-    ) -> Self {
+    pub(crate) fn new(content: impl Into<Element<'a, Message, Renderer>>) -> Self {
         Self {
-            content,
-            on_hover,
-            on_unhover,
-            padding: Padding::ZERO,
+            content: content.into(),
+            on_hover: None,
         }
     }
 
-    pub fn padding<P>(mut self, padding: P) -> Self
-    where
-        P: Into<Padding>,
-    {
-        self.padding = padding.into();
+    pub(crate) fn on_hover(mut self, message: Message) -> Self {
+        self.on_hover = Some(message);
         self
     }
 }
 
-impl<'a, Message, Renderer> Widget<Message, Renderer> for Hoverable<'a, Message, Renderer>
+impl<'a, Message: 'a, Renderer> Widget<Message, Renderer> for Hoverable<'a, Message, Renderer>
 where
-    Message: 'a + Clone,
+    Message: Clone,
     Renderer: iced_native::Renderer,
 {
+    #[inline]
     fn tag(&self) -> tree::Tag {
         tree::Tag::of::<State>()
     }
 
+    #[inline]
     fn state(&self) -> tree::State {
-        tree::State::new(State::default())
+        tree::State::new(State { hovered: false })
     }
 
+    #[inline]
     fn children(&self) -> Vec<Tree> {
         vec![Tree::new(&self.content)]
     }
 
+    #[inline]
     fn diff(&self, tree: &mut Tree) {
         tree.diff_children(std::slice::from_ref(&self.content));
     }
@@ -86,50 +83,39 @@ where
         }
 
         let mut state = tree.state.downcast_mut::<State>();
-        let was_hovered = state.is_hovered;
-        let now_hovered = layout.bounds().contains(cursor_position);
 
-        match (was_hovered, now_hovered) {
-            (true, true) => {}
-            (false, false) => {}
+        match (state.hovered, layout.bounds().contains(cursor_position)) {
             (true, false) => {
-                // exited hover
-                state.is_hovered = now_hovered;
-                shell.publish(self.on_unhover.clone());
+                state.hovered = false;
             }
             (false, true) => {
-                // entered hover
-                state.is_hovered = now_hovered;
-                shell.publish(self.on_hover.clone());
+                state.hovered = true;
+
+                if let Some(on_hover) = &self.on_hover {
+                    shell.publish(on_hover.clone());
+                }
             }
+            _ => {}
         }
 
         event::Status::Ignored
     }
 
     fn layout(&self, renderer: &Renderer, limits: &layout::Limits) -> layout::Node {
-        let limits = limits
-            .width(Self::WIDTH)
-            .height(Self::HEIGHT)
-            .pad(self.padding);
-
-        let mut content_layout = self.content.as_widget().layout(renderer, &limits);
-        content_layout.move_to(Point::new(
-            self.padding.left.into(),
-            self.padding.top.into(),
-        ));
-
-        let size = limits.resolve(content_layout.size()).pad(self.padding);
-
+        let limits = limits.width(WIDTH).height(HEIGHT);
+        let content_layout = self.content.as_widget().layout(renderer, &limits);
+        let size = limits.resolve(content_layout.size());
         layout::Node::with_children(size, vec![content_layout])
     }
 
+    #[inline]
     fn width(&self) -> Length {
-        Self::WIDTH
+        WIDTH
     }
 
+    #[inline]
     fn height(&self) -> Length {
-        Self::HEIGHT
+        HEIGHT
     }
 
     fn draw(
@@ -187,17 +173,13 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct State {
-    is_hovered: bool,
-}
-
-impl<'a, Message, Renderer> From<Hoverable<'a, Message, Renderer>>
+impl<'a, Message: 'a, Renderer: 'a> From<Hoverable<'a, Message, Renderer>>
     for Element<'a, Message, Renderer>
 where
-    Message: Clone + 'a,
-    Renderer: iced_native::Renderer + 'a,
+    Message: Clone,
+    Renderer: iced_native::Renderer,
 {
+    #[inline]
     fn from(hoverable: Hoverable<'a, Message, Renderer>) -> Self {
         Self::new(hoverable)
     }

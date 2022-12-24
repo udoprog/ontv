@@ -81,8 +81,13 @@ pub(crate) enum ThemeType {
     Dark,
 }
 
+#[inline]
+fn default_days() -> u64 {
+    7
+}
+
 /// The state for the settings page.
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Config {
     #[serde(default)]
     pub(crate) theme: ThemeType,
@@ -90,7 +95,22 @@ pub(crate) struct Config {
     pub(crate) tvdb_legacy_apikey: String,
     #[serde(default)]
     pub(crate) tmdb_api_key: String,
+    #[serde(default = "default_days")]
+    pub(crate) schedule_duration_days: u64,
 }
+
+impl Default for Config {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            theme: Default::default(),
+            tvdb_legacy_apikey: Default::default(),
+            tmdb_api_key: Default::default(),
+            schedule_duration_days: default_days(),
+        }
+    }
+}
+
 impl Config {
     /// Build iced theme.
     #[inline]
