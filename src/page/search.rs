@@ -156,7 +156,7 @@ impl Search {
                 .and_then(|p| s.assets.image_with_hint(&p, POSTER_HINT))
             {
                 Some(handle) => handle,
-                None => s.assets.missing_poster(),
+                None => s.missing_poster(),
             };
 
             let mut actions = Row::new();

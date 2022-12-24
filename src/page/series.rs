@@ -128,7 +128,7 @@ impl Series {
                 .and_then(|i| s.assets.image_with_hint(&i, POSTER_HINT))
             {
                 Some(poster) => poster,
-                None => s.assets.missing_poster(),
+                None => s.missing_poster(),
             };
 
             let graphic = button(image(poster).height(Length::Units(IMAGE_HEIGHT)))

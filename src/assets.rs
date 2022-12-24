@@ -1,10 +1,12 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use iced::Theme;
 use iced_native::image::Handle;
 
 use crate::{cache::ImageHint, model::Image};
 
-static MISSING_POSTER: &[u8] = include_bytes!("../assets/missing_poster.png");
+static MISSING_POSTER_DARK: &[u8] = include_bytes!("../assets/missing_poster_dark.png");
+static MISSING_POSTER_LIGHT: &[u8] = include_bytes!("../assets/missing_poster_light.png");
 static MISSING_BANNER: &[u8] = include_bytes!("../assets/missing_banner.png");
 static MISSING_SCRENCAP: &[u8] = include_bytes!("../assets/missing_screencap.png");
 
@@ -19,7 +21,8 @@ pub(crate) struct ImageKey {
 /// filesystem.
 pub(crate) struct Assets {
     /// Handle for missing posters.
-    missing_poster: Handle,
+    missing_poster_dark: Handle,
+    missing_poster_light: Handle,
     /// Handle for missing banners.
     missing_banner: Handle,
     /// Handle for missing screen caps.
@@ -38,12 +41,14 @@ pub(crate) struct Assets {
 
 impl Assets {
     pub(crate) fn new() -> Self {
-        let missing_poster = Handle::from_memory(MISSING_POSTER);
+        let missing_poster_dark = Handle::from_memory(MISSING_POSTER_DARK);
+        let missing_poster_light = Handle::from_memory(MISSING_POSTER_LIGHT);
         let missing_banner = Handle::from_memory(MISSING_BANNER);
         let missing_screencap = Handle::from_memory(MISSING_SCRENCAP);
 
         Self {
-            missing_poster,
+            missing_poster_dark,
+            missing_poster_light,
             missing_banner,
             missing_screencap,
             clear: false,
@@ -134,8 +139,11 @@ impl Assets {
     }
 
     /// Get a placeholder image for a missing poster.
-    pub(crate) fn missing_poster(&self) -> Handle {
-        self.missing_poster.clone()
+    pub(crate) fn missing_poster(&self, theme: &Theme) -> Handle {
+        match theme {
+            Theme::Dark => self.missing_poster_dark.clone(),
+            _ => self.missing_poster_light.clone(),
+        }
     }
 
     /// Get an image without a hint.

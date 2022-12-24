@@ -161,7 +161,7 @@ impl Dashboard {
                 .and_then(|i| s.assets.image_with_hint(&i, POSTER_HINT))
             {
                 Some(handle) => handle,
-                None => s.assets.missing_poster(),
+                None => s.missing_poster(),
             };
 
             let mut episode_number = match episode.season {
@@ -278,7 +278,7 @@ impl Dashboard {
             if let Some((series_id, id)) = self.schedule_focus.filter(|_| first) {
                 let poster = match id.and_then(|id| s.assets.image_with_hint(&id, POSTER_HINT)) {
                     Some(image) => image,
-                    None => s.assets.missing_poster(),
+                    None => s.missing_poster(),
                 };
 
                 scheduled_cols = scheduled_cols.push(

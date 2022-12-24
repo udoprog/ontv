@@ -139,4 +139,9 @@ impl State {
     pub(crate) fn warning_text(&self) -> iced::theme::Text {
         crate::style::warning_text(self.service.theme())
     }
+
+    #[inline]
+    pub(crate) fn missing_poster(&self) -> iced_native::image::Handle {
+        self.assets.missing_poster(self.service.theme())
+    }
 }
