@@ -385,7 +385,7 @@ impl Service {
                 }
             }
 
-            let kind = TaskKind::CheckForUpdates { series_id: s.id };
+            let kind = TaskKind::DownloadSeriesById { series_id: s.id };
 
             if self.db.tasks.status(&kind).is_some() {
                 continue;
@@ -1239,6 +1239,10 @@ impl Service {
             let mut schedule = Vec::new();
 
             for series in self.all_series() {
+                if !series.tracked {
+                    continue;
+                }
+
                 let mut scheduled_episodes = Vec::new();
 
                 for e in self.episodes(&series.id) {

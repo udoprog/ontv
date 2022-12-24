@@ -65,18 +65,7 @@ impl Series {
     pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
         match message {
             Message::OpenRemote(remote_id) => {
-                let url = match remote_id {
-                    RemoteSeriesId::Tvdb { id } => {
-                        format!("https://thetvdb.com/search?query={id}")
-                    }
-                    RemoteSeriesId::Tmdb { id } => {
-                        format!("https://www.themoviedb.org/tv/{id}")
-                    }
-                    RemoteSeriesId::Imdb { id } => {
-                        format!("https://www.imdb.com/title/{id}/")
-                    }
-                };
-
+                let url = remote_id.url();
                 let _ = webbrowser::open_browser(webbrowser::Browser::Default, &url);
                 Command::none()
             }

@@ -12,10 +12,10 @@ use crate::assets::{Assets, ImageKey};
 use crate::message::{ErrorMessage, Page};
 use crate::model::{TaskFinished, TaskKind};
 use crate::page;
-use crate::params::{ACTION_SIZE, GAP, HALF_GAP, SPACE, SUB_MENU_SIZE};
-use crate::service::Service;
+use crate::params::{ACTION_SIZE, GAP, SPACE, SUB_MENU_SIZE};
+use crate::service::{NewSeries, Service};
 use crate::state::State;
-use crate::state::{self, SeriesDownload};
+use crate::state::{self};
 use crate::utils::{Singleton, TimedOut, Timeout};
 
 // Check for remote updates every 60 seconds.
@@ -40,8 +40,6 @@ pub(crate) enum Message {
     Saved(Result<(), ErrorMessage>),
     /// Check for updates.
     CheckForUpdates(TimedOut),
-    /// Update download queue with the given items.
-    UpdateDownloadQueue(Result<Vec<(TaskKind, TaskFinished)>, ErrorMessage>),
     /// Request to navigate to the specified page.
     Navigate(Page),
     /// Navigate history by the specified stride.
@@ -50,8 +48,13 @@ pub(crate) enum Message {
     Scroll(f32),
     /// Images have been loaded in the background.
     ImagesLoaded(Result<Vec<(ImageKey, Handle)>, ErrorMessage>),
-    /// Series downloaded.
-    TaskRefreshSeries(SeriesDownload, TaskKind),
+    /// Update download queue with the given items.
+    TaskUpdateDownloadQueue(
+        Result<Vec<(TaskKind, TaskFinished)>, ErrorMessage>,
+        TaskKind,
+    ),
+    /// Task output of add series by remote.
+    TaskSeriesDownloaded(Result<NewSeries, ErrorMessage>, TaskKind),
     /// Queue processing.
     ProcessQueue(TimedOut, Uuid),
 }
@@ -223,33 +226,18 @@ impl iced::Application for Application {
                 self.state.set_saving(false);
                 Command::none()
             }
-            (Message::CheckForUpdates(timed_out), _) => {
-                match timed_out {
-                    TimedOut::TimedOut => {
-                        let now = Utc::now();
+            (Message::CheckForUpdates(TimedOut::TimedOut), _) => {
+                self.state
+                    .service
+                    .push_task(TaskKind::FindUpdates, TaskFinished::None);
 
-                        let a = Command::perform(self.state.service.find_updates(&now), |output| {
-                            match output {
-                                Ok(update) => Message::UpdateDownloadQueue(Ok(update)),
-                                Err(error) => Message::UpdateDownloadQueue(Err(error.into())),
-                            }
-                        });
-
-                        // Schedule next update.
-                        let b = Command::perform(
-                            self.update_timeout.set(Duration::from_secs(UPDATE_TIMEOUT)),
-                            Message::CheckForUpdates,
-                        );
-
-                        Command::batch([a, b])
-                    }
-                    TimedOut::Cancelled => {
-                        // Someone else has already scheduled the next update, so do nothing.
-                        Command::none()
-                    }
-                }
+                // Schedule next update.
+                Command::perform(
+                    self.update_timeout.set(Duration::from_secs(UPDATE_TIMEOUT)),
+                    Message::CheckForUpdates,
+                )
             }
-            (Message::UpdateDownloadQueue(result), _) => {
+            (Message::TaskUpdateDownloadQueue(result, kind), _) => {
                 match result {
                     Ok(queue) => {
                         self.state.service.push_tasks(queue);
@@ -259,6 +247,7 @@ impl iced::Application for Application {
                     }
                 }
 
+                self.state.service.complete_task(&kind);
                 Command::none()
             }
             (Message::Navigate(page), _) => {
@@ -286,8 +275,16 @@ impl iced::Application for Application {
                 self.image_loader.clear();
                 return self.handle_image_loading();
             }
-            (Message::TaskRefreshSeries(download, kind), _) => {
-                self.state.handle_series_download(download);
+            (Message::TaskSeriesDownloaded(result, kind), _) => {
+                match result {
+                    Ok(new_series) => {
+                        self.state.service.insert_new_series(new_series);
+                    }
+                    Err(error) => {
+                        self.state.handle_error(error);
+                    }
+                }
+
                 self.state.service.complete_task(&kind);
                 Command::none()
             }
@@ -307,19 +304,28 @@ impl iced::Application for Application {
         };
 
         let scroll = if let Some((page, scroll)) = self.state.history_change() {
-            self.current = match page {
-                Page::Dashboard => Current::Dashboard(page::Dashboard::new(&self.state)),
-                Page::Search => Current::Search(page::Search::default()),
-                Page::SeriesList => Current::SeriesList(page::SeriesList::default()),
-                Page::Series(series_id) => Current::Series(page::Series::new(series_id)),
-                Page::Settings => Current::Settings(page::Settings::default()),
+            let (current, command) = match page {
+                Page::Dashboard => (Current::Dashboard(page::Dashboard::new(&self.state)), None),
+                Page::Search => (Current::Search(page::Search::default()), None),
+                Page::SeriesList => (Current::SeriesList(page::SeriesList::default()), None),
+                Page::Series(series_id) => (Current::Series(page::Series::new(series_id)), None),
+                Page::Settings => (Current::Settings(page::Settings::default()), None),
                 Page::Season(series_id, season) => {
-                    Current::Season(page::Season::new(series_id, season))
+                    (Current::Season(page::Season::new(series_id, season)), None)
                 }
-                Page::Queue => Current::Queue(page::Queue::default()),
+                Page::Queue => {
+                    let (page, command) = page::Queue::new();
+                    (Current::Queue(page), Some(command.map(Message::Queue)))
+                }
             };
 
-            scrollable::snap_to(self.scrollable_id.clone(), scroll)
+            self.current = current;
+
+            Command::batch(
+                command
+                    .into_iter()
+                    .chain([scrollable::snap_to(self.scrollable_id.clone(), scroll)]),
+            )
         } else {
             Command::none()
         };
@@ -359,15 +365,15 @@ impl iced::Application for Application {
     }
 
     fn view(&self) -> Element<Message> {
-        let mut top_menu = Row::new().spacing(HALF_GAP).align_items(Alignment::Center);
+        let mut top_menu = Row::new().spacing(GAP).align_items(Alignment::Center);
 
         let Some(&page) = self.state.page() else {
             return text("missing history entry").into();
         };
 
         top_menu = top_menu.push(menu_item(&page, text("Dashboard"), Page::Dashboard));
-        top_menu = top_menu.push(menu_item(&page, text("Search"), Page::Search));
         top_menu = top_menu.push(menu_item(&page, text("Series"), Page::SeriesList));
+        top_menu = top_menu.push(menu_item(&page, text("Search"), Page::Search));
         top_menu = top_menu.push(menu_item(&page, text("Settings"), Page::Settings));
 
         // Build queue element.
@@ -580,12 +586,34 @@ impl Application {
             log::trace!("running task {}", task.id);
 
             match task.kind {
-                kind @ TaskKind::CheckForUpdates { series_id } => {
+                kind @ TaskKind::DownloadSeriesById { series_id } => {
                     if let Some(future) = self.state.refresh_series(&series_id) {
-                        tasks.push(Command::perform(future, move |download| {
-                            Message::TaskRefreshSeries(download, kind)
+                        tasks.push(Command::perform(future, move |result| match result {
+                            Ok(new_series) => Message::TaskSeriesDownloaded(Ok(new_series), kind),
+                            Err(error) => Message::TaskSeriesDownloaded(Err(error.into()), kind),
                         }));
                     }
+                }
+                kind @ TaskKind::DownloadSeriesByRemoteId { remote_id } => {
+                    if self.state.service.set_tracked_by_remote(&remote_id) {
+                        self.state.service.complete_task(&kind);
+                    } else {
+                        tasks.push(Command::perform(
+                            self.state.service.download_series_by_remote(&remote_id),
+                            move |result| {
+                                Message::TaskSeriesDownloaded(result.map_err(Into::into), kind)
+                            },
+                        ));
+                    }
+                }
+                kind @ TaskKind::FindUpdates => {
+                    tasks.push(Command::perform(
+                        self.state.service.find_updates(&now),
+                        move |output| match output {
+                            Ok(update) => Message::TaskUpdateDownloadQueue(Ok(update), kind),
+                            Err(error) => Message::TaskUpdateDownloadQueue(Err(error.into()), kind),
+                        },
+                    ));
                 }
             }
         }

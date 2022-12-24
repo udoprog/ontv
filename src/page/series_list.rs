@@ -1,4 +1,4 @@
-use iced::widget::{button, image, text, text_input, vertical_space, Column, Row};
+use iced::widget::{button, image, text, text_input, Column, Row};
 use iced::{theme, Command};
 use iced::{Element, Length};
 
@@ -21,7 +21,7 @@ pub(crate) enum Message {
     Navigate(Page),
 }
 
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub(crate) struct SeriesList {
     filter: String,
     filtered: Option<Box<[usize]>>,
@@ -156,11 +156,12 @@ impl SeriesList {
         .width(Length::Fill);
 
         Column::new()
-            .push(vertical_space(Length::Shrink))
-            .push(centered(Row::new().push(filter).width(Length::Fill), None))
+            .push(centered(
+                Row::new().push(filter).padding(GAP).width(Length::Fill),
+                None,
+            ))
             .push(rows.spacing(GAP2))
             .width(Length::Fill)
-            .spacing(GAP)
             .into()
     }
 }

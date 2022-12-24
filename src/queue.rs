@@ -5,6 +5,8 @@ use uuid::Uuid;
 
 use crate::model::{Task, TaskFinished, TaskKind};
 
+const DELAY_SECONDS: i64 = 2500;
+
 /// The current task status.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum TaskStatus {
@@ -123,7 +125,7 @@ impl Queue {
             .back()
             .map(|t| t.scheduled)
             .unwrap_or_else(Utc::now)
-            + Duration::seconds(10);
+            + Duration::milliseconds(DELAY_SECONDS);
 
         self.status.insert(kind, TaskStatus::Pending);
 

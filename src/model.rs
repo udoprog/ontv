@@ -143,6 +143,22 @@ pub(crate) enum RemoteSeriesId {
     Imdb { id: Raw<16> },
 }
 
+impl RemoteSeriesId {
+    pub(crate) fn url(&self) -> String {
+        match self {
+            RemoteSeriesId::Tvdb { id } => {
+                format!("https://thetvdb.com/search?query={id}")
+            }
+            RemoteSeriesId::Tmdb { id } => {
+                format!("https://www.themoviedb.org/tv/{id}")
+            }
+            RemoteSeriesId::Imdb { id } => {
+                format!("https://www.imdb.com/title/{id}/")
+            }
+        }
+    }
+}
+
 impl fmt::Display for RemoteSeriesId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -735,10 +751,12 @@ impl From<TmdbImage> for Image {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub(crate) enum TaskKind {
-    CheckForUpdates {
-        // Series to download.
-        series_id: SeriesId,
-    },
+    /// Find updates.
+    FindUpdates,
+    /// Task to download series data.
+    DownloadSeriesById { series_id: SeriesId },
+    /// Task to add a series by a remote identifier.
+    DownloadSeriesByRemoteId { remote_id: RemoteSeriesId },
 }
 
 /// Actions that can be performed after a task has completed.
@@ -784,7 +802,9 @@ impl Task {
     /// Test if task involves the given series.
     pub(crate) fn is_series(&self, id: &SeriesId) -> bool {
         match &self.kind {
-            TaskKind::CheckForUpdates { series_id, .. } => *series_id == *id,
+            TaskKind::DownloadSeriesById { series_id, .. } => *series_id == *id,
+            TaskKind::DownloadSeriesByRemoteId { .. } => false,
+            TaskKind::FindUpdates => false,
         }
     }
 }

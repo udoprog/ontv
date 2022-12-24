@@ -52,7 +52,7 @@ impl SeriesActions {
             }
             Message::RefreshSeries => {
                 s.service.push_task(
-                    TaskKind::CheckForUpdates {
+                    TaskKind::DownloadSeriesById {
                         series_id: self.series_id,
                     },
                     TaskFinished::None,
@@ -83,7 +83,7 @@ impl SeriesActions {
             );
         }
 
-        let status = s.service.task_status(&TaskKind::CheckForUpdates {
+        let status = s.service.task_status(&TaskKind::DownloadSeriesById {
             series_id: series.id,
         });
 

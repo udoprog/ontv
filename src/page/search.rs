@@ -7,11 +7,11 @@ use iced::{Command, Length};
 
 use crate::cache::ImageHint;
 use crate::message::ErrorMessage;
-use crate::model::{RemoteSeriesId, SearchSeries, SeriesId};
+use crate::model::{RemoteSeriesId, SearchSeries, SeriesId, TaskFinished, TaskKind};
 use crate::params::{
     default_container, ACTION_SIZE, GAP, GAP2, IMAGE_HEIGHT, SMALL_SIZE, SPACE, TITLE_SIZE,
 };
-use crate::service::NewSeries;
+use crate::queue::TaskStatus;
 use crate::state::State;
 
 /// Number of results per page.
@@ -48,8 +48,6 @@ pub(crate) enum Message {
     AddSeriesByRemote(RemoteSeriesId),
     SwitchSeries(SeriesId, RemoteSeriesId),
     RemoveSeries(SeriesId),
-    SeriesDownloadToTrack(RemoteSeriesId, NewSeries),
-    SeriesDownloadFailed(RemoteSeriesId, ErrorMessage),
 }
 
 /// The state for the settings page.
@@ -100,23 +98,23 @@ impl Search {
                 self.kind = kind;
                 self.search(s)
             }
-            Message::AddSeriesByRemote(remote_id) => self.add_series_by_remote(s, &remote_id),
+            Message::AddSeriesByRemote(remote_id) => {
+                s.service.push_task(
+                    TaskKind::DownloadSeriesByRemoteId { remote_id },
+                    TaskFinished::None,
+                );
+                Command::none()
+            }
             Message::SwitchSeries(series_id, remote_id) => {
                 s.remove_series(&series_id);
-                self.add_series_by_remote(s, &remote_id)
+                s.service.push_task(
+                    TaskKind::DownloadSeriesByRemoteId { remote_id },
+                    TaskFinished::None,
+                );
+                Command::none()
             }
             Message::RemoveSeries(series_id) => {
                 s.remove_series(&series_id);
-                Command::none()
-            }
-            Message::SeriesDownloadToTrack(remote_id, data) => {
-                s.download_complete(remote_id);
-                s.service.insert_new_series(data);
-                Command::none()
-            }
-            Message::SeriesDownloadFailed(remote_id, error) => {
-                s.download_complete(remote_id);
-                s.handle_error(error);
                 Command::none()
             }
         }
@@ -163,30 +161,45 @@ impl Search {
 
             let mut actions = Row::new();
 
-            if s.is_downloading(&series.id) {
-                actions = actions.push(
-                    button(text("Downloading...").size(ACTION_SIZE)).style(theme::Button::Primary),
-                );
-            } else if let Some(s) = s.service.get_series_by_remote(series.id) {
-                if s.remote_id != Some(series.id) {
+            let status = s.service.task_status(&TaskKind::DownloadSeriesByRemoteId {
+                remote_id: series.id,
+            });
+
+            match status {
+                Some(TaskStatus::Pending) => {
                     actions = actions.push(
-                        button(text("Switch").size(ACTION_SIZE))
-                            .style(theme::Button::Primary)
-                            .on_press(Message::SwitchSeries(s.id, series.id)),
+                        button(text("Queued...").size(ACTION_SIZE)).style(theme::Button::Primary),
                     );
                 }
+                Some(TaskStatus::Running) => {
+                    actions = actions.push(
+                        button(text("Downloading...").size(ACTION_SIZE))
+                            .style(theme::Button::Primary),
+                    );
+                }
+                None => {
+                    if let Some(s) = s.service.get_series_by_remote(series.id) {
+                        if s.remote_id != Some(series.id) {
+                            actions = actions.push(
+                                button(text("Switch").size(ACTION_SIZE))
+                                    .style(theme::Button::Primary)
+                                    .on_press(Message::SwitchSeries(s.id, series.id)),
+                            );
+                        }
 
-                actions = actions.push(
-                    button(text("Remove").size(ACTION_SIZE))
-                        .style(theme::Button::Destructive)
-                        .on_press(Message::RemoveSeries(s.id)),
-                );
-            } else {
-                actions = actions.push(
-                    button(text("Add").size(ACTION_SIZE))
-                        .style(theme::Button::Positive)
-                        .on_press(Message::AddSeriesByRemote(series.id)),
-                );
+                        actions = actions.push(
+                            button(text("Remove").size(ACTION_SIZE))
+                                .style(theme::Button::Destructive)
+                                .on_press(Message::RemoveSeries(s.id)),
+                        );
+                    } else {
+                        actions = actions.push(
+                            button(text("Add").size(ACTION_SIZE))
+                                .style(theme::Button::Positive)
+                                .on_press(Message::AddSeriesByRemote(series.id)),
+                        );
+                    }
+                }
             }
 
             let overview = series.overview.as_deref().unwrap_or_default();
@@ -276,25 +289,5 @@ impl Search {
             .padding(GAP);
 
         default_container(page).into()
-    }
-}
-
-impl Search {
-    fn add_series_by_remote(
-        &mut self,
-        s: &mut State,
-        remote_id: &RemoteSeriesId,
-    ) -> Command<Message> {
-        if s.service.set_tracked_by_remote(remote_id) {
-            return Command::none();
-        }
-
-        Command::perform(
-            s.download_series_by_remote(remote_id),
-            |(remote_id, result)| match result {
-                Ok(data) => Message::SeriesDownloadToTrack(remote_id, data),
-                Err(error) => Message::SeriesDownloadFailed(remote_id, error.into()),
-            },
-        )
     }
 }

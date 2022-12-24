@@ -1,18 +1,12 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::future::Future;
 
 use anyhow::Result;
 
 use crate::assets::Assets;
 use crate::message::{ErrorMessage, Page};
-use crate::model::{RemoteSeriesId, SeriesId};
+use crate::model::SeriesId;
 use crate::service::{NewSeries, Service};
-
-#[derive(Debug, Clone)]
-pub(crate) struct SeriesDownload {
-    remote_id: RemoteSeriesId,
-    result: Result<NewSeries, ErrorMessage>,
-}
 
 const ERRORS: usize = 5;
 
@@ -31,8 +25,6 @@ pub(crate) struct State {
     errors: VecDeque<ErrorMessage>,
     /// Indicates that the whole application is busy loading something.
     saving: bool,
-    /// Set of series which are in the process of being downloaded.
-    downloading: HashSet<RemoteSeriesId>,
 }
 
 impl State {
@@ -47,7 +39,6 @@ impl State {
             history_changed: false,
             errors: VecDeque::new(),
             saving: false,
-            downloading: HashSet::new(),
         }
     }
 
@@ -120,44 +111,13 @@ impl State {
         self.service.remove_series(series_id);
     }
 
-    /// Download completed, whether it was successful or not.
-    pub(crate) fn download_complete(&mut self, remote_id: RemoteSeriesId) {
-        self.downloading.remove(&remote_id);
-    }
-
-    /// Indicates that a series is in the process of downloading.
-    pub(crate) fn is_downloading(&self, remote_id: &RemoteSeriesId) -> bool {
-        self.downloading.contains(remote_id)
-    }
-
     /// Refresh series data.
     pub(crate) fn refresh_series(
         &mut self,
         series_id: &SeriesId,
-    ) -> Option<impl Future<Output = SeriesDownload>> {
+    ) -> Option<impl Future<Output = Result<NewSeries>>> {
         let remote_id = self.service.series(series_id)?.remote_id?;
-
-        self.downloading.insert(remote_id);
-
-        let op = self.service.download_series(&remote_id, false);
-
-        Some(async move {
-            SeriesDownload {
-                remote_id,
-                result: op.await.map_err(Into::into),
-            }
-        })
-    }
-
-    /// Download a series by remote.
-    pub(crate) fn download_series_by_remote(
-        &mut self,
-        remote_id: &RemoteSeriesId,
-    ) -> impl Future<Output = (RemoteSeriesId, Result<NewSeries>)> {
-        self.downloading.insert(*remote_id);
-        let op = self.service.download_series_by_remote(remote_id);
-        let remote_id = *remote_id;
-        async move { (remote_id, op.await) }
+        Some(self.service.download_series(&remote_id, false))
     }
 
     #[inline]
@@ -178,19 +138,5 @@ impl State {
     #[inline]
     pub(crate) fn warning_text(&self) -> iced::theme::Text {
         crate::style::warning_text(self.service.theme())
-    }
-
-    /// Handle a series download.
-    pub(crate) fn handle_series_download(&mut self, download: SeriesDownload) {
-        match download.result {
-            Ok(data) => {
-                self.service.insert_new_series(data);
-            }
-            Err(error) => {
-                self.handle_error(error);
-            }
-        }
-
-        self.download_complete(download.remote_id);
     }
 }
