@@ -19,6 +19,7 @@ exclude = ["assets/*.xcf", "images/"]
 anyhow = "1.0.68"
 arrayvec = "0.7.2"
 base64 = "0.20.0"
+bstr = "1.1.0"
 bytes = { version = "1.3.0", features = ["serde"] }
 chrono = { version = "0.4.23", features = ["serde"] }
 clap = { version = "4.0.32", features = ["derive"] }

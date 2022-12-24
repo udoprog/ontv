@@ -81,6 +81,7 @@ pub(crate) fn duration_display(d: Duration) -> Text<'static> {
         let seconds = seconds.unsigned_abs();
 
         match seconds {
+            0 => Text::new("right now"),
             1 => Text::new("in one second"),
             n if n >= 60 => match seconds / 60 {
                 1 => Text::new("in one minute"),

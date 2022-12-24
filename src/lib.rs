@@ -54,6 +54,7 @@ mod message;
 mod model;
 mod page;
 mod params;
+mod queue;
 mod search;
 mod service;
 mod state;

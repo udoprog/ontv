@@ -1,11 +1,10 @@
 use std::fmt;
 
-use base64::display::Base64Display;
-use base64::engine::DEFAULT_ENGINE;
+use bstr::BStr;
 use serde::de;
 use serde::ser;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) struct Etag(Box<[u8]>);
 
 impl Etag {
@@ -27,27 +26,14 @@ impl Etag {
 impl fmt::Display for Etag {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        Base64Display::from(self.0.as_ref(), &DEFAULT_ENGINE).fmt(f)
+        BStr::new(self.0.as_ref()).fmt(f)
     }
 }
 
 impl fmt::Debug for Etag {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct WithDisplay<T>(T);
-
-        impl<T> fmt::Debug for WithDisplay<T>
-        where
-            T: fmt::Display,
-        {
-            #[inline]
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                fmt::Display::fmt(&self.0, f)
-            }
-        }
-
-        let field = WithDisplay(Base64Display::from(self.0.as_ref(), &DEFAULT_ENGINE));
-        f.debug_tuple("Etag").field(&field).finish()
+        BStr::new(self.0.as_ref()).fmt(f)
     }
 }
 

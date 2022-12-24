@@ -13,11 +13,9 @@ use reqwest::{Method, RequestBuilder, Response, Url};
 use serde::Deserialize;
 
 use crate::api::common;
-use crate::model::EpisodeId;
-use crate::model::SeriesId;
 use crate::model::{
-    Episode, Image, Raw, RemoteEpisodeId, RemoteSeriesId, SearchSeries, Season, SeasonNumber,
-    Series, TmdbImage,
+    Episode, EpisodeId, Etag, Image, Raw, RemoteEpisodeId, RemoteSeriesId, SearchSeries, Season,
+    SeasonNumber, Series, SeriesId, TmdbImage,
 };
 
 const BASE_URL: &str = "https://api.themoviedb.org/3";
@@ -146,6 +144,16 @@ impl Client {
         url.set_path(&id.to_string());
         let res = self.client.get(url).send().await?;
         Ok(res.bytes().await?.to_vec())
+    }
+
+    /// Get last etag.
+    pub(crate) async fn series_last_etag(&self, id: u32) -> Result<Option<Etag>> {
+        let res = self
+            .request_with_auth(Method::HEAD, &["tv", &id.to_string()])
+            .send()
+            .await?;
+
+        Ok(common::parse_etag(&res))
     }
 
     /// Download series information.

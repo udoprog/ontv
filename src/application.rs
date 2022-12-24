@@ -9,11 +9,12 @@ use iced_native::image::Handle;
 
 use crate::assets::{Assets, ImageKey};
 use crate::message::{ErrorMessage, Page};
+use crate::model::{Task, TaskKind};
 use crate::page;
 use crate::params::{ACTION_SIZE, GAP, HALF_GAP, SPACE, SUB_MENU_SIZE};
-use crate::service::{Queued, Service};
-use crate::state;
+use crate::service::Service;
 use crate::state::State;
+use crate::state::{self, SeriesDownload};
 use crate::utils::{Singleton, TimedOut, Timeout};
 
 // Check for remote updates every 60 seconds.
@@ -39,7 +40,7 @@ pub(crate) enum Message {
     /// Check for updates.
     CheckForUpdates(TimedOut),
     /// Update download queue with the given items.
-    UpdateDownloadQueue(Result<Vec<Queued>, ErrorMessage>),
+    UpdateDownloadQueue(Result<Vec<Task>, ErrorMessage>),
     /// Request to navigate to the specified page.
     Navigate(Page),
     /// Navigate history by the specified stride.
@@ -48,6 +49,10 @@ pub(crate) enum Message {
     Scroll(f32),
     /// Images have been loaded in the background.
     ImagesLoaded(Result<Vec<(ImageKey, Handle)>, ErrorMessage>),
+    /// Series downloaded.
+    SeriesDownload(SeriesDownload),
+    /// Queue processing.
+    ProcessQueue(TimedOut),
 }
 
 enum Current {
@@ -70,6 +75,8 @@ pub(crate) struct Application {
     database_timeout: Timeout,
     // Timeout to populate the update queue.
     update_timeout: Timeout,
+    // Timeout until the next queue should wakeup.
+    queue_timeout: Timeout,
     /// Image loader future being run.
     image_loader: Singleton,
     // Exit after save has been completed.
@@ -101,6 +108,7 @@ impl iced::Application for Application {
             current,
             database_timeout: Timeout::default(),
             update_timeout: Timeout::default(),
+            queue_timeout: Timeout::default(),
             image_loader: Singleton::default(),
             exit_after_save: false,
             should_exit: false,
@@ -110,8 +118,9 @@ impl iced::Application for Application {
 
         this.prepare();
         let a = this.handle_image_loading();
-        let b = Command::perform(async { TimedOut::TimedOut }, Message::CheckForUpdates);
-        (this, Command::batch([a, b]))
+        let b = this.handle_process_queue();
+        let c = Command::perform(async { TimedOut::TimedOut }, Message::CheckForUpdates);
+        (this, Command::batch([a, b, c]))
     }
 
     #[inline]
@@ -276,6 +285,11 @@ impl iced::Application for Application {
                 self.image_loader.clear();
                 return self.handle_image_loading();
             }
+            (Message::SeriesDownload(download), _) => {
+                self.state.handle_series_download(download);
+                Command::none()
+            }
+            (Message::ProcessQueue(TimedOut::TimedOut), _) => self.handle_process_queue(),
             _ => Command::none(),
         };
 
@@ -307,7 +321,10 @@ impl iced::Application for Application {
         };
 
         self.prepare();
-        Command::batch([self.handle_image_loading(), save_database, command, scroll])
+
+        let image_loading = self.handle_image_loading();
+        let process_queue = self.handle_process_queue();
+        Command::batch([image_loading, process_queue, save_database, command, scroll])
     }
 
     #[inline]
@@ -351,7 +368,7 @@ impl iced::Application for Application {
 
         // Build queue element.
         {
-            let count = self.state.service.queue().len();
+            let count = self.state.service.tasks().len();
 
             let text = match count {
                 0 => text("Queue"),
@@ -507,6 +524,7 @@ impl Application {
         self.state.assets.commit();
     }
 
+    /// Handle image loading.
     fn handle_image_loading(&mut self) -> Command<Message> {
         fn translate(value: Option<Result<Vec<(ImageKey, Handle)>>>) -> Message {
             match value {
@@ -538,6 +556,35 @@ impl Application {
             .image_loader
             .set(self.state.service.load_images(&self.images));
         Command::perform(future, translate)
+    }
+
+    /// Handle process queue.
+    fn handle_process_queue(&mut self) -> Command<Message> {
+        let now = Utc::now();
+        let mut tasks = Vec::new();
+
+        while let Some(task) = self.state.service.next_queue_item(&now) {
+            log::trace!("running task {}", task.id);
+
+            match task.kind {
+                TaskKind::CheckForUpdates { series_id, .. } => {
+                    if let Some(future) = self.state.refresh_series(&series_id) {
+                        tasks.push(Command::perform(future, Message::SeriesDownload));
+                    }
+                }
+            }
+        }
+
+        if self.state.service.take_queue_modified() {
+            if let Some(seconds) = self.state.service.next_queue_sleep(&now) {
+                tasks.push(Command::perform(
+                    self.queue_timeout.set(Duration::from_secs(seconds)),
+                    Message::ProcessQueue,
+                ));
+            }
+        }
+
+        Command::batch(tasks)
     }
 }
 

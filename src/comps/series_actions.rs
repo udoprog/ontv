@@ -2,11 +2,9 @@ use iced::widget::{button, text, Row};
 use iced::{theme, Command, Element};
 
 use crate::component::Component;
-use crate::message::ErrorMessage;
-use crate::model::{RemoteSeriesId, Series, SeriesId};
+use crate::model::{Series, SeriesId};
 use crate::params::{ACTION_SIZE, SPACE};
-use crate::service::NewSeries;
-use crate::state::State;
+use crate::state::{SeriesDownload, State};
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -14,7 +12,7 @@ pub(crate) enum Message {
     Track,
     RefreshSeries,
     RemoveSeries,
-    SeriesDownload(SeriesId, RemoteSeriesId, Result<NewSeries, ErrorMessage>),
+    SeriesDownload(SeriesDownload),
 }
 
 #[derive(Debug, Clone)]
@@ -54,10 +52,7 @@ impl SeriesActions {
             }
             Message::RefreshSeries => {
                 if let Some(future) = s.refresh_series(&self.series_id) {
-                    Command::perform(future, |(id, remote_id, result)| match result {
-                        Ok(new_data) => Message::SeriesDownload(id, remote_id, Ok(new_data)),
-                        Err(e) => Message::SeriesDownload(id, remote_id, Err(e.into())),
-                    })
+                    Command::perform(future, Message::SeriesDownload)
                 } else {
                     Command::none()
                 }
@@ -66,17 +61,8 @@ impl SeriesActions {
                 s.remove_series(&self.series_id);
                 Command::none()
             }
-            Message::SeriesDownload(series_id, remote_id, result) => {
-                match result {
-                    Ok(data) => {
-                        s.service.insert_new_series(data);
-                    }
-                    Err(error) => {
-                        s.handle_error(error);
-                    }
-                }
-
-                s.download_complete(Some(series_id), remote_id);
+            Message::SeriesDownload(download) => {
+                s.handle_series_download(download);
                 Command::none()
             }
         }

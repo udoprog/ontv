@@ -18,11 +18,12 @@ use crate::api::themoviedb;
 use crate::api::thetvdb;
 use crate::assets::ImageKey;
 use crate::cache::{self};
-
 use crate::model::{
     Config, Episode, EpisodeId, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, ScheduledDay,
-    ScheduledSeries, SearchSeries, Season, SeasonNumber, Series, SeriesId, ThemeType, Watched,
+    ScheduledSeries, SearchSeries, Season, SeasonNumber, Series, SeriesId, Task, TaskFinished,
+    TaskKind, ThemeType, Watched,
 };
+use crate::queue::Queue;
 
 /// Data encapsulating a newly added series.
 #[derive(Clone)]
@@ -94,35 +95,6 @@ impl Changes {
     #[inline]
     fn has_changes(&self) -> bool {
         !self.set.is_empty() || !self.remove.is_empty() || !self.add.is_empty()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub(crate) struct Queued {
-    // Series to download.
-    pub(crate) series_id: SeriesId,
-    // Remote to download.
-    pub(crate) remote_id: RemoteSeriesId,
-    // Scheduled timestamp.
-    pub(crate) scheduled: DateTime<Utc>,
-}
-
-/// Queue of scheduled actions.
-#[derive(Default)]
-struct Queue {
-    // Pending series to download.
-    pending: HashSet<(SeriesId, RemoteSeriesId)>,
-    // An item in the download queue.
-    data: Vec<Queued>,
-}
-
-impl Queue {
-    /// Remove the given series from the queue.
-    fn remove_series(&mut self, series_id: &SeriesId) -> bool {
-        let old = self.pending.len() + self.data.len();
-        self.pending.retain(|p| p.0 != *series_id);
-        self.data.retain(|q| q.series_id != *series_id);
-        old != self.pending.len() + self.data.len()
     }
 }
 
@@ -317,9 +289,9 @@ impl Service {
             .unwrap_or_default()
     }
 
-    /// Get download queue.
-    pub(crate) fn queue(&self) -> &[Queued] {
-        &self.db.queue.data
+    /// Get task queue.
+    pub(crate) fn tasks(&self) -> &[Task] {
+        &self.db.queue.data()
     }
 
     /// Test if episode is watched.
@@ -389,7 +361,7 @@ impl Service {
     pub(crate) fn find_updates(
         &mut self,
         mut now: DateTime<Utc>,
-    ) -> impl Future<Output = Result<Vec<Queued>>> {
+    ) -> impl Future<Output = Result<Vec<Task>>> {
         // Cache series updates for 6 hours.
         const CACHE_TIME: i64 = 3600 * 6;
 
@@ -401,92 +373,121 @@ impl Service {
                 continue;
             }
 
-            // Note: to avoid an update loop. If this is missing the user can
-            // manually try to refresh the series.
-            let Some(last_modified) = s.last_modified else {
+            let Some(remote_id) = s.remote_id else {
                 continue;
             };
 
-            for remote_id in &s.remote_ids {
-                // Reduce the number of API requests by ensuring we don't check
-                // for updates more than each CACHE_TIME interval.
-                if let Some(last_sync) = s.last_sync.get(remote_id) {
-                    if now.signed_duration_since(*last_sync).num_seconds() < CACHE_TIME {
-                        continue;
-                    }
-                }
-
-                if s.tracked && !self.db.queue.pending.contains(&(s.id, *remote_id)) {
-                    interests.push((s.id, last_modified, *remote_id));
-                    s.last_sync.insert(*remote_id, now);
-                    self.db.changes.set.insert(Change::Series);
+            // Reduce the number of API requests by ensuring we don't check for
+            // updates more than each CACHE_TIME interval.
+            if let Some(last_sync) = s.last_sync.get(&remote_id) {
+                if now.signed_duration_since(*last_sync).num_seconds() < CACHE_TIME {
+                    continue;
                 }
             }
+
+            let kind = TaskKind::CheckForUpdates {
+                series_id: s.id,
+                remote_id,
+            };
+
+            if self.db.queue.contains(&kind) {
+                continue;
+            }
+
+            interests.push((s.last_modified, s.last_etag.clone(), s.id, remote_id, kind));
+            s.last_sync.insert(remote_id, now);
+            self.db.changes.set.insert(Change::Series);
         }
 
         let tvdb = self.tvdb.clone();
+        let tmdb = self.tmdb.clone();
 
         async move {
-            let mut queue = Vec::new();
+            let mut tasks = Vec::new();
 
-            for (series_id, last_modified, remote_id) in interests {
-                log::trace!("{series_id}/{remote_id}: checking for updates (last_modified: {last_modified})");
+            for (last_modified, last_etag, series_id, remote_id, kind) in interests {
+                log::trace!("{series_id}/{remote_id}: checking for updates");
 
-                match remote_id {
+                let finished = match remote_id {
                     RemoteSeriesId::Tvdb { id } => {
                         let Some(update) = tvdb.series_last_modified(id).await? else {
                             continue;
                         };
 
-                        log::trace!("{series_id}/{remote_id:?}: last modified: {update}");
+                        log::trace!("{series_id}/{remote_id:?}: last modified {update} (existing {last_modified:?})");
 
-                        if last_modified >= update {
-                            continue;
+                        if let Some(last_modified) = last_modified {
+                            if last_modified >= update {
+                                continue;
+                            }
+                        }
+
+                        TaskFinished::UpdateSeries {
+                            series_id,
+                            last_etag: None,
+                            last_modifed: Some(update),
                         }
                     }
                     // Nothing to do with the TMDB remote.
-                    RemoteSeriesId::Tmdb { .. } => {
-                        continue;
+                    RemoteSeriesId::Tmdb { id } => {
+                        let Some(update) = tmdb.series_last_etag(id).await? else {
+                            continue;
+                        };
+
+                        log::trace!(
+                            "{series_id}/{remote_id:?}: etag: {update} (existing {last_etag:?})"
+                        );
+
+                        if let Some(last_etag) = last_etag {
+                            if last_etag == update {
+                                continue;
+                            }
+                        }
+
+                        TaskFinished::UpdateSeries {
+                            series_id,
+                            last_etag: Some(update),
+                            last_modifed: None,
+                        }
                     }
                     // Nothing to do with the IMDB remote.
                     RemoteSeriesId::Imdb { .. } => {
                         continue;
                     }
-                }
+                };
 
-                queue.push(Queued {
-                    series_id,
-                    remote_id,
+                tasks.push(Task {
+                    id: Uuid::new_v4(),
+                    kind,
                     scheduled: now,
+                    finished,
                 });
 
                 now += Duration::minutes(1);
             }
 
-            Ok(queue)
+            Ok(tasks)
         }
     }
 
     /// Add updates to download to the queue.
-    pub(crate) fn add_to_queue(&mut self, update: Vec<Queued>) {
+    pub(crate) fn add_to_queue(&mut self, update: Vec<Task>) {
         if update.is_empty() {
             return;
         }
 
-        self.db.changes.set.insert(Change::Queue);
+        let mut any = false;
 
-        for d in update {
-            let added = self.db.queue.pending.insert((d.series_id, d.remote_id));
-
-            if added {
-                self.db.queue.data.push(d);
+        for task in update {
+            if self.db.queue.push(task) {
+                any = true;
             }
         }
 
-        self.db
-            .queue
-            .data
-            .sort_by(|a, b| b.scheduled.cmp(&a.scheduled));
+        if any {
+            self.db.changes.set.insert(Change::Queue);
+            self.db.queue.sort();
+        }
     }
 
     /// Mark an episode as watched at the given timestamp.
@@ -740,7 +741,7 @@ impl Service {
         let queue = changes
             .set
             .contains(Change::Queue)
-            .then(|| self.db.queue.data.clone());
+            .then(|| self.db.queue.data().to_vec());
 
         let remove_series = changes.remove;
         let mut add_series = Vec::with_capacity(changes.add.len());
@@ -952,7 +953,7 @@ impl Service {
         self.db.changes.add.remove(series_id);
         self.db.changes.remove.insert(*series_id);
 
-        if self.db.queue.remove_series(series_id) {
+        if self.db.queue.remove_tasks_by(|t| t.is_series(series_id)) != 0 {
             self.db.changes.set.insert(Change::Queue);
         }
     }
@@ -1056,10 +1057,6 @@ impl Service {
         if let Some(s) = self.db.series.get_mut(series_id) {
             s.tracked = false;
             self.db.changes.set.insert(Change::Series);
-
-            if self.db.queue.remove_series(series_id) {
-                self.db.changes.set.insert(Change::Queue);
-            }
         }
 
         self.db.pending.retain(|p| p.series != *series_id);
@@ -1291,6 +1288,24 @@ impl Service {
 
         self.schedule = days;
     }
+
+    /// Take if a queue has been modified.
+    #[inline]
+    pub(crate) fn take_queue_modified(&mut self) -> bool {
+        self.db.queue.take_modified()
+    }
+
+    /// Get the next task in the queue.
+    #[inline]
+    pub(crate) fn next_queue_item(&mut self, now: &DateTime<Utc>) -> Option<Task> {
+        self.db.queue.next_item(now)
+    }
+
+    /// Next duration to sleep.
+    #[inline]
+    pub(crate) fn next_queue_sleep(&self, now: &DateTime<Utc>) -> Option<u64> {
+        self.db.queue.next_sleep(now)
+    }
 }
 
 /// Load configuration file.
@@ -1337,12 +1352,12 @@ fn load_database(paths: &Paths) -> Result<Database> {
         }
     }
 
-    if let Some(queue) = load_array::<Queued>(&paths.queue)? {
-        for d in &queue {
-            db.queue.pending.insert((d.series_id, d.remote_id));
+    if let Some(tasks) = load_array::<Task>(&paths.queue)? {
+        for task in tasks {
+            db.queue.push(task);
         }
 
-        db.queue.data = queue;
+        db.queue.sort();
     }
 
     if let Some(series) = load_series(&paths.series)? {

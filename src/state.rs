@@ -8,6 +8,13 @@ use crate::message::{ErrorMessage, Page};
 use crate::model::{RemoteSeriesId, SeriesId};
 use crate::service::{NewSeries, Service};
 
+#[derive(Debug, Clone)]
+pub(crate) struct SeriesDownload {
+    series_id: SeriesId,
+    remote_id: RemoteSeriesId,
+    result: Result<NewSeries, ErrorMessage>,
+}
+
 const ERRORS: usize = 5;
 
 pub(crate) struct State {
@@ -144,7 +151,7 @@ impl State {
     pub(crate) fn refresh_series(
         &mut self,
         series_id: &SeriesId,
-    ) -> Option<impl Future<Output = (SeriesId, RemoteSeriesId, Result<NewSeries>)>> {
+    ) -> Option<impl Future<Output = SeriesDownload>> {
         let remote_id = self.service.series(series_id)?.remote_id?;
 
         self.downloading.insert(remote_id);
@@ -153,7 +160,14 @@ impl State {
         let (_, op) = self.service.download_series(&remote_id, false);
 
         let series_id = *series_id;
-        Some(async move { (series_id, remote_id, op.await) })
+
+        Some(async move {
+            SeriesDownload {
+                series_id,
+                remote_id,
+                result: op.await.map_err(Into::into),
+            }
+        })
     }
 
     /// Download a series by remote.
@@ -190,5 +204,19 @@ impl State {
     #[inline]
     pub(crate) fn warning_text(&self) -> iced::theme::Text {
         crate::style::warning_text(self.service.theme())
+    }
+
+    /// Handle a series download.
+    pub(crate) fn handle_series_download(&mut self, download: SeriesDownload) {
+        match download.result {
+            Ok(data) => {
+                self.service.insert_new_series(data);
+            }
+            Err(error) => {
+                self.handle_error(error);
+            }
+        }
+
+        self.download_complete(Some(download.series_id), download.remote_id);
     }
 }
