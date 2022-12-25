@@ -15,16 +15,9 @@ const TMDB: u64 = 0xd614d57a2eadc500u64;
 
 /// Whether or not to provide a scaled version of the image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[allow(unused)]
 pub(crate) enum ImageHint {
-    /// Ensure that the image is scaled so that it has a max width in the
-    /// specified number of pixels.
-    Width(u32),
-    /// Ensure that the image is scaled so that it has a max height in the
-    /// specified number of pixels.
-    Height(u32),
-    /// Specifies a maximum width and height.
-    Max(u32),
+    /// Specifies that the image should fit centered within the specified bounds.
+    Fit(u32, u32),
     /// Fill the specified dimensions.
     Fill(u32, u32),
 }
@@ -33,10 +26,8 @@ impl fmt::Display for ImageHint {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ImageHint::Width(px) => write!(f, "w{px}"),
-            ImageHint::Height(px) => write!(f, "h{px}"),
-            ImageHint::Max(px) => write!(f, "x{px}"),
-            ImageHint::Fill(w, h) => write!(f, "f{w}x{h}"),
+            ImageHint::Fit(w, h) => write!(f, "fit-{w}x{h}"),
+            ImageHint::Fill(w, h) => write!(f, "fill-{w}x{h}"),
         }
     }
 }
@@ -139,17 +130,12 @@ where
     log::debug!("downloading: {id}: {}", path.display());
     let data = client.download_image(&id).await?;
     let image = image_rs::load_from_memory_with_format(&data, format)?;
-    let (width, height) = image.dimensions();
 
     let image = match hint {
         Some(hint) => {
             tokio::task::spawn_blocking(move || match hint {
-                ImageHint::Width(px) => image.resize(px, height, FilterType::Lanczos3),
-                ImageHint::Height(px) => image.resize(width, px, FilterType::Lanczos3),
-                ImageHint::Max(px) => image.resize(px, px, FilterType::Lanczos3),
-                ImageHint::Fill(width, height) => {
-                    image.resize_to_fill(width, height, FilterType::Lanczos3)
-                }
+                ImageHint::Fit(w, h) => image.resize_exact(w, h, FilterType::Lanczos3),
+                ImageHint::Fill(w, h) => image.resize_to_fill(w, h, FilterType::Lanczos3),
             })
             .await?
         }

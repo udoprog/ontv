@@ -4,17 +4,15 @@ use iced::widget::{button, container, horizontal_rule, image, text, vertical_spa
 use iced::{theme, Command, Element};
 use iced::{Alignment, Length};
 
-use crate::cache::ImageHint;
 use crate::message::Page;
 use crate::model::{EpisodeId, Image, SeasonNumber, SeriesId};
-use crate::params::{centered, ACTION_SIZE, GAP, GAP2, SMALL_SIZE, SPACE, SUBTITLE_SIZE};
+use crate::params::{
+    centered, ACTION_SIZE, GAP, GAP2, POSTER_HINT, SMALL_SIZE, SPACE, SUBTITLE_SIZE,
+};
 use crate::service::PendingRef;
 use crate::state::State;
 use crate::style;
 use crate::utils::Hoverable;
-
-/// Dashboard gets a bit more leeway, since the image is dynamically scaled.
-const POSTER_HINT: ImageHint = ImageHint::Width(512);
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {

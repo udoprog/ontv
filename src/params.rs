@@ -2,6 +2,7 @@ use chrono::Duration;
 use iced::widget::{Column, Container, Text};
 use iced::Element;
 
+use crate::cache::ImageHint;
 use crate::style;
 
 pub(crate) const SPACE: u16 = 5;
@@ -22,6 +23,15 @@ pub(crate) const IMAGE_HEIGHT: u16 = 200;
 
 /// Standard screencap height.
 pub(crate) const SCREENCAP_HEIGHT: u16 = 270;
+
+/// Dashboard gets a bit more leeway, since the image is dynamically scaled.
+pub(crate) const POSTER_HINT: ImageHint = ImageHint::Fit(500, 750);
+
+// Force a 16:9 aspect ratio
+pub(crate) const SCREENCAP_HINT: ImageHint = ImageHint::Fill(480, SCREENCAP_HEIGHT as u32);
+
+// Banner dimensions.
+pub(crate) const BANNER: ImageHint = ImageHint::Fill(1600, 300);
 
 /// Build a default container.
 pub(crate) fn default_container<'a, E, M: 'a>(content: E) -> Column<'a, M>

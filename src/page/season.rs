@@ -4,17 +4,15 @@ use iced::widget::{button, container, image, text, Column, Row};
 use iced::{theme, Alignment, Command};
 use iced::{Element, Length};
 
-use crate::cache::ImageHint;
 use crate::component::*;
 use crate::comps;
 use crate::model::{EpisodeId, SeasonNumber, SeriesId, Watched};
-use crate::params::{centered, ACTION_SIZE, GAP, GAP2, SCREENCAP_HEIGHT, SPACE, SUBTITLE_SIZE};
+use crate::params::{
+    centered, ACTION_SIZE, GAP, GAP2, SCREENCAP_HEIGHT, SCREENCAP_HINT, SPACE, SUBTITLE_SIZE,
+};
 use crate::style;
 
 use crate::state::State;
-
-// Force a 16:9 aspect ratio
-const SCREENCAP_HINT: ImageHint = ImageHint::Fill(480, SCREENCAP_HEIGHT as u32);
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {

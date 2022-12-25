@@ -5,19 +5,17 @@ use iced::widget::{button, image, radio, text, text_input, Column, Row};
 use iced::{theme, Alignment, Element};
 use iced::{Command, Length};
 
-use crate::cache::ImageHint;
 use crate::message::ErrorMessage;
 use crate::model::{RemoteSeriesId, SearchSeries, SeriesId, TaskFinished, TaskKind};
 use crate::params::{
-    default_container, ACTION_SIZE, GAP, GAP2, IMAGE_HEIGHT, SMALL_SIZE, SPACE, TITLE_SIZE,
+    default_container, ACTION_SIZE, GAP, GAP2, IMAGE_HEIGHT, POSTER_HINT, SMALL_SIZE, SPACE,
+    TITLE_SIZE,
 };
 use crate::queue::TaskStatus;
 use crate::state::State;
 
 /// Number of results per page.
 const PER_PAGE: usize = 5;
-/// Posters are defined by their maximum height.
-const POSTER_HINT: ImageHint = ImageHint::Height(IMAGE_HEIGHT as u32);
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum SearchKind {

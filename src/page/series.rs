@@ -2,17 +2,13 @@ use iced::widget::{button, image, text, Column, Row};
 use iced::{theme, Command, Element};
 use iced::{Alignment, Length};
 
-use crate::cache::ImageHint;
 use crate::component::*;
 use crate::comps;
 use crate::message::Page;
 use crate::model::{RemoteSeriesId, SeriesId};
-use crate::params::{centered, GAP, GAP2, IMAGE_HEIGHT, SPACE, SUBTITLE_SIZE};
+use crate::params::{centered, GAP, GAP2, IMAGE_HEIGHT, POSTER_HINT, SPACE, SUBTITLE_SIZE};
 use crate::state::State;
 use crate::style;
-
-/// Posters are defined by their maximum height.
-const POSTER_HINT: ImageHint = ImageHint::Height(IMAGE_HEIGHT as u32);
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {

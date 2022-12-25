@@ -1,14 +1,10 @@
 use iced::widget::{button, image, text, Column};
 use iced::{theme, Alignment, Command, Element, Length};
 
-use crate::cache::ImageHint;
 use crate::message::Page;
 use crate::model::{Series, SeriesId};
-use crate::params::{GAP, TITLE_SIZE};
+use crate::params::{BANNER, GAP, TITLE_SIZE};
 use crate::state::State;
-
-// Banner dimensions.
-const BANNER: ImageHint = ImageHint::Fill(1600, 300);
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {

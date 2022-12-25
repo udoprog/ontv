@@ -2,16 +2,12 @@ use iced::widget::{button, image, text, text_input, Column, Row};
 use iced::{theme, Command};
 use iced::{Element, Length};
 
-use crate::cache::ImageHint;
 use crate::component::*;
 use crate::comps;
 use crate::message::Page;
-use crate::params::{centered, GAP, GAP2, IMAGE_HEIGHT, SPACE, SUBTITLE_SIZE};
+use crate::params::{centered, GAP, GAP2, IMAGE_HEIGHT, POSTER_HINT, SPACE, SUBTITLE_SIZE};
 use crate::state::State;
 use crate::style;
-
-/// Posters are defined by their maximum height.
-const POSTER_HINT: ImageHint = ImageHint::Height(IMAGE_HEIGHT as u32);
 
 /// Messages generated and handled by [SeriesList].
 #[derive(Debug, Clone)]
