@@ -1,6 +1,6 @@
 use chrono::Utc;
 use iced::widget::{button, text, Row};
-use iced::{theme, Command, Element};
+use iced::{theme, Element};
 use uuid::Uuid;
 
 use crate::component::Component;
@@ -85,7 +85,7 @@ impl Component<Props> for Confirm {
 }
 
 impl Confirm {
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
+    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
         match message {
             Message::Confirm => {
                 self.confirm = false;
@@ -116,8 +116,6 @@ impl Confirm {
                 self.confirm = true;
             }
         }
-
-        Command::none()
     }
 
     pub(crate) fn view(

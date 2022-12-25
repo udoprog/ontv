@@ -1,5 +1,5 @@
 use iced::widget::{button, text, Row};
-use iced::{theme, Command, Element};
+use iced::{theme, Element};
 
 use crate::component::Component;
 use crate::model::{Series, SeriesId, TaskFinished, TaskKind};
@@ -40,15 +40,13 @@ impl Component<SeriesId> for SeriesActions {
 }
 
 impl SeriesActions {
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
+    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
         match message {
             Message::Untrack => {
                 s.service.untrack(&self.series_id);
-                Command::none()
             }
             Message::Track => {
                 s.service.track(&self.series_id);
-                Command::none()
             }
             Message::RefreshSeries => {
                 s.service.push_task(
@@ -57,11 +55,9 @@ impl SeriesActions {
                     },
                     TaskFinished::None,
                 );
-                Command::none()
             }
             Message::RemoveSeries => {
                 s.remove_series(&self.series_id);
-                Command::none()
             }
         }
     }

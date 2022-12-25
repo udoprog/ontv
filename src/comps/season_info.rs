@@ -1,5 +1,5 @@
 use iced::widget::{text, Column, Row};
-use iced::{theme, Command, Element, Length};
+use iced::{theme, Element, Length};
 
 use crate::component::Component;
 use crate::comps;
@@ -51,14 +51,13 @@ impl Component<(SeriesId, SeasonNumber)> for SeasonInfo {
 }
 
 impl SeasonInfo {
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
+    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
         match message {
-            Message::WatchRemaining(m) => self
-                .watch_remaining
-                .update(s, m)
-                .map(Message::WatchRemaining),
+            Message::WatchRemaining(m) => {
+                self.watch_remaining.update(s, m);
+            }
             Message::RemoveWatches(m) => {
-                self.remove_watches.update(s, m).map(Message::RemoveWatches)
+                self.remove_watches.update(s, m);
             }
         }
     }

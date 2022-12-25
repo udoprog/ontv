@@ -1,7 +1,7 @@
 use chrono::Utc;
 use iced::alignment::Horizontal;
 use iced::widget::{button, container, image, text, Column, Row};
-use iced::{theme, Alignment, Command};
+use iced::{theme, Alignment};
 use iced::{Element, Length};
 
 use crate::component::*;
@@ -120,7 +120,7 @@ impl Season {
         }
     }
 
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
+    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
         match message {
             Message::RemoveLastWatch(index, message) => {
                 if let Some(c) = self
@@ -128,10 +128,7 @@ impl Season {
                     .get_mut(index)
                     .and_then(|data| data.remove_last_watch.as_mut())
                 {
-                    c.update(s, message)
-                        .map(move |m| Message::RemoveLastWatch(index, m))
-                } else {
-                    Command::none()
+                    c.update(s, message);
                 }
             }
             Message::RemoveWatch(index, n, message) => {
@@ -140,27 +137,22 @@ impl Season {
                     .get_mut(index)
                     .and_then(|data| data.remove_watches.get_mut(n))
                 {
-                    c.update(s, message)
-                        .map(move |m| Message::RemoveWatch(index, n, m))
-                } else {
-                    Command::none()
+                    c.update(s, message);
                 }
             }
             Message::Watch(series, episode) => {
                 let now = Utc::now();
                 s.service.watch(&series, &episode, now);
-                Command::none()
             }
             Message::SelectPending(series, episode) => {
                 let now = Utc::now();
                 s.service.select_pending(&series, &episode, now);
-                Command::none()
             }
             Message::SeasonInfo(message) => {
-                self.season_info.update(s, message).map(Message::SeasonInfo)
+                self.season_info.update(s, message);
             }
             Message::SeriesBanner(message) => {
-                self.banner.update(s, message).map(Message::SeriesBanner)
+                self.banner.update(s, message);
             }
         }
     }

@@ -1,5 +1,5 @@
 use iced::widget::{button, image, text, Column};
-use iced::{theme, Alignment, Command, Element, Length};
+use iced::{theme, Alignment, Element, Length};
 
 use crate::message::Page;
 use crate::model::{Series, SeriesId};
@@ -12,7 +12,7 @@ pub(crate) enum Message {
 }
 
 #[derive(Default, Debug, Clone)]
-pub(crate) struct SeriesBanner {}
+pub(crate) struct SeriesBanner;
 
 impl SeriesBanner {
     /// Prepare assets needed for banner.
@@ -23,11 +23,10 @@ impl SeriesBanner {
     }
 
     /// Update message.
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
+    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
         match message {
             Message::Navigate(page) => {
                 s.push_history(page);
-                Command::none()
             }
         }
     }

@@ -1,7 +1,7 @@
 use chrono::Utc;
 use iced::alignment::Horizontal;
 use iced::widget::{button, container, horizontal_rule, image, text, vertical_space, Column, Row};
-use iced::{theme, Command, Element};
+use iced::{theme, Element};
 use iced::{Alignment, Length};
 
 use crate::message::Page;
@@ -64,28 +64,23 @@ impl Dashboard {
         );
     }
 
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
+    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
         match message {
             Message::HoverScheduled(series_id) => {
                 if let Some(series) = s.service.series(&series_id) {
                     self.schedule_focus = Some((series_id, series.poster));
                 }
-
-                Command::none()
             }
             Message::Skip(series_id, episode_id) => {
                 let now = Utc::now();
                 s.service.skip(&series_id, &episode_id, now);
-                Command::none()
             }
             Message::Watch(series_id, episode_id) => {
                 let now = Utc::now();
                 s.service.watch(&series_id, &episode_id, now);
-                Command::none()
             }
             Message::Navigate(page) => {
                 s.push_history(page);
-                Command::none()
             }
         }
     }

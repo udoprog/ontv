@@ -1,6 +1,5 @@
 use iced::widget::{button, image, text, text_input, Column, Row};
-use iced::{theme, Command};
-use iced::{Element, Length};
+use iced::{theme, Element, Length};
 
 use crate::component::*;
 use crate::comps;
@@ -42,7 +41,7 @@ impl SeriesList {
         }
     }
 
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
+    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
         match message {
             Message::ChangeFilter(filter) => {
                 self.filter = filter;
@@ -61,21 +60,14 @@ impl SeriesList {
                 } else {
                     None
                 };
-
-                Command::none()
             }
             Message::SeriesActions(index, message) => {
                 if let Some(actions) = self.actions.get_mut(index) {
-                    actions
-                        .update(s, message)
-                        .map(move |m| Message::SeriesActions(index, m))
-                } else {
-                    Command::none()
+                    actions.update(s, message);
                 }
             }
             Message::Navigate(page) => {
                 s.push_history(page);
-                Command::none()
             }
         }
     }

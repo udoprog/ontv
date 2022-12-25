@@ -121,9 +121,9 @@ mod tests {
 
     #[test]
     fn test_raw16() {
-        let id = Raw::<16>::new(b"foobarbaz");
+        let id = Raw::<16>::new(b"foobarbaz").unwrap();
         assert_eq!(id.to_string(), "foobarbaz");
-        let id = Raw::<16>::new("foobarbaz");
+        let id = Raw::<16>::new("foobarbaz").unwrap();
         assert_eq!(id.to_string(), "foobarbaz");
     }
 }

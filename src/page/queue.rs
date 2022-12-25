@@ -3,7 +3,7 @@ use std::time::Duration;
 use chrono::Utc;
 use iced::alignment::Horizontal;
 use iced::widget::{button, horizontal_rule, text, vertical_space, Column, Row};
-use iced::{theme, Command, Element, Length};
+use iced::{theme, Commands, Element, Length};
 
 use crate::message::Page;
 use crate::model::{RemoteSeriesId, TaskKind};
@@ -31,31 +31,35 @@ pub(crate) struct Queue {
 }
 
 impl Queue {
-    pub(crate) fn new() -> (Self, Command<Message>) {
+    pub(crate) fn new(mut commands: impl Commands<Message>) -> Self {
         let mut this = Queue {
             timeout: Timeout::default(),
         };
 
         let future = this.timeout.set(Duration::from_secs(UPDATE_TIMER));
-        (this, Command::perform(future, Message::Tick))
+        commands.perform(future, Message::Tick);
+        this
     }
 
     pub(crate) fn prepare(&mut self, _: &mut State) {}
 
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
+    pub(crate) fn update(
+        &mut self,
+        s: &mut State,
+        message: Message,
+        mut commands: impl Commands<Message>,
+    ) {
         match message {
             Message::Navigate(page) => {
                 s.push_history(page);
-                Command::none()
             }
             Message::Tick(..) => {
                 let future = self.timeout.set(Duration::from_secs(UPDATE_TIMER));
-                Command::perform(future, Message::Tick)
+                commands.perform(future, Message::Tick);
             }
             Message::OpenRemote(remote_id) => {
                 let url = remote_id.url();
                 let _ = webbrowser::open(&url);
-                Command::none()
             }
         }
     }

@@ -1,4 +1,4 @@
-#![cfg_attr(windows, windows_subsystem = "windows")]
+#![cfg_attr(all(not(feature = "cli"), windows), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
 

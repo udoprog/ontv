@@ -15,6 +15,10 @@ categories = []
 
 exclude = ["assets/*.xcf", "images/"]
 
+[features]
+default = []
+cli = []
+
 [dependencies]
 anyhow = "1.0.68"
 arrayvec = "0.7.2"
@@ -41,3 +45,8 @@ tokio = { version = "1.23.0", features = ["full"] }
 twox-hash = "1.6.3"
 uuid = { version = "1.2.2", features = ["v4", "serde"] }
 webbrowser = "0.8.2"
+
+[patch.crates-io]
+iced = { git = "https://github.com/udoprog/iced", branch = "commands" }
+iced_futures = { git = "https://github.com/udoprog/iced", branch = "commands" }
+iced_native = { git = "https://github.com/udoprog/iced", branch = "commands" }

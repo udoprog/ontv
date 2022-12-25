@@ -124,11 +124,11 @@ mod tests {
 
     #[test]
     fn test_hex16() {
-        let id = Hex::from(0x61d78641a649a);
+        let id: Hex<16> = Hex::from(0x61d78641a649a);
         assert_eq!(id.to_string(), "61d78641a649a");
-        let id = Hex::from_hex(b"61d78641a649a").unwrap();
+        let id: Hex<16> = Hex::from_hex(b"61d78641a649a").unwrap();
         assert_eq!(id.to_string(), "61d78641a649a");
-        let id = Hex::from_hex("61d78641a649a").unwrap();
+        let id: Hex<16> = Hex::from_hex("61d78641a649a").unwrap();
         assert_eq!(id.to_string(), "61d78641a649a");
     }
 }

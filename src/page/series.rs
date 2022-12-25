@@ -1,6 +1,5 @@
 use iced::widget::{button, image, text, Column, Row};
-use iced::{theme, Command, Element};
-use iced::{Alignment, Length};
+use iced::{theme, Alignment, Element, Length};
 
 use crate::component::*;
 use crate::comps;
@@ -58,31 +57,25 @@ impl Series {
         }
     }
 
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
+    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
         match message {
             Message::OpenRemote(remote_id) => {
                 let url = remote_id.url();
                 let _ = webbrowser::open_browser(webbrowser::Browser::Default, &url);
-                Command::none()
             }
             Message::SeriesActions(message) => {
-                self.series.update(s, message).map(Message::SeriesActions)
+                self.series.update(s, message);
             }
             Message::Navigate(page) => {
                 s.push_history(page);
-                Command::none()
             }
             Message::SeasonInfo(index, message) => {
                 if let Some(season_info) = self.seasons.get_mut(index) {
-                    season_info
-                        .update(s, message)
-                        .map(move |m| Message::SeasonInfo(index, m))
-                } else {
-                    Command::none()
+                    season_info.update(s, message);
                 }
             }
             Message::SeriesBanner(message) => {
-                self.banner.update(s, message).map(Message::SeriesBanner)
+                self.banner.update(s, message);
             }
         }
     }

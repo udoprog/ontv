@@ -4,7 +4,7 @@ use anyhow::Result;
 use chrono::Utc;
 use iced::theme::{self, Theme};
 use iced::widget::{button, horizontal_rule, scrollable, text, Button, Column, Row};
-use iced::{Alignment, Command, Element, Length};
+use iced::{window, Alignment, Commands, Element, Length};
 use iced_native::image::Handle;
 use uuid::Uuid;
 
@@ -85,8 +85,6 @@ pub(crate) struct Application {
     image_loader: Singleton,
     // Exit after save has been completed.
     exit_after_save: bool,
-    // Should exit.
-    should_exit: bool,
     // Images to load.
     images: Vec<ImageKey>,
     /// The identifier used for the main scrollable.
@@ -103,7 +101,7 @@ impl iced::Application for Application {
     type Theme = Theme;
     type Flags = Flags;
 
-    fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
+    fn new(flags: Self::Flags, mut commands: impl Commands<Self::Message>) -> Self {
         let state = State::new(flags.service, Assets::new());
         let current = Current::Dashboard(page::dashboard::Dashboard::new(&state));
 
@@ -115,16 +113,15 @@ impl iced::Application for Application {
             queue_timeout: Timeout::default(),
             image_loader: Singleton::default(),
             exit_after_save: false,
-            should_exit: false,
             images: Vec::new(),
             scrollable_id: scrollable::Id::unique(),
         };
 
         this.prepare();
-        let a = this.handle_image_loading();
-        let b = this.handle_process_queue(None);
-        let c = Command::perform(async { TimedOut::TimedOut }, Message::CheckForUpdates);
-        (this, Command::batch([a, b, c]))
+        this.handle_image_loading(commands.by_ref());
+        this.handle_process_queue(commands.by_ref(), None);
+        commands.perform(async { TimedOut::TimedOut }, Message::CheckForUpdates);
+        this
     }
 
     #[inline]
@@ -164,52 +161,62 @@ impl iced::Application for Application {
         BASE.to_string()
     }
 
-    fn update(&mut self, message: Message) -> Command<Self::Message> {
+    fn update(&mut self, message: Message, mut commands: impl Commands<Self::Message>) {
         log::trace!("{message:?}");
 
-        let command = match (message, &mut self.current) {
+        match (message, &mut self.current) {
             (Message::Settings(message), Current::Settings(page)) => {
-                page.update(&mut self.state, message).map(Message::Settings)
+                page.update(&mut self.state, message);
             }
-            (Message::Dashboard(message), Current::Dashboard(page)) => page
-                .update(&mut self.state, message)
-                .map(Message::Dashboard),
+            (Message::Dashboard(message), Current::Dashboard(page)) => {
+                page.update(&mut self.state, message);
+            }
             (Message::Search(message), Current::Search(page)) => {
-                page.update(&mut self.state, message).map(Message::Search)
+                page.update(
+                    &mut self.state,
+                    message,
+                    commands.by_ref().map(Message::Search),
+                );
             }
-            (Message::SeriesList(message), Current::SeriesList(page)) => page
-                .update(&mut self.state, message)
-                .map(Message::SeriesList),
+            (Message::SeriesList(message), Current::SeriesList(page)) => {
+                page.update(&mut self.state, message);
+            }
             (Message::Series(message), Current::Series(page)) => {
-                page.update(&mut self.state, message).map(Message::Series)
+                page.update(&mut self.state, message);
             }
             (Message::Season(message), Current::Season(page)) => {
-                page.update(&mut self.state, message).map(Message::Season)
+                page.update(&mut self.state, message);
             }
             (Message::Queue(message), Current::Queue(page)) => {
-                page.update(&mut self.state, message).map(Message::Queue)
+                page.update(
+                    &mut self.state,
+                    message,
+                    commands.by_ref().map(Message::Queue),
+                );
             }
             (Message::CloseRequested, _) => {
+                log::debug!("Close requested");
+
                 self.exit_after_save = true;
 
                 if self.database_timeout.is_set() {
                     self.database_timeout.clear();
                 } else {
-                    self.should_exit = true;
+                    commands.command(window::close());
                 }
 
-                return Command::none();
+                return;
             }
             (Message::Save(timed_out), _) => {
                 // To avoid a cancellation loop we need to return here.
                 if !matches!(timed_out, TimedOut::TimedOut) && !self.exit_after_save {
-                    return Command::none();
+                    return;
                 }
 
                 self.database_timeout.clear();
                 self.state.set_saving(true);
 
-                Command::perform(self.state.service.save_changes(), |result| match result {
+                commands.perform(self.state.service.save_changes(), |result| match result {
                     Ok(()) => Message::Saved(Ok(())),
                     Err(error) => Message::Saved(Err(error.into())),
                 })
@@ -220,11 +227,10 @@ impl iced::Application for Application {
                 }
 
                 if self.exit_after_save {
-                    self.should_exit = true;
+                    commands.command(window::close());
                 }
 
                 self.state.set_saving(false);
-                Command::none()
             }
             (Message::CheckForUpdates(TimedOut::TimedOut), _) => {
                 self.state
@@ -232,10 +238,10 @@ impl iced::Application for Application {
                     .push_task(TaskKind::FindUpdates, TaskFinished::None);
 
                 // Schedule next update.
-                Command::perform(
+                commands.perform(
                     self.update_timeout.set(Duration::from_secs(UPDATE_TIMEOUT)),
                     Message::CheckForUpdates,
-                )
+                );
             }
             (Message::TaskUpdateDownloadQueue(result, kind), _) => {
                 match result {
@@ -248,19 +254,15 @@ impl iced::Application for Application {
                 }
 
                 self.state.service.complete_task(&kind);
-                Command::none()
             }
             (Message::Navigate(page), _) => {
                 self.state.push_history(page);
-                Command::none()
             }
             (Message::History(relative), _) => {
                 self.state.history(relative);
-                Command::none()
             }
             (Message::Scroll(offset), _) => {
                 self.state.history_scroll(offset);
-                Command::none()
             }
             (Message::ImagesLoaded(loaded), _) => {
                 match loaded {
@@ -273,7 +275,8 @@ impl iced::Application for Application {
                 }
 
                 self.image_loader.clear();
-                return self.handle_image_loading();
+                self.handle_image_loading(&mut commands);
+                return;
             }
             (Message::TaskSeriesDownloaded(result, kind), _) => {
                 match result {
@@ -286,60 +289,48 @@ impl iced::Application for Application {
                 }
 
                 self.state.service.complete_task(&kind);
-                Command::none()
             }
             (Message::ProcessQueue(TimedOut::TimedOut, id), _) => {
-                self.handle_process_queue(Some(id))
+                self.handle_process_queue(&mut commands, Some(id));
             }
-            _ => Command::none(),
+            _ => {}
         };
 
-        let save_database = if self.state.service.has_changes() && !self.exit_after_save {
-            Command::perform(
+        if self.state.service.has_changes() && !self.exit_after_save {
+            commands.perform(
                 self.database_timeout.set(Duration::from_secs(5)),
                 Message::Save,
-            )
-        } else {
-            Command::none()
-        };
+            );
+        }
 
-        let scroll = if let Some((page, scroll)) = self.state.history_change() {
-            let (current, command) = match page {
-                Page::Dashboard => (Current::Dashboard(page::Dashboard::new(&self.state)), None),
-                Page::Search => (Current::Search(page::Search::default()), None),
-                Page::SeriesList => (Current::SeriesList(page::SeriesList::default()), None),
-                Page::Series(series_id) => (Current::Series(page::Series::new(series_id)), None),
-                Page::Settings => (Current::Settings(page::Settings::default()), None),
+        if let Some((page, scroll)) = self.state.history_change() {
+            self.current = match page {
+                Page::Dashboard => Current::Dashboard(page::Dashboard::new(&self.state)),
+                Page::Search => Current::Search(page::Search::default()),
+                Page::SeriesList => Current::SeriesList(page::SeriesList::default()),
+                Page::Series(series_id) => Current::Series(page::Series::new(series_id)),
+                Page::Settings => Current::Settings(page::Settings::default()),
                 Page::Season(series_id, season) => {
-                    (Current::Season(page::Season::new(series_id, season)), None)
+                    Current::Season(page::Season::new(series_id, season))
                 }
                 Page::Queue => {
-                    let (page, command) = page::Queue::new();
-                    (Current::Queue(page), Some(command.map(Message::Queue)))
+                    let page = page::Queue::new(commands.by_ref().map(Message::Queue));
+                    Current::Queue(page)
                 }
             };
 
-            self.current = current;
-
-            Command::batch(
-                command
-                    .into_iter()
-                    .chain([scrollable::snap_to(self.scrollable_id.clone(), scroll)]),
-            )
-        } else {
-            Command::none()
-        };
+            commands.command(scrollable::snap_to(self.scrollable_id.clone(), scroll));
+        }
 
         self.prepare();
 
-        let image_loading = self.handle_image_loading();
-        let process_queue = self.handle_setup_queue();
-        Command::batch([image_loading, process_queue, save_database, command, scroll])
+        self.handle_image_loading(commands.by_ref());
+        self.handle_setup_queue(commands.by_ref());
     }
 
     #[inline]
     fn subscription(&self) -> iced::Subscription<Self::Message> {
-        use iced::{event, mouse, window, Event};
+        use iced::{event, mouse, Event};
         return iced_native::subscription::events_with(handle_event);
 
         fn handle_event(event: Event, status: event::Status) -> Option<Message> {
@@ -357,11 +348,6 @@ impl iced::Application for Application {
                 _ => None,
             }
         }
-    }
-
-    #[inline]
-    fn should_exit(&self) -> bool {
-        self.should_exit
     }
 
     fn view(&self) -> Element<Message> {
@@ -535,7 +521,7 @@ impl Application {
     }
 
     /// Handle image loading.
-    fn handle_image_loading(&mut self) -> Command<Message> {
+    fn handle_image_loading(&mut self, mut commands: impl Commands<Message>) {
         fn translate(value: Option<Result<Vec<(ImageKey, Handle)>>>) -> Message {
             match value {
                 Some(Ok(value)) => Message::ImagesLoaded(Ok(value)),
@@ -545,7 +531,7 @@ impl Application {
         }
 
         if self.image_loader.is_set() {
-            return Command::none();
+            return;
         }
 
         self.images.clear();
@@ -559,28 +545,29 @@ impl Application {
         }
 
         if self.images.is_empty() {
-            return Command::none();
+            return;
         }
 
         let future = self
             .image_loader
             .set(self.state.service.load_images(&self.images));
-        Command::perform(future, translate)
+        commands.perform(future, translate);
     }
 
     /// Setup queue processing.
-    fn handle_setup_queue(&mut self) -> Command<Message> {
+    fn handle_setup_queue(&mut self, commands: impl Commands<Message>) {
         if self.state.service.take_tasks_modified() {
-            self.handle_process_queue(None)
-        } else {
-            Command::none()
+            self.handle_process_queue(commands, None)
         }
     }
 
     /// Handle process queue.
-    fn handle_process_queue(&mut self, timed_out: Option<Uuid>) -> Command<Message> {
+    fn handle_process_queue(
+        &mut self,
+        mut commands: impl Commands<Message>,
+        timed_out: Option<Uuid>,
+    ) {
         let now = Utc::now();
-        let mut tasks = Vec::new();
 
         while let Some(task) = self.state.service.next_task(&now, timed_out) {
             log::trace!("running task {}", task.id);
@@ -588,32 +575,31 @@ impl Application {
             match task.kind {
                 kind @ TaskKind::DownloadSeriesById { series_id } => {
                     if let Some(future) = self.state.refresh_series(&series_id) {
-                        tasks.push(Command::perform(future, move |result| match result {
+                        commands.perform(future, move |result| match result {
                             Ok(new_series) => Message::TaskSeriesDownloaded(Ok(new_series), kind),
                             Err(error) => Message::TaskSeriesDownloaded(Err(error.into()), kind),
-                        }));
+                        });
                     }
                 }
                 kind @ TaskKind::DownloadSeriesByRemoteId { remote_id } => {
                     if self.state.service.set_tracked_by_remote(&remote_id) {
                         self.state.service.complete_task(&kind);
                     } else {
-                        tasks.push(Command::perform(
+                        commands.perform(
                             self.state.service.download_series_by_remote(&remote_id),
                             move |result| {
                                 Message::TaskSeriesDownloaded(result.map_err(Into::into), kind)
                             },
-                        ));
+                        );
                     }
                 }
                 kind @ TaskKind::FindUpdates => {
-                    tasks.push(Command::perform(
-                        self.state.service.find_updates(&now),
-                        move |output| match output {
+                    commands.perform(self.state.service.find_updates(&now), move |output| {
+                        match output {
                             Ok(update) => Message::TaskUpdateDownloadQueue(Ok(update), kind),
                             Err(error) => Message::TaskUpdateDownloadQueue(Err(error.into()), kind),
-                        },
-                    ));
+                        }
+                    });
                 }
             }
         }
@@ -623,13 +609,11 @@ impl Application {
         if let Some((seconds, id)) = self.state.service.next_task_sleep(&now) {
             log::trace!("next queue sleep: {seconds}s");
 
-            tasks.push(Command::perform(
+            commands.perform(
                 self.queue_timeout.set(Duration::from_secs(seconds)),
                 move |timed_out| Message::ProcessQueue(timed_out, id),
-            ));
+            );
         }
-
-        Command::batch(tasks)
     }
 }
 

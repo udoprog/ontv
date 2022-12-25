@@ -2,8 +2,7 @@ use core::fmt;
 
 use anyhow::Result;
 use iced::widget::{button, image, radio, text, text_input, Column, Row};
-use iced::{theme, Alignment, Element};
-use iced::{Command, Length};
+use iced::{theme, Alignment, Commands, Element, Length};
 
 use crate::message::ErrorMessage;
 use crate::model::{RemoteSeriesId, SearchSeries, SeriesId, TaskFinished, TaskKind};
@@ -71,37 +70,39 @@ impl Search {
     }
 
     /// Handle theme change.
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
+    pub(crate) fn update(
+        &mut self,
+        s: &mut State,
+        message: Message,
+        commands: impl Commands<Message>,
+    ) {
         match message {
             Message::Error(error) => {
                 s.handle_error(error);
-                Command::none()
             }
-            Message::Search => self.search(s),
+            Message::Search => {
+                self.search(s, commands);
+            }
             Message::Change(text) => {
                 self.text = text;
-                Command::none()
             }
             Message::Page(page) => {
                 self.page = page;
                 s.assets.clear();
-                Command::none()
             }
             Message::Result(series) => {
                 self.series = series;
                 s.assets.clear();
-                Command::none()
             }
             Message::SearchKindChanged(kind) => {
                 self.kind = kind;
-                self.search(s)
+                self.search(s, commands);
             }
             Message::AddSeriesByRemote(remote_id) => {
                 s.service.push_task(
                     TaskKind::DownloadSeriesByRemoteId { remote_id },
                     TaskFinished::None,
                 );
-                Command::none()
             }
             Message::SwitchSeries(series_id, remote_id) => {
                 s.remove_series(&series_id);
@@ -109,18 +110,16 @@ impl Search {
                     TaskKind::DownloadSeriesByRemoteId { remote_id },
                     TaskFinished::None,
                 );
-                Command::none()
             }
             Message::RemoveSeries(series_id) => {
                 s.remove_series(&series_id);
-                Command::none()
             }
         }
     }
 
-    fn search(&mut self, s: &mut State) -> Command<Message> {
+    fn search(&mut self, s: &mut State, mut commands: impl Commands<Message>) {
         if self.text.is_empty() {
-            return Command::none();
+            return;
         }
 
         self.page = 0;
@@ -135,11 +134,11 @@ impl Search {
         match self.kind {
             SearchKind::Tvdb => {
                 let op = s.service.search_tvdb(&query);
-                Command::perform(op, translate)
+                commands.perform(op, translate);
             }
             SearchKind::Tmdb => {
                 let op = s.service.search_tmdb(&query);
-                Command::perform(op, translate)
+                commands.perform(op, translate);
             }
         }
     }

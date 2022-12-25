@@ -1,5 +1,5 @@
 use iced::widget::{radio, text, text_input, Column};
-use iced::{Command, Element};
+use iced::Element;
 
 use crate::model::ThemeType;
 use crate::params::{default_container, GAP, SPACE};
@@ -22,7 +22,7 @@ impl Settings {
     pub(crate) fn prepare(&mut self, _: &mut State) {}
 
     /// Handle theme change.
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) -> Command<Message> {
+    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
         match message {
             Message::ThemeChanged(theme) => {
                 s.service.set_theme(theme);
@@ -34,8 +34,6 @@ impl Settings {
                 s.service.set_tmdb_api_key(string);
             }
         }
-
-        Command::none()
     }
 
     /// Generate the view for the settings page.
