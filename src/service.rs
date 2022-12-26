@@ -1364,7 +1364,9 @@ pub(crate) fn load_config(path: &Path) -> Result<Option<Config>> {
 fn load_database(paths: &Paths) -> Result<Database> {
     let mut db = Database::default();
 
-    if let Some(config) = load_config(&paths.config)? {
+    if let Some(config) =
+        load_config(&paths.config).with_context(|| anyhow!("{}", paths.config.display()))?
+    {
         db.config = config;
     }
 

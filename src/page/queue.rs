@@ -6,7 +6,7 @@ use iced::widget::{button, horizontal_rule, text, vertical_space, Column, Row};
 use iced::{theme, Commands, Element, Length};
 
 use crate::model::{RemoteSeriesId, SeriesId, TaskKind};
-use crate::params::{default_container, duration_display, GAP, GAP2, SMALL_SIZE, SPACE};
+use crate::params::{default_container, duration_display, GAP, GAP2, SMALL, SPACE};
 use crate::state::{Page, State};
 use crate::utils::{TimedOut, Timeout};
 
@@ -81,7 +81,7 @@ impl Queue {
         if running.len() == 0 {
             running_col = running_col.push(
                 text("Empty")
-                    .size(SMALL_SIZE)
+                    .size(SMALL)
                     .width(Length::Fill)
                     .horizontal_alignment(Horizontal::Center),
             );
@@ -120,7 +120,7 @@ impl Queue {
         if tasks.len() == 0 {
             tasks_col = tasks_col.push(
                 text("Empty")
-                    .size(SMALL_SIZE)
+                    .size(SMALL)
                     .width(Length::Fill)
                     .horizontal_alignment(Horizontal::Center),
             );
@@ -134,7 +134,7 @@ impl Queue {
             let duration = now.signed_duration_since(task.scheduled);
             let when = duration_display(duration);
 
-            row = row.push(when.size(SMALL_SIZE));
+            row = row.push(when.size(SMALL));
 
             list = list.push(row.width(Length::Fill).spacing(GAP));
 
@@ -168,18 +168,18 @@ fn build_task_row<'a>(s: &State, kind: &TaskKind) -> Row<'a, Message> {
             series_id,
             remote_id,
         } => {
-            update = update.push(text("Updates").size(SMALL_SIZE));
+            update = update.push(text("Updates").size(SMALL));
             update = decorate_series(s, series_id, Some(remote_id), update);
         }
         TaskKind::DownloadSeriesById { series_id, .. } => {
-            update = update.push(text("Downloading").size(SMALL_SIZE));
+            update = update.push(text("Downloading").size(SMALL));
             update = decorate_series(s, series_id, None, update);
         }
         TaskKind::DownloadSeriesByRemoteId { remote_id, .. } => {
-            update = update.push(text("Downloading").size(SMALL_SIZE).width(Length::Fill));
+            update = update.push(text("Downloading").size(SMALL).width(Length::Fill));
 
             update = update.push(
-                button(text(remote_id).size(SMALL_SIZE))
+                button(text(remote_id).size(SMALL))
                     .width(Length::Fill)
                     .style(theme::Button::Text)
                     .padding(0)
@@ -199,7 +199,7 @@ fn decorate_series<'a>(
 ) -> Row<'a, Message> {
     let remote_id = if let Some(series) = state.service.series(series_id) {
         row = row.push(
-            button(text(&series.title).size(SMALL_SIZE))
+            button(text(&series.title).size(SMALL))
                 .style(theme::Button::Text)
                 .padding(0)
                 .on_press(Message::Navigate(Page::Series(*series_id))),
@@ -207,13 +207,13 @@ fn decorate_series<'a>(
 
         remote_id.or(series.remote_id.as_ref())
     } else {
-        row = row.push(text(format!("{series_id}")).size(SMALL_SIZE));
+        row = row.push(text(format!("{series_id}")).size(SMALL));
         remote_id
     };
 
     if let Some(remote_id) = remote_id {
         row = row.push(
-            button(text(remote_id).size(SMALL_SIZE))
+            button(text(remote_id).size(SMALL))
                 .width(Length::Fill)
                 .style(theme::Button::Text)
                 .padding(0)

@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::error::{ErrorId, ErrorInfo};
 use crate::model::{RemoteSeriesId, SearchKind, SearchSeries, SeriesId, TaskKind};
 use crate::params::{
-    default_container, GAP, GAP2, IMAGE_HEIGHT, POSTER_HINT, SMALL, SMALL_SIZE, SPACE, TITLE_SIZE,
+    default_container, GAP, GAP2, IMAGE_HEIGHT, POSTER_HINT, SMALL, SPACE, TITLE_SIZE,
 };
 use crate::queue::TaskStatus;
 use crate::state::{Page, State};
@@ -189,8 +189,7 @@ impl Search {
             let mut first_aired = Column::new();
 
             if let Some(date) = series.first_aired {
-                first_aired =
-                    first_aired.push(text(format!("First aired: {date}")).size(SMALL_SIZE));
+                first_aired = first_aired.push(text(format!("First aired: {date}")).size(SMALL));
             }
 
             results = results.push(

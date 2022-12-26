@@ -1,11 +1,13 @@
 use chrono::Utc;
 use iced::alignment::Horizontal;
-use iced::widget::{button, container, horizontal_rule, image, text, vertical_space, Column, Row};
+use iced::widget::{
+    button, container, horizontal_rule, image, text, vertical_space, Column, Row, Space, Text,
+};
 use iced::{theme, Element};
 use iced::{Alignment, Length};
 
-use crate::model::{EpisodeId, Image, SeasonNumber, SeriesId};
-use crate::params::{centered, GAP, GAP2, POSTER_HINT, SMALL, SMALL_SIZE, SPACE, SUBTITLE_SIZE};
+use crate::model::{Episode, EpisodeId, Image, SeasonNumber, SeriesId};
+use crate::params::{centered, GAP, GAP2, POSTER_HINT, SMALL, SPACE, SUBTITLE_SIZE};
 use crate::service::PendingRef;
 use crate::state::{Page, State};
 use crate::style;
@@ -21,6 +23,12 @@ pub(crate) enum Message {
     Watch(SeriesId, EpisodeId),
     /// Navigate.
     Navigate(Page),
+    /// Reset show list.
+    ResetPending,
+    ShowLessPending,
+    ShowMorePending,
+    DecrementPage,
+    IncrementPage,
 }
 
 /// The state for the settings page.
@@ -51,11 +59,13 @@ impl Dashboard {
             s.assets.mark_with_hint([id], POSTER_HINT);
         }
 
+        let limit = s.service.config().dashboard_limit();
+
         s.assets.mark_with_hint(
             s.service
                 .pending(*s.today())
                 .rev()
-                .take(5)
+                .take(limit)
                 .flat_map(|p| p.season.and_then(|s| s.poster).or(p.series.poster)),
             POSTER_HINT,
         );
@@ -79,6 +89,26 @@ impl Dashboard {
             Message::Navigate(page) => {
                 s.push_history(page);
             }
+            Message::ResetPending => {
+                s.service.config_mut().dashboard_limit = 1;
+                s.service.config_mut().dashboard_page = 6;
+            }
+            Message::ShowLessPending => {
+                let limit = s.service.config().dashboard_limit.saturating_sub(1).max(1);
+                s.service.config_mut().dashboard_limit = limit;
+            }
+            Message::ShowMorePending => {
+                let limit = s.service.config().dashboard_limit + 1;
+                s.service.config_mut().dashboard_limit = limit;
+            }
+            Message::DecrementPage => {
+                let page = s.service.config().dashboard_page.saturating_sub(1).max(1);
+                s.service.config_mut().dashboard_page = page;
+            }
+            Message::IncrementPage => {
+                let page = s.service.config().dashboard_page + 1;
+                s.service.config_mut().dashboard_page = page;
+            }
         }
     }
 
@@ -88,7 +118,55 @@ impl Dashboard {
             .width(Length::Fill)
             .size(SUBTITLE_SIZE);
 
-        let pending = self.render_pending(s);
+        let mut modify = Row::new().push(Space::new(Length::Fill, Length::Shrink));
+
+        if s.service.config().dashboard_page > 1 {
+            modify = modify.push(
+                button(
+                    text("-")
+                        .width(Length::Units(SMALL))
+                        .size(SMALL)
+                        .horizontal_alignment(Horizontal::Center),
+                )
+                .style(theme::Button::Secondary)
+                .on_press(Message::DecrementPage),
+            );
+        }
+
+        modify = modify.push(
+            button(
+                text("+")
+                    .width(Length::Units(SMALL))
+                    .size(SMALL)
+                    .horizontal_alignment(Horizontal::Center),
+            )
+            .style(theme::Button::Secondary)
+            .on_press(Message::IncrementPage),
+        );
+
+        if s.service.config().dashboard_limit > 1 {
+            modify = modify.push(
+                button(text("reset").size(SMALL))
+                    .style(theme::Button::Secondary)
+                    .on_press(Message::ResetPending),
+            );
+
+            modify = modify.push(
+                button(text("show less...").size(SMALL))
+                    .style(theme::Button::Secondary)
+                    .on_press(Message::ShowLessPending),
+            );
+        }
+
+        modify = modify.push(
+            button(text("show more...").size(SMALL))
+                .style(theme::Button::Secondary)
+                .on_press(Message::ShowMorePending),
+        );
+
+        let pending = Column::new()
+            .push(modify.spacing(SPACE).width(Length::Fill))
+            .push(self.render_pending(s));
 
         let scheduled_title = text("Upcoming")
             .horizontal_alignment(Horizontal::Left)
@@ -111,16 +189,51 @@ impl Dashboard {
             .into()
     }
 
-    fn render_pending(&self, s: &State) -> Row<'static, Message> {
-        let mut pending = Row::new();
+    fn render_pending(&self, s: &State) -> Column<'static, Message> {
+        let mut cols = Column::new();
 
-        for PendingRef {
-            series,
-            season,
-            episode,
-            ..
-        } in s.service.pending(*s.today()).rev().take(5)
+        let mut pending = Row::new();
+        let mut count = 0;
+
+        let limit = s.service.config().dashboard_limit();
+        let page = s.service.config().dashboard_page();
+
+        for (
+            index,
+            PendingRef {
+                series,
+                season,
+                episode,
+                ..
+            },
+        ) in s.service.pending(*s.today()).rev().take(limit).enumerate()
         {
+            if index % page == 0 && index > 0 {
+                cols = cols.push(pending.spacing(GAP));
+                pending = Row::new();
+                count = 0;
+            } else {
+                count += 1;
+            }
+
+            let poster = match season
+                .and_then(|s| s.poster)
+                .or(series.poster)
+                .and_then(|i| s.assets.image_with_hint(&i, POSTER_HINT))
+            {
+                Some(handle) => handle,
+                None => s.missing_poster(),
+            };
+
+            let mut panel = Column::new();
+
+            panel = panel.push(
+                button(image(poster).width(Length::Fill))
+                    .padding(0)
+                    .style(theme::Button::Text)
+                    .on_press(Message::Navigate(Page::Series(series.id))),
+            );
+
             let mut actions = Row::new();
 
             actions = actions.push(
@@ -145,105 +258,60 @@ impl Dashboard {
                 .width(Length::FillPortion(2)),
             );
 
-            let poster = match season
-                .and_then(|s| s.poster)
-                .or(series.poster)
-                .and_then(|i| s.assets.image_with_hint(&i, POSTER_HINT))
-            {
-                Some(handle) => handle,
-                None => s.missing_poster(),
-            };
+            panel = panel.push(actions.spacing(SPACE));
 
-            let mut episode_number = match episode.season {
-                SeasonNumber::Number(number) => format!("{}x{}", number, episode.number),
-                SeasonNumber::Specials => format!("Special {}", episode.number),
-            };
-
-            if let Some(number) = episode.absolute_number {
-                use std::fmt::Write;
-                write!(episode_number, " ({number})").unwrap();
-            }
-
-            let mut episode_aired = Row::new();
-
-            let episode_info = if let Some(name) = &episode.name {
-                text(format!("{episode_number}: {name}"))
-            } else {
-                text(episode_number)
-            };
+            let episode_title = episode_title(episode);
 
             if let Some(air_date) = &episode.aired {
-                episode_aired = episode_aired.push(
-                    text(format!("Aired: {air_date}"))
-                        .horizontal_alignment(Horizontal::Center)
-                        .size(SMALL_SIZE),
-                );
+                panel = panel.push(text(format!("Aired: {air_date}")).size(SMALL));
             }
 
-            let series_name = button(
-                text(&series.title)
-                    .horizontal_alignment(Horizontal::Center)
-                    .size(SMALL),
-            )
-            .style(theme::Button::Text)
-            .on_press(Message::Navigate(Page::Series(series.id)));
-
-            let season_name = button(
-                text(episode.season.short())
-                    .horizontal_alignment(Horizontal::Center)
-                    .size(SMALL),
-            )
-            .style(theme::Button::Text)
-            .on_press(Message::Navigate(Page::Season(series.id, episode.season)));
-
-            let image = button(image(poster).width(Length::Fill))
-                .width(Length::Fill)
+            panel = panel.push(
+                button(
+                    episode_title
+                        .size(SMALL)
+                        .horizontal_alignment(Horizontal::Center),
+                )
                 .padding(0)
                 .style(theme::Button::Text)
-                .on_press(Message::Navigate(Page::Series(series.id)));
+                .on_press(Message::Navigate(Page::Season(series.id, episode.season))),
+            );
 
             pending = pending.push(
                 container(
-                    Column::new()
-                        .push(
-                            Column::new()
-                                .push(
-                                    Row::new()
-                                        .push(series_name)
-                                        .push(season_name)
-                                        .spacing(SPACE),
-                                )
-                                .push(image)
-                                .push(actions.spacing(SPACE))
-                                .width(Length::Fill)
-                                .align_items(Alignment::Center)
-                                .spacing(SPACE),
-                        )
-                        .push(
-                            Column::new()
-                                .push(episode_info.horizontal_alignment(Horizontal::Center))
-                                .push(episode_aired)
-                                .align_items(Alignment::Center)
-                                .spacing(SPACE),
-                        )
-                        .spacing(GAP)
+                    panel
+                        .width(Length::Fill)
                         .align_items(Alignment::Center)
-                        .width(Length::Fill),
+                        .spacing(SPACE),
                 )
                 .width(Length::FillPortion(1)),
             );
         }
 
-        pending
+        if count > 0 {
+            cols = cols.push(pending.spacing(GAP));
+        }
+
+        cols.spacing(GAP)
     }
 
     fn render_scheduled(&self, s: &State) -> Column<'static, Message> {
         let mut scheduled_rows = Column::new();
-        let mut scheduled_cols = Row::new();
-        let mut scheduled_count = 0;
+        let mut cols = Row::new();
+        let mut count = 0;
         let mut first = true;
 
+        let page = s.service.config().schedule_page();
+
         for (n, day) in s.service.schedule().iter().enumerate() {
+            if n % page == 0 && n > 0 {
+                scheduled_rows = scheduled_rows.push(cols.spacing(GAP));
+                cols = Row::new();
+                count = 0;
+            } else {
+                count += 1;
+            }
+
             let mut column = Column::new();
 
             column = column.push(
@@ -271,7 +339,7 @@ impl Dashboard {
                     None => s.missing_poster(),
                 };
 
-                scheduled_cols = scheduled_cols.push(
+                cols = cols.push(
                     button(image(poster))
                         .padding(0)
                         .style(theme::Button::Text)
@@ -279,7 +347,7 @@ impl Dashboard {
                         .width(Length::FillPortion(1)),
                 );
 
-                scheduled_count += 1;
+                count += 1;
                 first = false;
             }
 
@@ -299,7 +367,7 @@ impl Dashboard {
                         None => format!("{}x{}", episode.season.short(), episode.number),
                     };
 
-                    let episode = button(text(name).size(SMALL_SIZE))
+                    let episode = button(text(name).size(SMALL))
                         .style(theme::Button::Text)
                         .padding(0)
                         .on_press(Message::Navigate(Page::Season(series.id, episode.season)));
@@ -325,20 +393,31 @@ impl Dashboard {
                 }
             }
 
-            scheduled_cols = scheduled_cols.push(column.width(Length::FillPortion(1)).spacing(GAP));
-            scheduled_count += 1;
-
-            if n > 0 && n % 5 == 0 {
-                scheduled_rows = scheduled_rows
-                    .push(std::mem::replace(&mut scheduled_cols, Row::new()).spacing(GAP));
-                scheduled_count = 0;
-            }
+            cols = cols.push(column.width(Length::FillPortion(1)).spacing(GAP));
         }
 
-        if scheduled_count > 0 {
-            scheduled_rows = scheduled_rows.push(scheduled_cols.spacing(GAP));
+        if count > 0 {
+            scheduled_rows = scheduled_rows.push(cols.spacing(GAP));
         }
 
         scheduled_rows
+    }
+}
+
+fn episode_title(episode: &Episode) -> Text<'static> {
+    let mut episode_number = match episode.season {
+        SeasonNumber::Number(number) => format!("{}x{}", number, episode.number),
+        SeasonNumber::Specials => format!("Special {}", episode.number),
+    };
+
+    if let Some(number) = episode.absolute_number {
+        use std::fmt::Write;
+        write!(episode_number, " ({number})").unwrap();
+    }
+
+    if let Some(name) = &episode.name {
+        text(format!("{episode_number}: {name}"))
+    } else {
+        text(episode_number)
     }
 }

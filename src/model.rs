@@ -103,6 +103,26 @@ fn default_days() -> u64 {
     7
 }
 
+#[inline]
+fn default_dashboard_limit() -> usize {
+    1
+}
+
+#[inline]
+fn default_dashboard_page() -> usize {
+    6
+}
+
+#[inline]
+fn default_schedule_limit() -> usize {
+    1
+}
+
+#[inline]
+fn default_schedule_page() -> usize {
+    7
+}
+
 /// The state for the settings page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Config {
@@ -116,6 +136,28 @@ pub(crate) struct Config {
     pub(crate) schedule_duration_days: u64,
     #[serde(default)]
     pub(crate) search_kind: SearchKind,
+    #[serde(default = "default_dashboard_limit")]
+    pub(crate) dashboard_limit: usize,
+    #[serde(default = "default_dashboard_page")]
+    pub(crate) dashboard_page: usize,
+    #[serde(default = "default_schedule_limit")]
+    pub(crate) schedule_limit: usize,
+    #[serde(default = "default_schedule_page")]
+    pub(crate) schedule_page: usize,
+}
+
+impl Config {
+    pub(crate) fn dashboard_limit(&self) -> usize {
+        self.dashboard_limit.max(1) * self.dashboard_page.max(1)
+    }
+
+    pub(crate) fn dashboard_page(&self) -> usize {
+        self.dashboard_page.max(1)
+    }
+
+    pub(crate) fn schedule_page(&self) -> usize {
+        self.schedule_page.max(1)
+    }
 }
 
 impl Default for Config {
@@ -127,6 +169,10 @@ impl Default for Config {
             tmdb_api_key: Default::default(),
             schedule_duration_days: default_days(),
             search_kind: SearchKind::default(),
+            dashboard_limit: default_dashboard_limit(),
+            dashboard_page: default_dashboard_page(),
+            schedule_limit: default_schedule_limit(),
+            schedule_page: default_schedule_page(),
         }
     }
 }
