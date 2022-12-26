@@ -5,7 +5,10 @@ use uuid::Uuid;
 
 use crate::model::{Task, TaskFinished, TaskKind};
 
-const DELAY_SECONDS: i64 = 2500;
+/// Number of milliseconds of delay to add by default to scheduled tasks.
+const DELAY_MILLIS: i64 = 2500;
+// Soft capacity, that some processes which might add a lot of stuff can check.
+const CAPACITY: usize = 10;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TaskRunning {
@@ -146,7 +149,7 @@ impl Queue {
             .back()
             .map(|t| t.scheduled)
             .unwrap_or_else(Utc::now)
-            + Duration::milliseconds(DELAY_SECONDS);
+            + Duration::milliseconds(DELAY_MILLIS);
 
         self.status.insert(kind, TaskStatus::Pending);
 
@@ -161,8 +164,8 @@ impl Queue {
         true
     }
 
-    /// Push a raw task without performing scheduling.
-    pub(crate) fn push_raw(&mut self, task: Task) {
+    /// Push a task without performing scheduling.
+    pub(crate) fn import_push(&mut self, task: Task) {
         if self.status.contains_key(&task.kind) {
             return;
         }
@@ -170,5 +173,10 @@ impl Queue {
         self.status.insert(task.kind, TaskStatus::Pending);
         self.data.push_back(task);
         self.modified = true;
+    }
+
+    /// Check if queue is at its soft capacity.
+    pub(crate) fn at_soft_capacity(&self) -> bool {
+        self.data.len() + self.running.len() >= CAPACITY
     }
 }

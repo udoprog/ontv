@@ -340,6 +340,10 @@ impl Service {
         const CACHE_TIME: i64 = 3600 * 6;
 
         for s in self.db.series.iter_mut() {
+            if self.db.tasks.at_soft_capacity() {
+                break;
+            }
+
             // Ignore series which are no longer tracked.
             if !s.tracked {
                 continue;
@@ -1352,7 +1356,7 @@ fn load_database(paths: &Paths) -> Result<Database> {
 
     if let Some(tasks) = load_array::<Task>(&paths.queue)? {
         for task in tasks {
-            db.tasks.push_raw(task);
+            db.tasks.import_push(task);
         }
 
         db.tasks.sort();
