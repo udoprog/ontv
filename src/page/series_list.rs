@@ -3,6 +3,7 @@ use iced::{theme, Element, Length};
 
 use crate::component::*;
 use crate::comps;
+use crate::model::SeriesId;
 use crate::params::{centered, GAP, GAP2, IMAGE_HEIGHT, POSTER_HINT, SPACE, SUBTITLE_SIZE};
 use crate::state::{Page, State};
 use crate::style;
@@ -18,21 +19,22 @@ pub(crate) enum Message {
 #[derive(Default)]
 pub(crate) struct SeriesList {
     filter: String,
-    filtered: Option<Box<[usize]>>,
+    filtered: Option<Box<[SeriesId]>>,
     actions: Vec<comps::SeriesActions>,
 }
 
 impl SeriesList {
     /// Prepare the view.
     pub(crate) fn prepare(&mut self, s: &mut State) {
-        self.actions
-            .init_from_iter(s.service.all_series().iter().map(|s| s.id));
-
         if let Some(filtered) = &self.filtered {
-            let series = s.service.all_series();
-            let images = filtered.iter().flat_map(|&i| series.get(i)?.poster);
-            s.assets.mark_with_hint(images, POSTER_HINT);
+            let series = filtered.iter().flat_map(|id| s.service.series(id));
+            self.actions.init_from_iter(series.clone().map(|s| s.id));
+            s.assets
+                .mark_with_hint(series.flat_map(|s| s.poster), POSTER_HINT);
         } else {
+            self.actions
+                .init_from_iter(s.service.all_series().iter().map(|s| s.id));
+
             s.assets.mark_with_hint(
                 s.service.all_series().iter().flat_map(|s| s.poster),
                 POSTER_HINT,
@@ -49,9 +51,9 @@ impl SeriesList {
                 self.filtered = if !filter.is_empty() {
                     let mut filtered = Vec::new();
 
-                    for (index, s) in s.service.all_series().iter().enumerate() {
+                    for s in s.service.all_series() {
                         if filter.matches(&s.title) {
-                            filtered.push(index);
+                            filtered.push(s.id);
                         }
                     }
 
@@ -78,7 +80,7 @@ impl SeriesList {
         let mut it2;
 
         let iter: &mut dyn Iterator<Item = _> = if let Some(filtered) = &self.filtered {
-            it = filtered.iter().flat_map(|i| s.service.all_series().get(*i));
+            it = filtered.iter().flat_map(|id| s.service.series(id));
             &mut it
         } else {
             it2 = s.service.all_series().iter();

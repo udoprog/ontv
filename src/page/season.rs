@@ -142,11 +142,11 @@ impl Season {
             }
             Message::Watch(series, episode) => {
                 let now = Utc::now();
-                s.service.watch(&series, &episode, now);
+                s.service.watch(&now, &series, &episode);
             }
             Message::SelectPending(series, episode) => {
                 let now = Utc::now();
-                s.service.select_pending(&series, &episode, now);
+                s.service.select_pending(&now, &series, &episode);
             }
             Message::SeasonInfo(message) => {
                 self.season_info.update(s, message);
@@ -238,8 +238,12 @@ impl Season {
 
             let mut show_info = Column::new();
 
-            if let Some(air_date) = episode.aired {
-                show_info = show_info.push(text(format!("Aired: {air_date}")).size(SMALL));
+            if let Some(air_date) = &episode.aired {
+                if air_date > s.today() {
+                    show_info = show_info.push(text(format!("Airs: {air_date}")).size(SMALL));
+                } else {
+                    show_info = show_info.push(text(format!("Aired: {air_date}")).size(SMALL));
+                }
             }
 
             let watched_text = match watched {

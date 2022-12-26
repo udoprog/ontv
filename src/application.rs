@@ -101,7 +101,9 @@ impl iced::Application for Application {
     type Flags = Flags;
 
     fn new(flags: Self::Flags, mut commands: impl Commands<Self::Message>) -> Self {
-        let state = State::new(flags.service, Assets::new());
+        let today = Utc::now().date_naive();
+
+        let state = State::new(flags.service, Assets::new(), today);
         let current = Current::Dashboard(page::dashboard::Dashboard::new(&state));
 
         let mut this = Application {
@@ -242,6 +244,12 @@ impl iced::Application for Application {
                 let now = Utc::now();
                 self.state.service.find_updates(&now);
 
+                let today = now.date_naive();
+
+                if *self.state.today() != today {
+                    self.state.set_today(today);
+                }
+
                 // Schedule next update.
                 commands.perform(
                     self.update_timeout.set(Duration::from_secs(UPDATE_TIMEOUT)),
@@ -288,7 +296,8 @@ impl iced::Application for Application {
                 match result {
                     Ok(new_series) => {
                         if let Some(new_series) = new_series {
-                            self.state.service.insert_new_series(new_series);
+                            let now = Utc::now();
+                            self.state.service.insert_new_series(&now, new_series);
                         }
                     }
                     Err(error) => {

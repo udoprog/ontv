@@ -136,8 +136,9 @@ async fn download_series(
         }
     };
 
+    let now = Utc::now();
     let series_id = *new_series.series_id();
-    service.insert_new_series(new_series);
+    service.insert_new_series(&now, new_series);
     service.save_changes().await?;
     Ok(Some(series_id))
 }

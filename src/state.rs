@@ -2,7 +2,7 @@ use std::collections::{HashSet, VecDeque};
 use std::future::Future;
 
 use anyhow::Result;
-use chrono::{Duration, Utc};
+use chrono::{Duration, NaiveDate, Utc};
 
 use crate::assets::Assets;
 use crate::error::{ErrorId, ErrorInfo};
@@ -39,12 +39,14 @@ pub(crate) struct State {
     errors: VecDeque<ErrorInfo>,
     /// Indicates that the whole application is busy saving.
     saving: bool,
+    /// Naive today date.
+    today: NaiveDate,
 }
 
 impl State {
     /// Construct a new empty application state.
     #[inline]
-    pub fn new(service: Service, assets: Assets) -> Self {
+    pub fn new(service: Service, assets: Assets, today: NaiveDate) -> Self {
         Self {
             service,
             assets,
@@ -54,7 +56,18 @@ impl State {
             error_ids: HashSet::new(),
             errors: VecDeque::new(),
             saving: false,
+            today,
         }
+    }
+
+    /// Access today's date.
+    pub(crate) fn today(&self) -> &NaiveDate {
+        &self.today
+    }
+
+    /// Set today's date.
+    pub(crate) fn set_today(&mut self, today: NaiveDate) {
+        self.today = today;
     }
 
     /// Get the current page.
@@ -143,7 +156,7 @@ impl State {
         let none_if_match = s.last_etag.clone();
         Some(
             self.service
-                .download_series(&remote_id, false, none_if_match.as_ref()),
+                .download_series(&remote_id, none_if_match.as_ref()),
         )
     }
 

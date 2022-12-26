@@ -431,12 +431,12 @@ pub(crate) struct Episode {
 
 impl Episode {
     /// Test if the given episode has aired by the provided timestamp.
-    pub(crate) fn has_aired(&self, now: &DateTime<Utc>) -> bool {
+    pub(crate) fn has_aired(&self, today: &NaiveDate) -> bool {
         let Some(aired) = &self.aired else {
             return false;
         };
 
-        *aired <= now.date_naive()
+        *aired <= *today
     }
 }
 

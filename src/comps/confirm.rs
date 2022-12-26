@@ -101,11 +101,11 @@ impl Confirm {
                     }
                     Kind::RemoveSeason { series_id, season } => {
                         let now = Utc::now();
-                        s.service.remove_season_watches(series_id, season, now);
+                        s.service.remove_season_watches(&now, series_id, season);
                     }
                     Kind::WatchRemaining { series_id, season } => {
                         let now = Utc::now();
-                        s.service.watch_remaining_season(series_id, season, now);
+                        s.service.watch_remaining_season(&now, series_id, season);
                     }
                 }
             }
