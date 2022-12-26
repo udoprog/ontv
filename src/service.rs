@@ -1,3 +1,5 @@
+mod watched;
+
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::future::Future;
@@ -163,7 +165,7 @@ struct Database {
     /// Seasons collection.
     seasons: HashMap<SeriesId, Vec<Season>>,
     /// Episode to watch history.
-    watched: BTreeMap<EpisodeId, Vec<Watched>>,
+    watched: watched::Database,
     /// Ordered list of things to watch.
     pending: Vec<Pending>,
     /// Keeping track of changes to be saved.
@@ -295,11 +297,7 @@ impl Service {
     /// Get all the watches for the given episode.
     #[inline]
     pub(crate) fn watched(&self, episode_id: &EpisodeId) -> &[Watched] {
-        self.db
-            .watched
-            .get(episode_id)
-            .map(Vec::as_slice)
-            .unwrap_or_default()
+        self.db.watched.get(episode_id)
     }
 
     /// Get task queue.
@@ -314,11 +312,7 @@ impl Service {
 
     /// Test if episode is watched.
     pub(crate) fn watch_count(&self, episode_id: &EpisodeId) -> usize {
-        self.db
-            .watched
-            .get(episode_id)
-            .map(Vec::len)
-            .unwrap_or_default()
+        self.db.watched.get(episode_id).len()
     }
 
     /// Get season summary statistics.
@@ -348,14 +342,21 @@ impl Service {
     }
 
     /// Return list of pending episodes.
-    pub(crate) fn pending(&self) -> impl DoubleEndedIterator<Item = PendingRef<'_>> {
-        self.db.pending.iter().flat_map(|p| {
+    pub(crate) fn pending<'a>(
+        &'a self,
+        now: &'a DateTime<Utc>,
+    ) -> impl DoubleEndedIterator<Item = PendingRef<'a>> + 'a {
+        self.db.pending.iter().flat_map(move |p| {
             let series = self.db.series.get(&p.series)?;
 
             let episode = self
                 .episodes(&p.series)
                 .iter()
                 .find(|e| e.id == p.episode)?;
+
+            if !episode.has_aired(now) {
+                return None;
+            }
 
             let season = self
                 .seasons(&p.series)
@@ -527,20 +528,17 @@ impl Service {
                 continue;
             }
 
+            // NB: only mark episodes which have actually aired.
             if !episode.has_aired(&timestamp) {
                 continue;
             }
 
-            self.db
-                .watched
-                .entry(episode.id)
-                .or_default()
-                .push(Watched {
-                    id: Uuid::new_v4(),
-                    series: *series_id,
-                    episode: episode.id,
-                    timestamp,
-                });
+            self.db.watched.insert(Watched {
+                id: Uuid::new_v4(),
+                series: *series_id,
+                episode: episode.id,
+                timestamp,
+            });
 
             self.db.changes.set.insert(Change::Watched);
             last = Some(episode.id);
@@ -560,16 +558,12 @@ impl Service {
         episode_id: &EpisodeId,
         timestamp: DateTime<Utc>,
     ) {
-        self.db
-            .watched
-            .entry(*episode_id)
-            .or_default()
-            .push(Watched {
-                id: Uuid::new_v4(),
-                series: *series_id,
-                episode: *episode_id,
-                timestamp,
-            });
+        self.db.watched.insert(Watched {
+            id: Uuid::new_v4(),
+            series: *series_id,
+            episode: *episode_id,
+            timestamp,
+        });
 
         self.db.changes.set.insert(Change::Watched);
         self.setup_pending(series_id, Some(episode_id))
@@ -596,7 +590,7 @@ impl Service {
 
         self.db.changes.set.insert(Change::Pending);
 
-        let Some(episode) = it.find(|e| e.has_aired(&now)) else {
+        let Some(episode) = it.next() else {
             self.db.pending.retain(|p| p.series != *series_id);
             return;
         };
@@ -649,11 +643,10 @@ impl Service {
             "remove series_id: {series_id}, episode_id: {episode_id}, watch_id: {watch_id}"
         );
 
-        let watched = self.db.watched.entry(*episode_id).or_default();
-        watched.retain(|w| w.id != *watch_id);
+        let remaining = self.db.watched.remove_watch(episode_id, watch_id);
         self.db.changes.set.insert(Change::Watched);
 
-        if watched.is_empty() {
+        if remaining == 0 {
             self.db.pending.retain(|p| p.series != *series_id);
 
             let last_timestamp = self
@@ -686,19 +679,23 @@ impl Service {
         };
 
         let mut last_timestamp = None;
+        let mut removed = 0;
 
         for e in episodes {
             if e.season == *season {
-                let _ = self.db.watched.remove(&e.id);
-            } else if e.season < *season {
+                removed += self.db.watched.remove(&e.id);
+            } else {
                 last_timestamp = last_timestamp
                     .into_iter()
-                    .chain(self.watched(&e.id).iter().map(|w| w.timestamp))
+                    .chain(self.db.watched.get(&e.id).iter().map(|w| w.timestamp))
                     .max();
             }
         }
 
-        self.db.changes.set.insert(Change::Watched);
+        if removed > 0 {
+            self.db.changes.set.insert(Change::Watched);
+        }
+
         self.db.pending.retain(|p| p.series != *series_id);
         self.db.changes.set.insert(Change::Pending);
 
@@ -706,12 +703,8 @@ impl Service {
             return;
         };
 
-        // Find the first episode matching the given season and make that the
-        // pending episode.
-        if let Some(episode) = episodes
-            .iter()
-            .find(|e| e.season == *season && e.has_aired(&now))
-        {
+        // Find the first episode matching the cleared season.
+        if let Some(episode) = episodes.iter().find(|e| e.season == *season) {
             self.db.pending.push(Pending {
                 series: *series_id,
                 episode: episode.id,
@@ -742,7 +735,7 @@ impl Service {
         let watched = changes
             .set
             .contains(Change::Watched)
-            .then(|| self.db.watched.clone().into_iter().flat_map(|(_, v)| v));
+            .then(|| self.db.watched.export());
 
         let pending = changes
             .set
@@ -898,7 +891,6 @@ impl Service {
                 }
 
                 last_timestamp = self.watched(&episode.id).iter().map(|w| w.timestamp).max();
-
                 last = None;
             }
 
@@ -908,7 +900,7 @@ impl Service {
         self.db.changes.set.insert(Change::Pending);
 
         // Mark the first episode (that has aired).
-        if let Some(e) = episode.filter(|e| e.has_aired(now)) {
+        if let Some(e) = episode {
             // Mark the next episode in the show as pending.
             self.db.pending.push(Pending {
                 series: *series_id,
@@ -1205,26 +1197,21 @@ impl Service {
         episode_id: EpisodeId,
         timestamp: DateTime<Utc>,
     ) {
-        self.db
-            .watched
-            .entry(episode_id)
-            .or_default()
-            .push(Watched {
-                id: Uuid::new_v4(),
-                series: series_id,
-                episode: episode_id,
-                timestamp,
-            });
+        self.db.watched.insert(Watched {
+            id: Uuid::new_v4(),
+            series: series_id,
+            episode: episode_id,
+            timestamp,
+        });
 
         self.db.changes.set.insert(Change::Watched);
     }
 
     /// Remove watch history matching the given series.
-    pub(crate) fn clear_watches(&mut self, series_id: SeriesId) {
-        for values in self.db.watched.values_mut() {
-            values.retain(|w| w.series != series_id);
-        }
-
+    pub(crate) fn clear_watches(&mut self, series_id: &SeriesId) {
+        self.db
+            .watched
+            .remove_by_series(series_id, &self.db.episodes);
         self.db.changes.set.insert(Change::Watched);
     }
 
@@ -1436,7 +1423,7 @@ fn load_database(paths: &Paths) -> Result<Database> {
 
     if let Some(watched) = load_array::<Watched>(&paths.watched)? {
         for w in watched {
-            db.watched.entry(w.episode).or_default().push(w);
+            db.watched.insert(w);
         }
     }
 

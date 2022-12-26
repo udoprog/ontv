@@ -85,7 +85,7 @@ pub fn import_trakt_watched(
         log::trace!("{index}: {series_id}: {entry:?}");
 
         if remove {
-            service.clear_watches(series_id);
+            service.clear_watches(&series_id);
         }
 
         let mut any = false;

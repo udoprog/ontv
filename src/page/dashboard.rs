@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use iced::alignment::Horizontal;
 use iced::widget::{button, container, horizontal_rule, image, text, vertical_space, Column, Row};
 use iced::{theme, Element};
@@ -25,6 +25,7 @@ pub(crate) enum Message {
 
 /// The state for the settings page.
 pub(crate) struct Dashboard {
+    now: DateTime<Utc>,
     schedule_focus: Option<(SeriesId, Option<Image>)>,
 }
 
@@ -43,7 +44,10 @@ impl Dashboard {
             }
         }
 
-        Self { schedule_focus }
+        Self {
+            now: Utc::now(),
+            schedule_focus,
+        }
     }
 
     pub(crate) fn prepare(&mut self, s: &mut State) {
@@ -53,7 +57,7 @@ impl Dashboard {
 
         s.assets.mark_with_hint(
             s.service
-                .pending()
+                .pending(&self.now)
                 .rev()
                 .take(5)
                 .flat_map(|p| p.season.and_then(|s| s.poster).or(p.series.poster)),
@@ -119,7 +123,7 @@ impl Dashboard {
             season,
             episode,
             ..
-        } in s.service.pending().rev().take(5)
+        } in s.service.pending(&self.now).rev().take(5)
         {
             let mut actions = Row::new();
 
