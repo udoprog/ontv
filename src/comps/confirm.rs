@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::component::Component;
 use crate::model::SeriesId;
 use crate::model::{EpisodeId, SeasonNumber};
-use crate::params::ACTION_SIZE;
+use crate::params::SMALL;
 use crate::state::State;
 
 /// Indicates which side of the button confirmation will show up on.
@@ -127,11 +127,11 @@ impl Confirm {
 
         if self.confirm {
             let buttons = [
-                button(text(title).size(ACTION_SIZE)).style(theme::Button::Secondary),
-                button(text("Confirm").size(ACTION_SIZE))
+                button(text(title).size(SMALL)).style(theme::Button::Secondary),
+                button(text("Confirm").size(SMALL))
                     .style(initial_theme)
                     .on_press(Message::Confirm),
-                button(text("Cancel").size(ACTION_SIZE))
+                button(text("Cancel").size(SMALL))
                     .style(theme::Button::Secondary)
                     .on_press(Message::Cancel),
             ];
@@ -150,7 +150,7 @@ impl Confirm {
             }
         } else {
             row = row.push(
-                button(text(title).size(ACTION_SIZE))
+                button(text(title).size(SMALL))
                     .style(initial_theme)
                     .on_press(Message::Start),
             );

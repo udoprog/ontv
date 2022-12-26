@@ -904,6 +904,12 @@ impl Service {
         &self.db.config
     }
 
+    /// Get configuration mutably indicating that it has been changed.
+    pub(crate) fn config_mut(&mut self) -> &mut Config {
+        self.db.changes.set.insert(Change::Config);
+        &mut self.db.config
+    }
+
     /// Get the current theme.
     pub(crate) fn theme(&self) -> &Theme {
         &self.current_theme

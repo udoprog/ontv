@@ -1,10 +1,9 @@
 use iced::widget::{button, image, text, Column};
 use iced::{theme, Alignment, Element, Length};
 
-use crate::message::Page;
 use crate::model::{Series, SeriesId};
 use crate::params::{BANNER, GAP, TITLE_SIZE};
-use crate::state::State;
+use crate::state::{Page, State};
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {

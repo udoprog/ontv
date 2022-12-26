@@ -4,13 +4,10 @@ use iced::widget::{button, container, horizontal_rule, image, text, vertical_spa
 use iced::{theme, Element};
 use iced::{Alignment, Length};
 
-use crate::message::Page;
 use crate::model::{EpisodeId, Image, SeasonNumber, SeriesId};
-use crate::params::{
-    centered, ACTION_SIZE, GAP, GAP2, POSTER_HINT, SMALL_SIZE, SPACE, SUBTITLE_SIZE,
-};
+use crate::params::{centered, GAP, GAP2, POSTER_HINT, SMALL, SMALL_SIZE, SPACE, SUBTITLE_SIZE};
 use crate::service::PendingRef;
-use crate::state::State;
+use crate::state::{Page, State};
 use crate::style;
 use crate::utils::Hoverable;
 
@@ -130,7 +127,7 @@ impl Dashboard {
                 button(
                     text("Mark")
                         .horizontal_alignment(Horizontal::Center)
-                        .size(ACTION_SIZE),
+                        .size(SMALL),
                 )
                 .style(theme::Button::Positive)
                 .on_press(Message::Watch(series.id, episode.id))
@@ -141,7 +138,7 @@ impl Dashboard {
                 button(
                     text("Skip")
                         .horizontal_alignment(Horizontal::Center)
-                        .size(ACTION_SIZE),
+                        .size(SMALL),
                 )
                 .style(theme::Button::Secondary)
                 .on_press(Message::Skip(series.id, episode.id))
@@ -186,7 +183,7 @@ impl Dashboard {
             let series_name = button(
                 text(&series.title)
                     .horizontal_alignment(Horizontal::Center)
-                    .size(ACTION_SIZE),
+                    .size(SMALL),
             )
             .style(theme::Button::Text)
             .on_press(Message::Navigate(Page::Series(series.id)));
@@ -194,7 +191,7 @@ impl Dashboard {
             let season_name = button(
                 text(episode.season.short())
                     .horizontal_alignment(Horizontal::Center)
-                    .size(ACTION_SIZE),
+                    .size(SMALL),
             )
             .style(theme::Button::Text)
             .on_press(Message::Navigate(Page::Season(series.id, episode.season)));

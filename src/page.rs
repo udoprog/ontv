@@ -18,3 +18,6 @@ pub(crate) use self::series_list::SeriesList;
 
 pub(crate) mod settings;
 pub(crate) use self::settings::Settings;
+
+pub(crate) mod errors;
+pub(crate) use self::errors::Errors;

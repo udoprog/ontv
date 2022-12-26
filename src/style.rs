@@ -18,6 +18,6 @@ pub(crate) fn weak(theme: &Theme) -> container::Appearance {
 /// Generate warning text.
 pub fn warning_text(theme: &Theme) -> iced::theme::Text {
     let extended = theme.extended_palette();
-    let color = extended.danger.strong.text;
+    let color = extended.danger.base.color;
     iced::theme::Text::Color(color)
 }

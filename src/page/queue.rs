@@ -5,10 +5,9 @@ use iced::alignment::Horizontal;
 use iced::widget::{button, horizontal_rule, text, vertical_space, Column, Row};
 use iced::{theme, Commands, Element, Length};
 
-use crate::message::Page;
 use crate::model::{RemoteSeriesId, TaskKind};
 use crate::params::{default_container, duration_display, GAP, HALF_GAP, TITLE_SIZE};
-use crate::state::State;
+use crate::state::{Page, State};
 use crate::utils::{TimedOut, Timeout};
 
 const REMOTE_COLUMN: Length = Length::Units(200);

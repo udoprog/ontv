@@ -8,7 +8,7 @@ use crate::component::*;
 use crate::comps;
 use crate::model::{EpisodeId, SeasonNumber, SeriesId, Watched};
 use crate::params::{
-    centered, ACTION_SIZE, GAP, GAP2, SCREENCAP_HEIGHT, SCREENCAP_HINT, SPACE, SUBTITLE_SIZE,
+    centered, GAP, GAP2, SCREENCAP_HEIGHT, SCREENCAP_HINT, SMALL, SPACE, SUBTITLE_SIZE,
 };
 use crate::style;
 
@@ -207,7 +207,7 @@ impl Season {
             };
 
             actions = actions.push(
-                button(watch_text.size(ACTION_SIZE))
+                button(watch_text.size(SMALL))
                     .style(theme::Button::Positive)
                     .on_press(Message::Watch(series.id, episode.id)),
             );
@@ -227,20 +227,19 @@ impl Season {
 
             if pending != Some(episode.id) {
                 actions = actions.push(
-                    button(text("Make next episode").size(ACTION_SIZE))
+                    button(text("Make next episode").size(SMALL))
                         .style(theme::Button::Secondary)
                         .on_press(Message::SelectPending(series.id, episode.id)),
                 );
             } else {
-                actions = actions.push(
-                    button(text("Next episode").size(ACTION_SIZE)).style(theme::Button::Secondary),
-                );
+                actions = actions
+                    .push(button(text("Next episode").size(SMALL)).style(theme::Button::Secondary));
             }
 
             let mut show_info = Column::new();
 
             if let Some(air_date) = episode.aired {
-                show_info = show_info.push(text(format!("Aired: {air_date}")).size(ACTION_SIZE));
+                show_info = show_info.push(text(format!("Aired: {air_date}")).size(SMALL));
             }
 
             let watched_text = match watched {
@@ -253,7 +252,7 @@ impl Season {
                 )),
             };
 
-            show_info = show_info.push(watched_text.size(ACTION_SIZE));
+            show_info = show_info.push(watched_text.size(SMALL));
 
             let info_top = Column::new()
                 .push(name)
@@ -273,14 +272,14 @@ impl Season {
 
                     row = row.push(
                         text(format!("#{}", n + 1))
-                            .size(ACTION_SIZE)
+                            .size(SMALL)
                             .width(Length::Units(24))
                             .horizontal_alignment(Horizontal::Left),
                     );
 
                     row = row.push(
                         text(watch.timestamp.date_naive())
-                            .size(ACTION_SIZE)
+                            .size(SMALL)
                             .width(Length::Fill),
                     );
 

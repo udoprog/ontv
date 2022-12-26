@@ -1,14 +1,27 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::future::Future;
 
 use anyhow::Result;
 
 use crate::assets::Assets;
-use crate::message::{ErrorMessage, Page};
-use crate::model::SeriesId;
+use crate::error::{ErrorId, ErrorInfo};
+use crate::model::{SeasonNumber, SeriesId};
 use crate::service::{NewSeries, Service};
 
 const ERRORS: usize = 5;
+
+/// The current page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Page {
+    Dashboard,
+    Search,
+    SeriesList,
+    Series(SeriesId),
+    Settings,
+    Season(SeriesId, SeasonNumber),
+    Queue,
+    Errors,
+}
 
 pub(crate) struct State {
     /// Data service.
@@ -21,9 +34,11 @@ pub(crate) struct State {
     history_index: usize,
     // History has changed.
     history_changed: bool,
+    /// Current error identifiers.
+    error_ids: HashSet<ErrorId>,
     /// Errors accumulated.
-    errors: VecDeque<ErrorMessage>,
-    /// Indicates that the whole application is busy loading something.
+    errors: VecDeque<ErrorInfo>,
+    /// Indicates that the whole application is busy saving.
     saving: bool,
 }
 
@@ -37,6 +52,7 @@ impl State {
             history: vec![(Page::Dashboard, 0.0)],
             history_index: 0,
             history_changed: false,
+            error_ids: HashSet::new(),
             errors: VecDeque::new(),
             saving: false,
         }
@@ -90,14 +106,17 @@ impl State {
     }
 
     /// Handle an error.
-    pub(crate) fn handle_error(&mut self, error: ErrorMessage) {
+    pub(crate) fn handle_error(&mut self, error: ErrorInfo) {
         log::error!("error: {error}");
 
         self.saving = false;
+        self.error_ids.extend(error.id);
         self.errors.push_back(error);
 
         if self.errors.len() > ERRORS {
-            self.errors.pop_front();
+            if let Some(id) = self.errors.pop_front().and_then(|e| e.id) {
+                self.error_ids.remove(&id);
+            }
         }
     }
 
@@ -121,8 +140,15 @@ impl State {
     }
 
     #[inline]
-    pub(crate) fn errors(&self) -> impl Iterator<Item = &ErrorMessage> {
+    pub(crate) fn errors(&self) -> impl ExactSizeIterator<Item = &ErrorInfo> {
         self.errors.iter()
+    }
+
+    #[inline]
+    pub(crate) fn get_error(&self, id: ErrorId) -> Option<&ErrorInfo> {
+        self.errors
+            .iter()
+            .find(|e| matches!(&e.id, Some(error_id) if *error_id == id))
     }
 
     #[inline]

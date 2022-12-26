@@ -3,9 +3,8 @@ use iced::{theme, Element, Length};
 
 use crate::component::*;
 use crate::comps;
-use crate::message::Page;
 use crate::params::{centered, GAP, GAP2, IMAGE_HEIGHT, POSTER_HINT, SPACE, SUBTITLE_SIZE};
-use crate::state::State;
+use crate::state::{Page, State};
 use crate::style;
 
 /// Messages generated and handled by [SeriesList].

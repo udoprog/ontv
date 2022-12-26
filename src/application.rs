@@ -3,19 +3,18 @@ use std::time::Duration;
 use anyhow::Result;
 use chrono::Utc;
 use iced::theme::{self, Theme};
-use iced::widget::{button, horizontal_rule, scrollable, text, Button, Column, Row};
+use iced::widget::{button, horizontal_rule, scrollable, text, Button, Column, Row, Space};
 use iced::{window, Alignment, Commands, Element, Length};
 use iced_native::image::Handle;
 use uuid::Uuid;
 
 use crate::assets::{Assets, ImageKey};
-use crate::message::{ErrorMessage, Page};
+use crate::error::ErrorInfo;
 use crate::model::{TaskFinished, TaskKind};
 use crate::page;
-use crate::params::{ACTION_SIZE, GAP, SPACE, SUB_MENU_SIZE};
+use crate::params::{GAP, SMALL, SPACE, SUB_MENU_SIZE};
 use crate::service::{NewSeries, Service};
-use crate::state::State;
-use crate::state::{self};
+use crate::state::{Page, State};
 use crate::utils::{Singleton, TimedOut, Timeout};
 
 // Check for remote updates every 60 seconds.
@@ -34,10 +33,11 @@ pub(crate) enum Message {
     Series(page::series::Message),
     Season(page::season::Message),
     Queue(page::queue::Message),
+    Errors(page::errors::Message),
     /// Save application changes.
     Save(TimedOut),
     /// Application state was saved.
-    Saved(Result<(), ErrorMessage>),
+    Saved(Result<(), ErrorInfo>),
     /// Check for updates.
     CheckForUpdates(TimedOut),
     /// Request to navigate to the specified page.
@@ -47,18 +47,16 @@ pub(crate) enum Message {
     /// A scroll happened.
     Scroll(f32),
     /// Images have been loaded in the background.
-    ImagesLoaded(Result<Vec<(ImageKey, Handle)>, ErrorMessage>),
+    ImagesLoaded(Result<Vec<(ImageKey, Handle)>, ErrorInfo>),
     /// Update download queue with the given items.
-    TaskUpdateDownloadQueue(
-        Result<Vec<(TaskKind, TaskFinished)>, ErrorMessage>,
-        TaskKind,
-    ),
+    TaskUpdateDownloadQueue(Result<Vec<(TaskKind, TaskFinished)>, ErrorInfo>, TaskKind),
     /// Task output of add series by remote.
-    TaskSeriesDownloaded(Result<NewSeries, ErrorMessage>, TaskKind),
+    TaskSeriesDownloaded(Result<NewSeries, ErrorInfo>, TaskKind),
     /// Queue processing.
     ProcessQueue(TimedOut, Uuid),
 }
 
+/// Current page state.
 enum Current {
     Dashboard(page::Dashboard),
     Settings(page::Settings),
@@ -67,12 +65,13 @@ enum Current {
     SeriesList(page::SeriesList),
     Season(page::Season),
     Queue(page::Queue),
+    Errors(page::Errors),
 }
 
 /// Main application.
 pub(crate) struct Application {
     /// Application state.
-    state: state::State,
+    state: State,
     /// Current page state.
     current: Current,
     // Timeout before database changes are saved to the filesystem.
@@ -155,6 +154,10 @@ impl iced::Application for Application {
                 Page::Queue => {
                     return format!("{BASE} - Queue");
                 }
+                Page::Errors => {
+                    let errors = self.state.errors().len();
+                    return format!("{BASE} - Errors ({errors})");
+                }
             }
         }
 
@@ -193,6 +196,9 @@ impl iced::Application for Application {
                     message,
                     commands.by_ref().map(Message::Queue),
                 );
+            }
+            (Message::Errors(message), Current::Errors(page)) => {
+                page.update(&mut self.state, message);
             }
             (Message::CloseRequested, _) => {
                 log::debug!("Close requested");
@@ -317,6 +323,7 @@ impl iced::Application for Application {
                     let page = page::Queue::new(commands.by_ref().map(Message::Queue));
                     Current::Queue(page)
                 }
+                Page::Errors => Current::Errors(page::Errors::default()),
             };
 
             commands.command(scrollable::snap_to(self.scrollable_id.clone(), scroll));
@@ -427,6 +434,7 @@ impl iced::Application for Application {
             Current::Settings(page) => page.view(&self.state).map(Message::Settings),
             Current::Season(page) => page.view(&self.state).map(Message::Season),
             Current::Queue(page) => page.view(&self.state).map(Message::Queue),
+            Current::Errors(page) => page.view(&self.state).map(Message::Errors),
         };
 
         window = window.push(horizontal_rule(1));
@@ -441,21 +449,19 @@ impl iced::Application for Application {
         let mut any = false;
 
         if self.state.is_saving() {
-            status_bar = status_bar.push(
-                Row::new().push(text("saving... ").size(ACTION_SIZE)).push(
-                    text("please wait")
-                        .style(self.state.warning_text())
-                        .size(ACTION_SIZE),
-                ),
-            );
+            status_bar = status_bar.push(Row::new().push(text("Saving... ").size(SMALL)));
             any = true;
         }
 
-        for error in self.state.errors() {
+        status_bar = status_bar.push(Space::new(Length::Fill, Length::Shrink));
+
+        let errors = self.state.errors().len();
+
+        if errors != 0 {
             status_bar = status_bar.push(
-                text(&error.message)
-                    .size(ACTION_SIZE)
-                    .style(self.state.warning_text()),
+                button(text(format!("Errors ({errors})")).size(SMALL))
+                    .style(theme::Button::Destructive)
+                    .on_press(Message::Navigate(Page::Errors)),
             );
             any = true;
         }
@@ -509,6 +515,9 @@ impl Application {
                 page.prepare(&mut self.state);
             }
             Current::Queue(page) => {
+                page.prepare(&mut self.state);
+            }
+            Current::Errors(page) => {
                 page.prepare(&mut self.state);
             }
         }

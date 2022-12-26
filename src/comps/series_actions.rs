@@ -3,7 +3,7 @@ use iced::{theme, Element};
 
 use crate::component::Component;
 use crate::model::{Series, SeriesId, TaskFinished, TaskKind};
-use crate::params::{ACTION_SIZE, SPACE};
+use crate::params::{SMALL, SPACE};
 use crate::queue::TaskStatus;
 use crate::state::State;
 
@@ -67,13 +67,13 @@ impl SeriesActions {
 
         if series.tracked {
             row = row.push(
-                button(text("Untrack").size(ACTION_SIZE))
+                button(text("Untrack").size(SMALL))
                     .style(theme::Button::Destructive)
                     .on_press(Message::Untrack),
             );
         } else {
             row = row.push(
-                button(text("Track").size(ACTION_SIZE))
+                button(text("Track").size(SMALL))
                     .style(theme::Button::Positive)
                     .on_press(Message::Track),
             );
@@ -86,18 +86,16 @@ impl SeriesActions {
         match status {
             Some(TaskStatus::Pending) => {
                 row = row.push(
-                    button(text("Refresh in queue").size(ACTION_SIZE))
-                        .style(theme::Button::Positive),
+                    button(text("Refresh in queue").size(SMALL)).style(theme::Button::Positive),
                 );
             }
             Some(TaskStatus::Running) => {
-                row = row.push(
-                    button(text("Downloading...").size(ACTION_SIZE)).style(theme::Button::Primary),
-                );
+                row = row
+                    .push(button(text("Downloading...").size(SMALL)).style(theme::Button::Primary));
             }
             None => {
                 row = row.push(
-                    button(text("Refresh").size(ACTION_SIZE))
+                    button(text("Refresh").size(SMALL))
                         .style(theme::Button::Positive)
                         .on_press(Message::RefreshSeries),
                 );
@@ -105,7 +103,7 @@ impl SeriesActions {
         }
 
         row = row.push(
-            button(text("Remove").size(ACTION_SIZE))
+            button(text("Remove").size(SMALL))
                 .style(theme::Button::Destructive)
                 .on_press(Message::RemoveSeries),
         );

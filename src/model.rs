@@ -81,6 +81,23 @@ pub(crate) enum ThemeType {
     Dark,
 }
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub(crate) enum SearchKind {
+    Tvdb,
+    #[default]
+    Tmdb,
+}
+
+impl fmt::Display for SearchKind {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SearchKind::Tvdb => write!(f, "thetvdb.com"),
+            SearchKind::Tmdb => write!(f, "themoviedb.com"),
+        }
+    }
+}
+
 #[inline]
 fn default_days() -> u64 {
     7
@@ -97,6 +114,8 @@ pub(crate) struct Config {
     pub(crate) tmdb_api_key: String,
     #[serde(default = "default_days")]
     pub(crate) schedule_duration_days: u64,
+    #[serde(default)]
+    pub(crate) search_kind: SearchKind,
 }
 
 impl Default for Config {
@@ -107,6 +126,7 @@ impl Default for Config {
             tvdb_legacy_apikey: Default::default(),
             tmdb_api_key: Default::default(),
             schedule_duration_days: default_days(),
+            search_kind: SearchKind::default(),
         }
     }
 }
