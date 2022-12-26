@@ -115,7 +115,7 @@ impl Queue {
     }
 
     /// Push a task onto the queue.
-    pub(crate) fn push(&mut self, kind: TaskKind, finished: TaskFinished) -> bool {
+    pub(crate) fn push(&mut self, kind: TaskKind, finished: Option<TaskFinished>) -> bool {
         if self.status.contains_key(&kind) {
             return false;
         }

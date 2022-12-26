@@ -4,7 +4,7 @@ use iced::{theme, Alignment, Commands, Element, Length};
 use uuid::Uuid;
 
 use crate::error::{ErrorId, ErrorInfo};
-use crate::model::{RemoteSeriesId, SearchKind, SearchSeries, SeriesId, TaskFinished, TaskKind};
+use crate::model::{RemoteSeriesId, SearchKind, SearchSeries, SeriesId, TaskKind};
 use crate::params::{
     default_container, GAP, GAP2, IMAGE_HEIGHT, POSTER_HINT, SMALL, SMALL_SIZE, SPACE, TITLE_SIZE,
 };
@@ -85,17 +85,13 @@ impl Search {
                 self.search(s, commands);
             }
             Message::AddSeriesByRemote(remote_id) => {
-                s.service.push_task(
-                    TaskKind::DownloadSeriesByRemoteId { remote_id },
-                    TaskFinished::None,
-                );
+                s.service
+                    .push_task(TaskKind::DownloadSeriesByRemoteId { remote_id }, None);
             }
             Message::SwitchSeries(series_id, remote_id) => {
                 s.remove_series(&series_id);
-                s.service.push_task(
-                    TaskKind::DownloadSeriesByRemoteId { remote_id },
-                    TaskFinished::None,
-                );
+                s.service
+                    .push_task(TaskKind::DownloadSeriesByRemoteId { remote_id }, None);
             }
             Message::RemoveSeries(series_id) => {
                 s.remove_series(&series_id);

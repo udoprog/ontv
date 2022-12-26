@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::assets::{Assets, ImageKey};
 use crate::error::ErrorInfo;
-use crate::model::{TaskFinished, TaskKind};
+use crate::model::{Task, TaskFinished, TaskKind};
 use crate::page;
 use crate::params::{GAP, SMALL, SPACE, SUB_MENU_SIZE};
 use crate::service::{NewSeries, Service};
@@ -49,9 +49,9 @@ pub(crate) enum Message {
     /// Images have been loaded in the background.
     ImagesLoaded(Result<Vec<(ImageKey, Handle)>, ErrorInfo>),
     /// Update download queue with the given items.
-    TaskUpdateDownloadQueue(Result<Vec<(TaskKind, TaskFinished)>, ErrorInfo>, TaskKind),
+    TaskUpdateDownloadQueue(Result<Option<(TaskKind, TaskFinished)>, ErrorInfo>, Task),
     /// Task output of add series by remote.
-    TaskSeriesDownloaded(Result<NewSeries, ErrorInfo>, TaskKind),
+    TaskSeriesDownloaded(Result<Option<NewSeries>, ErrorInfo>, Task),
     /// Queue processing.
     ProcessQueue(TimedOut, Uuid),
 }
@@ -239,9 +239,8 @@ impl iced::Application for Application {
                 self.state.set_saving(false);
             }
             (Message::CheckForUpdates(TimedOut::TimedOut), _) => {
-                self.state
-                    .service
-                    .push_task(TaskKind::FindUpdates, TaskFinished::None);
+                let now = Utc::now();
+                self.state.service.find_updates(&now);
 
                 // Schedule next update.
                 commands.perform(
@@ -249,17 +248,21 @@ impl iced::Application for Application {
                     Message::CheckForUpdates,
                 );
             }
-            (Message::TaskUpdateDownloadQueue(result, kind), _) => {
+            (Message::TaskUpdateDownloadQueue(result, task), _) => {
                 match result {
                     Ok(queue) => {
-                        self.state.service.push_tasks(queue);
+                        self.state.service.push_tasks(
+                            queue
+                                .into_iter()
+                                .map(|(kind, finished)| (kind, Some(finished))),
+                        );
                     }
                     Err(error) => {
                         self.state.handle_error(error);
                     }
                 }
 
-                self.state.service.complete_task(&kind);
+                self.state.service.complete_task(task);
             }
             (Message::Navigate(page), _) => {
                 self.state.push_history(page);
@@ -284,17 +287,19 @@ impl iced::Application for Application {
                 self.handle_image_loading(&mut commands);
                 return;
             }
-            (Message::TaskSeriesDownloaded(result, kind), _) => {
+            (Message::TaskSeriesDownloaded(result, task), _) => {
                 match result {
                     Ok(new_series) => {
-                        self.state.service.insert_new_series(new_series);
+                        if let Some(new_series) = new_series {
+                            self.state.service.insert_new_series(new_series);
+                        }
                     }
                     Err(error) => {
                         self.state.handle_error(error);
                     }
                 }
 
-                self.state.service.complete_task(&kind);
+                self.state.service.complete_task(task);
             }
             (Message::ProcessQueue(TimedOut::TimedOut, id), _) => {
                 self.handle_process_queue(&mut commands, Some(id));
@@ -581,34 +586,55 @@ impl Application {
         while let Some(task) = self.state.service.next_task(&now, timed_out) {
             log::trace!("running task {}", task.id);
 
-            match task.kind {
-                kind @ TaskKind::DownloadSeriesById { series_id } => {
-                    if let Some(future) = self.state.refresh_series(&series_id) {
-                        commands.perform(future, move |result| match result {
-                            Ok(new_series) => Message::TaskSeriesDownloaded(Ok(new_series), kind),
-                            Err(error) => Message::TaskSeriesDownloaded(Err(error.into()), kind),
+            match &task.kind {
+                TaskKind::CheckForUpdates {
+                    series_id,
+                    remote_id,
+                } => {
+                    if let Some(future) = self.state.service.check_for_updates(series_id, remote_id)
+                    {
+                        commands.perform(future, move |output| match output {
+                            Ok(update) => {
+                                Message::TaskUpdateDownloadQueue(Ok(update), task.clone())
+                            }
+                            Err(error) => {
+                                Message::TaskUpdateDownloadQueue(Err(error.into()), task.clone())
+                            }
                         });
+                    } else {
+                        self.state.service.complete_task(task);
                     }
                 }
-                kind @ TaskKind::DownloadSeriesByRemoteId { remote_id } => {
+                TaskKind::DownloadSeriesById { series_id } => {
+                    if let Some(future) = self.state.refresh_series(&series_id) {
+                        commands.perform(future, move |result| match result {
+                            Ok(new_series) => {
+                                Message::TaskSeriesDownloaded(Ok(new_series), task.clone())
+                            }
+                            Err(error) => {
+                                Message::TaskSeriesDownloaded(Err(error.into()), task.clone())
+                            }
+                        });
+                    } else {
+                        self.state.service.complete_task(task);
+                    }
+                }
+                TaskKind::DownloadSeriesByRemoteId { remote_id } => {
                     if self.state.service.set_tracked_by_remote(&remote_id) {
-                        self.state.service.complete_task(&kind);
+                        self.state.service.complete_task(task);
                     } else {
                         commands.perform(
-                            self.state.service.download_series_by_remote(&remote_id),
+                            self.state
+                                .service
+                                .download_series_by_remote(&remote_id, None),
                             move |result| {
-                                Message::TaskSeriesDownloaded(result.map_err(Into::into), kind)
+                                Message::TaskSeriesDownloaded(
+                                    result.map_err(Into::into),
+                                    task.clone(),
+                                )
                             },
                         );
                     }
-                }
-                kind @ TaskKind::FindUpdates => {
-                    commands.perform(self.state.service.find_updates(&now), move |output| {
-                        match output {
-                            Ok(update) => Message::TaskUpdateDownloadQueue(Ok(update), kind),
-                            Err(error) => Message::TaskUpdateDownloadQueue(Err(error.into()), kind),
-                        }
-                    });
                 }
             }
         }

@@ -1,4 +1,4 @@
-use iced::widget::{radio, text, text_input, Column};
+use iced::widget::{button, horizontal_rule, radio, text, text_input, Column};
 use iced::Element;
 
 use crate::model::ThemeType;
@@ -11,6 +11,7 @@ pub(crate) enum Message {
     ThemeChanged(ThemeType),
     TvdbLegacyApiKeyChange(String),
     TmdbApiKeyChange(String),
+    ClearLastSync,
 }
 
 #[derive(Default)]
@@ -31,6 +32,11 @@ impl Settings {
             }
             Message::TmdbApiKeyChange(string) => {
                 s.service.set_tmdb_api_key(string);
+            }
+            Message::ClearLastSync => {
+                for s in s.service.all_series_mut() {
+                    s.last_sync.clear();
+                }
             }
         }
     }
@@ -70,6 +76,11 @@ impl Settings {
                 }))
                 .spacing(SPACE),
         );
+
+        page = page.push(horizontal_rule(1));
+
+        page = page.push("Clear last sync times in database:");
+        page = page.push(button("Clear last sync").on_press(Message::ClearLastSync));
 
         default_container(page.spacing(GAP).padding(GAP)).into()
     }

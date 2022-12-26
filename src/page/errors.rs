@@ -20,7 +20,7 @@ impl Errors {
     pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
         let mut page = Column::new();
 
-        for e in s.errors() {
+        for e in s.errors().rev() {
             let mut error = Column::new();
 
             match e.id {

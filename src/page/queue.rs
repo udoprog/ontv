@@ -5,7 +5,7 @@ use iced::alignment::Horizontal;
 use iced::widget::{button, horizontal_rule, text, vertical_space, Column, Row};
 use iced::{theme, Commands, Element, Length};
 
-use crate::model::{RemoteSeriesId, TaskKind};
+use crate::model::{RemoteSeriesId, SeriesId, TaskKind};
 use crate::params::{default_container, duration_display, GAP, HALF_GAP, TITLE_SIZE};
 use crate::state::{Page, State};
 use crate::utils::{TimedOut, Timeout};
@@ -63,10 +63,10 @@ impl Queue {
         }
     }
 
-    pub(crate) fn view(&self, state: &State) -> Element<'static, Message> {
+    pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
         let mut page = Column::new();
 
-        let tasks = state.service.tasks();
+        let tasks = s.service.tasks();
 
         if tasks.len() == 0 {
             page = page.push(
@@ -100,34 +100,18 @@ impl Queue {
                 let mut update = Row::new();
 
                 match &task.kind {
-                    TaskKind::DownloadSeriesById { series_id } => {
-                        update = update.push(text("Update series"));
-
-                        if let Some(series) = state.service.series(series_id) {
-                            update = update.push(
-                                button(text(&series.title).width(Length::Fill))
-                                    .style(theme::Button::Text)
-                                    .padding(0)
-                                    .width(Length::Fill)
-                                    .on_press(Message::Navigate(Page::Series(*series_id))),
-                            );
-
-                            if let Some(remote_id) = series.remote_id {
-                                update = update.push(
-                                    button(text(remote_id))
-                                        .style(theme::Button::Text)
-                                        .padding(0)
-                                        .width(REMOTE_COLUMN)
-                                        .on_press(Message::OpenRemote(remote_id)),
-                                );
-                            }
-                        } else {
-                            update = update.push(
-                                text(format!("{series_id} (missing data)")).width(Length::Fill),
-                            );
-                        }
+                    TaskKind::CheckForUpdates {
+                        series_id,
+                        remote_id,
+                    } => {
+                        update = update.push(text("Check series for updates"));
+                        update = decorate_series(s, series_id, Some(remote_id), update);
                     }
-                    TaskKind::DownloadSeriesByRemoteId { remote_id } => {
+                    TaskKind::DownloadSeriesById { series_id, .. } => {
+                        update = update.push(text("Update series"));
+                        update = decorate_series(s, series_id, None, update);
+                    }
+                    TaskKind::DownloadSeriesByRemoteId { remote_id, .. } => {
                         update = update.push(text("Download series").width(Length::Fill));
 
                         update = update.push(
@@ -137,9 +121,6 @@ impl Queue {
                                 .width(REMOTE_COLUMN)
                                 .on_press(Message::OpenRemote(*remote_id)),
                         );
-                    }
-                    TaskKind::FindUpdates => {
-                        update = update.push(text("Look for updates").width(Length::Fill));
                     }
                 }
 
@@ -171,4 +152,35 @@ impl Queue {
         )
         .into()
     }
+}
+
+fn decorate_series<'a>(
+    state: &State,
+    series_id: &SeriesId,
+    remote_id: Option<&RemoteSeriesId>,
+    mut update: Row<'a, Message>,
+) -> Row<'a, Message> {
+    if let Some(series) = state.service.series(series_id) {
+        update = update.push(
+            button(text(&series.title).width(Length::Fill))
+                .style(theme::Button::Text)
+                .padding(0)
+                .width(Length::Fill)
+                .on_press(Message::Navigate(Page::Series(*series_id))),
+        );
+
+        if let Some(remote_id) = remote_id.or(series.remote_id.as_ref()) {
+            update = update.push(
+                button(text(remote_id))
+                    .style(theme::Button::Text)
+                    .padding(0)
+                    .width(REMOTE_COLUMN)
+                    .on_press(Message::OpenRemote(*remote_id)),
+            );
+        }
+    } else {
+        update = update.push(text(format!("{series_id} (missing data)")).width(Length::Fill));
+    }
+
+    update
 }

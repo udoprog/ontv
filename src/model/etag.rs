@@ -17,6 +17,12 @@ impl Etag {
         Self(bytes.as_ref().into())
     }
 
+    /// Get bytes of the etag.
+    #[inline]
+    pub(crate) fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+
     #[inline]
     pub(crate) fn as_base64(&self) -> String {
         base64::encode(self.0.as_ref())

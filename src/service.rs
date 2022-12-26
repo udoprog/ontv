@@ -19,9 +19,9 @@ use crate::api::thetvdb;
 use crate::assets::ImageKey;
 use crate::cache::{self};
 use crate::model::{
-    Config, Episode, EpisodeId, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId, ScheduledDay,
-    ScheduledSeries, SearchSeries, Season, SeasonNumber, Series, SeriesId, Task, TaskFinished,
-    TaskKind, ThemeType, Watched,
+    Config, Episode, EpisodeId, Etag, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId,
+    ScheduledDay, ScheduledSeries, SearchSeries, Season, SeasonNumber, Series, SeriesId, Task,
+    TaskFinished, TaskKind, ThemeType, Watched,
 };
 use crate::queue::{Queue, TaskStatus};
 
@@ -254,9 +254,22 @@ impl Service {
         self.db.series.get(id)
     }
 
+    /// Get a single series mutably.
+    pub(crate) fn series_mut(&mut self, id: &SeriesId) -> Option<&mut Series> {
+        let series = self.db.series.get_mut(id)?;
+        self.db.changes.set.insert(Change::Series);
+        Some(series)
+    }
+
     /// Get list of series.
     pub(crate) fn all_series(&self) -> &[Series] {
         &self.db.series.data
+    }
+
+    /// Get list of series mutably and mark all series as changed.
+    pub(crate) fn all_series_mut(&mut self) -> &mut [Series] {
+        self.db.changes.set.insert(Change::Series);
+        &mut self.db.series.data
     }
 
     /// Iterator over available episodes.
@@ -358,14 +371,9 @@ impl Service {
     }
 
     /// Find updates that need to be performed.
-    pub(crate) fn find_updates(
-        &mut self,
-        now: &DateTime<Utc>,
-    ) -> impl Future<Output = Result<Vec<(TaskKind, TaskFinished)>>> {
+    pub(crate) fn find_updates(&mut self, now: &DateTime<Utc>) {
         // Cache series updates for 6 hours.
         const CACHE_TIME: i64 = 3600 * 6;
-
-        let mut interests = Vec::new();
 
         for s in &mut self.db.series.data {
             // Ignore series which are no longer tracked.
@@ -385,92 +393,100 @@ impl Service {
                 }
             }
 
-            let kind = TaskKind::DownloadSeriesById { series_id: s.id };
+            let kind = match remote_id {
+                RemoteSeriesId::Tvdb { .. } => TaskKind::CheckForUpdates {
+                    series_id: s.id,
+                    remote_id,
+                },
+                RemoteSeriesId::Tmdb { .. } => TaskKind::DownloadSeriesById { series_id: s.id },
+                RemoteSeriesId::Imdb { .. } => continue,
+            };
 
-            if self.db.tasks.status(&kind).is_some() {
-                continue;
+            if self.db.tasks.push(kind, None) {
+                s.last_sync.insert(remote_id, *now);
+                self.db.changes.set.insert(Change::Series);
+                self.db.changes.set.insert(Change::Queue);
             }
-
-            interests.push((s.last_modified, s.last_etag.clone(), s.id, remote_id, kind));
-            s.last_sync.insert(remote_id, *now);
-            self.db.changes.set.insert(Change::Series);
-        }
-
-        let tvdb = self.tvdb.clone();
-        let tmdb = self.tmdb.clone();
-
-        async move {
-            let mut tasks = Vec::new();
-
-            for (last_modified, last_etag, series_id, remote_id, kind) in interests {
-                log::trace!("{series_id}/{remote_id}: checking for updates");
-
-                let finished = match remote_id {
-                    RemoteSeriesId::Tvdb { id } => {
-                        let Some(update) = tvdb.series_last_modified(id).await? else {
-                            continue;
-                        };
-
-                        log::trace!("{series_id}/{remote_id:?}: last modified {update} (existing {last_modified:?})");
-
-                        if let Some(last_modified) = last_modified {
-                            if last_modified >= update {
-                                continue;
-                            }
-                        }
-
-                        TaskFinished::UpdateSeries {
-                            series_id,
-                            last_etag: None,
-                            last_modifed: Some(update),
-                        }
-                    }
-                    // Nothing to do with the TMDB remote.
-                    RemoteSeriesId::Tmdb { id } => {
-                        let Some(update) = tmdb.series_last_etag(id).await? else {
-                            continue;
-                        };
-
-                        log::trace!(
-                            "{series_id}/{remote_id:?}: etag: {update} (existing {last_etag:?})"
-                        );
-
-                        if let Some(last_etag) = last_etag {
-                            if last_etag == update {
-                                continue;
-                            }
-                        }
-
-                        TaskFinished::UpdateSeries {
-                            series_id,
-                            last_etag: Some(update),
-                            last_modifed: None,
-                        }
-                    }
-                    // Nothing to do with the IMDB remote.
-                    RemoteSeriesId::Imdb { .. } => {
-                        continue;
-                    }
-                };
-
-                tasks.push((kind, finished));
-            }
-
-            Ok(tasks)
         }
     }
 
+    /// Check for update for the given series.
+    pub(crate) fn check_for_updates(
+        &mut self,
+        series_id: &SeriesId,
+        remote_id: &RemoteSeriesId,
+    ) -> Option<impl Future<Output = Result<Option<(TaskKind, TaskFinished)>>>> {
+        let Some(s) = self.db.series.get(series_id) else {
+            return None;
+        };
+
+        match s.remote_id {
+            Some(RemoteSeriesId::Tmdb { .. }) => {
+                let kind = TaskKind::DownloadSeriesById { series_id: s.id };
+
+                if self.db.tasks.push(kind, None) {
+                    self.db.changes.set.insert(Change::Queue);
+                }
+
+                return None;
+            }
+            _ => {}
+        }
+
+        let last_modified = s.last_modified;
+        let tvdb = self.tvdb.clone();
+
+        let series_id = s.id;
+        let remote_id = *remote_id;
+
+        Some(async move {
+            log::trace!("{series_id}/{remote_id}: checking for updates");
+
+            let finished = match remote_id {
+                RemoteSeriesId::Tvdb { id } => {
+                    let Some(update) = tvdb.series_last_modified(id).await? else {
+                        bail!("{remote_id}: missing last-modified in api");
+                    };
+
+                    log::trace!(
+                        "{series_id}/{remote_id}: last modified {update:?} (existing {last_modified:?})"
+                    );
+
+                    if matches!(last_modified, Some(last_modified) if last_modified >= update) {
+                        return Ok(None);
+                    }
+
+                    TaskFinished::UpdateSeries {
+                        series_id,
+                        remote_id,
+                        last_etag: None,
+                        last_modified: Some(update),
+                    }
+                }
+                // Nothing to do with the IMDB remote.
+                remote_id => bail!("{remote_id}: not supported for checking for updates"),
+            };
+
+            let kind = TaskKind::DownloadSeriesById { series_id };
+
+            Ok(Some((kind, finished)))
+        })
+    }
+
     /// Push a single task to the queue.
-    pub(crate) fn push_task(&mut self, kind: TaskKind, finished: TaskFinished) {
+    pub(crate) fn push_task(&mut self, kind: TaskKind, finished: Option<TaskFinished>) -> bool {
         if self.db.tasks.push(kind, finished) {
             self.db.changes.set.insert(Change::Queue);
+            true
+        } else {
+            false
         }
     }
 
     /// Add updates to download to the queue.
     pub(crate) fn push_tasks<I>(&mut self, it: I)
     where
-        I: IntoIterator<Item = (TaskKind, TaskFinished)>,
+        I: IntoIterator<Item = (TaskKind, Option<TaskFinished>)>,
     {
         let mut any = false;
 
@@ -961,8 +977,9 @@ impl Service {
     pub(crate) fn download_series_by_remote(
         &mut self,
         remote_id: &RemoteSeriesId,
-    ) -> impl Future<Output = Result<NewSeries>> {
-        self.download_series(remote_id, true)
+        if_none_match: Option<&Etag>,
+    ) -> impl Future<Output = Result<Option<NewSeries>>> {
+        self.download_series(remote_id, true, if_none_match)
     }
 
     /// Download series using a remote identifier.
@@ -970,7 +987,8 @@ impl Service {
         &mut self,
         remote_id: &RemoteSeriesId,
         refresh_pending: bool,
-    ) -> impl Future<Output = Result<NewSeries>> {
+        if_none_match: Option<&Etag>,
+    ) -> impl Future<Output = Result<Option<NewSeries>>> {
         let tvdb = self.tvdb.clone();
         let tmdb = self.tmdb.clone();
         let series = self.db.remote_series.clone();
@@ -981,6 +999,8 @@ impl Service {
             move |q| Some(*series.iter().find(|(remote_id, _)| **remote_id == q)?.1);
 
         let remote_id = *remote_id;
+
+        let if_none_match = if_none_match.cloned();
 
         async move {
             let lookup_episode =
@@ -995,7 +1015,10 @@ impl Service {
                     (series, seasons, episodes)
                 }
                 RemoteSeriesId::Tmdb { id } => {
-                    let (series, seasons) = tmdb.series(id, lookup_series).await?;
+                    let Some((series, seasons)) = tmdb.series(id, lookup_series, if_none_match.as_ref()).await? else {
+                        log::trace!("{remote_id}: not changed");
+                        return Ok(None);
+                    };
 
                     let mut episodes = Vec::new();
 
@@ -1022,7 +1045,7 @@ impl Service {
                 refresh_pending,
             };
 
-            Ok::<_, Error>(data)
+            Ok::<_, Error>(Some(data))
         }
     }
 
@@ -1318,8 +1341,24 @@ impl Service {
 
     /// Mark task as completed.
     #[inline]
-    pub(crate) fn complete_task(&mut self, kind: &TaskKind) -> Option<TaskStatus> {
-        self.db.tasks.complete(kind)
+    pub(crate) fn complete_task(&mut self, task: Task) -> Option<TaskStatus> {
+        match task.finished {
+            Some(TaskFinished::UpdateSeries {
+                series_id,
+                remote_id,
+                last_etag,
+                last_modified,
+            }) => {
+                if let Some(s) = self.series_mut(&series_id) {
+                    s.last_etag = last_etag;
+                    s.last_modified = last_modified;
+                    s.last_sync.insert(remote_id, Utc::now());
+                }
+            }
+            None => {}
+        }
+
+        self.db.tasks.complete(&task.kind)
     }
 }
 

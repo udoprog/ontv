@@ -2,13 +2,12 @@ use std::collections::{HashSet, VecDeque};
 use std::future::Future;
 
 use anyhow::Result;
+use chrono::{Duration, Utc};
 
 use crate::assets::Assets;
 use crate::error::{ErrorId, ErrorInfo};
 use crate::model::{SeasonNumber, SeriesId};
 use crate::service::{NewSeries, Service};
-
-const ERRORS: usize = 5;
 
 /// The current page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,12 +110,16 @@ impl State {
 
         self.saving = false;
         self.error_ids.extend(error.id);
-        self.errors.push_back(error);
+        self.errors.push_front(error);
 
-        if self.errors.len() > ERRORS {
-            if let Some(id) = self.errors.pop_front().and_then(|e| e.id) {
-                self.error_ids.remove(&id);
+        let expires_at = Utc::now() - Duration::minutes(10);
+
+        while let Some(e) = self.errors.back() {
+            if e.timestamp > expires_at {
+                break;
             }
+
+            self.errors.pop_back();
         }
     }
 
@@ -134,13 +137,18 @@ impl State {
     pub(crate) fn refresh_series(
         &mut self,
         series_id: &SeriesId,
-    ) -> Option<impl Future<Output = Result<NewSeries>>> {
-        let remote_id = self.service.series(series_id)?.remote_id?;
-        Some(self.service.download_series(&remote_id, false))
+    ) -> Option<impl Future<Output = Result<Option<NewSeries>>>> {
+        let s = self.service.series(series_id)?;
+        let remote_id = s.remote_id?;
+        let none_if_match = s.last_etag.clone();
+        Some(
+            self.service
+                .download_series(&remote_id, false, none_if_match.as_ref()),
+        )
     }
 
     #[inline]
-    pub(crate) fn errors(&self) -> impl ExactSizeIterator<Item = &ErrorInfo> {
+    pub(crate) fn errors(&self) -> impl ExactSizeIterator<Item = &ErrorInfo> + DoubleEndedIterator {
         self.errors.iter()
     }
 

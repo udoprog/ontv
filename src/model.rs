@@ -771,8 +771,11 @@ impl From<TmdbImage> for Image {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub(crate) enum TaskKind {
-    /// Find updates.
-    FindUpdates,
+    /// Check for updates.
+    CheckForUpdates {
+        series_id: SeriesId,
+        remote_id: RemoteSeriesId,
+    },
     /// Task to download series data.
     DownloadSeriesById { series_id: SeriesId },
     /// Task to add a series by a remote identifier.
@@ -780,31 +783,27 @@ pub(crate) enum TaskKind {
 }
 
 /// Actions that can be performed after a task has completed.
-#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case")]
 pub(crate) enum TaskFinished {
-    /// Do nothing.
-    #[default]
-    None,
     /// Update series.
     UpdateSeries {
         /// Series to update.
         series_id: SeriesId,
+        /// Remote series id.
+        remote_id: RemoteSeriesId,
         /// Update etag.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         last_etag: Option<Etag>,
         /// Update last modified date.
-        last_modifed: Option<DateTime<Utc>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        last_modified: Option<DateTime<Utc>>,
     },
-}
-
-impl TaskFinished {
-    fn is_none(&self) -> bool {
-        matches!(self, TaskFinished::None)
-    }
 }
 
 /// A task in a queue.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[must_use]
 pub(crate) struct Task {
     /// The identifier of the task.
     pub(crate) id: Uuid,
@@ -814,8 +813,8 @@ pub(crate) struct Task {
     /// When the task is scheduled for.
     pub(crate) scheduled: DateTime<Utc>,
     /// Task finished actions.
-    #[serde(default, skip_serializing_if = "TaskFinished::is_none")]
-    pub(crate) finished: TaskFinished,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) finished: Option<TaskFinished>,
 }
 
 impl Task {
@@ -823,8 +822,8 @@ impl Task {
     pub(crate) fn is_series(&self, id: &SeriesId) -> bool {
         match &self.kind {
             TaskKind::DownloadSeriesById { series_id, .. } => *series_id == *id,
+            TaskKind::CheckForUpdates { series_id, .. } => *series_id == *id,
             TaskKind::DownloadSeriesByRemoteId { .. } => false,
-            TaskKind::FindUpdates => false,
         }
     }
 }

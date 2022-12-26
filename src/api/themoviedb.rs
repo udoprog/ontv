@@ -8,6 +8,7 @@ use bytes::Bytes;
 use chrono::NaiveDate;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use reqwest::header;
 use reqwest::StatusCode;
 use reqwest::{Method, RequestBuilder, Response, Url};
 use serde::Deserialize;
@@ -146,31 +147,29 @@ impl Client {
         Ok(res.bytes().await?.to_vec())
     }
 
-    /// Get last etag.
-    pub(crate) async fn series_last_etag(&self, id: u32) -> Result<Option<Etag>> {
-        let res = self
-            .request_with_auth(Method::HEAD, &["tv", &id.to_string()])
-            .send()
-            .await?;
-
-        Ok(common::parse_etag(&res))
-    }
-
     /// Download series information.
     pub(crate) async fn series(
         &self,
         id: u32,
         lookup: impl common::LookupSeriesId,
-    ) -> Result<(Series, Vec<Season>)> {
+        if_none_match: Option<&Etag>,
+    ) -> Result<Option<(Series, Vec<Season>)>> {
+        let mut details = self.request_with_auth(Method::GET, &["tv", &id.to_string()]);
+
+        if let Some(etag) = if_none_match {
+            details = details.header(header::IF_NONE_MATCH, etag.as_ref());
+        }
+
+        let details = details.send().await?;
+
+        if details.status() == StatusCode::NOT_MODIFIED {
+            return Ok(None);
+        }
+
         let external_ids = self
             .request_with_auth(Method::GET, &["tv", &id.to_string(), "external_ids"])
-            .send();
-
-        let details = self
-            .request_with_auth(Method::GET, &["tv", &id.to_string()])
-            .send();
-
-        let (external_ids, details) = tokio::try_join!(external_ids, details)?;
+            .send()
+            .await?;
 
         let last_modified = common::parse_last_modified(&details)?;
         let last_etag = common::parse_etag(&details);
@@ -238,7 +237,7 @@ impl Client {
             });
         }
 
-        return Ok((series, seasons));
+        return Ok(Some((series, seasons)));
 
         #[derive(Deserialize)]
         struct Details {
