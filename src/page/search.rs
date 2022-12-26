@@ -135,6 +135,8 @@ impl Search {
         let mut results = Column::new();
 
         for series in self.series.iter().skip(self.page * PER_PAGE).take(PER_PAGE) {
+            let local_series = s.service.get_series_by_remote(series.id);
+
             let handle = match series
                 .poster
                 .and_then(|p| s.assets.image_with_hint(&p, POSTER_HINT))
@@ -160,7 +162,7 @@ impl Search {
                     );
                 }
                 None => {
-                    if let Some(s) = s.service.get_series_by_remote(series.id) {
+                    if let Some(s) = local_series {
                         if s.remote_id != Some(series.id) {
                             actions = actions.push(
                                 button(text("Switch").size(SMALL))
@@ -192,18 +194,30 @@ impl Search {
                 first_aired = first_aired.push(text(format!("First aired: {date}")).size(SMALL));
             }
 
+            let mut result = Column::new();
+
+            let series_name = text(&series.name).size(24);
+
+            if let Some(local_series) = local_series {
+                result = result.push(
+                    button(series_name)
+                        .style(theme::Button::Text)
+                        .padding(0)
+                        .on_press(Message::Navigate(Page::Series(local_series.id))),
+                );
+            } else {
+                result = result.push(series_name);
+            }
+
+            result = result.push(first_aired);
+            result = result.push(actions.spacing(SPACE));
+
             results = results.push(
                 Row::new()
                     .push(image(handle).height(Length::Units(IMAGE_HEIGHT)))
                     .push(
                         Column::new()
-                            .push(
-                                Column::new()
-                                    .push(text(&series.name).size(24))
-                                    .push(first_aired)
-                                    .push(actions.spacing(SPACE))
-                                    .spacing(SPACE),
-                            )
+                            .push(result.spacing(SPACE))
                             .push(text(overview))
                             .spacing(GAP),
                     )

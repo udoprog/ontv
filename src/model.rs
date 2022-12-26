@@ -574,6 +574,7 @@ pub(crate) enum TvdbImageKind {
     ScreenCap(u64, Hex<16>),
     Episodes(u32, u32),
     Blank(u32),
+    Text(u32),
     Missing,
 }
 
@@ -623,6 +624,9 @@ impl fmt::Display for TvdbImage {
             }
             TvdbImageKind::Blank(series_id) => {
                 write!(f, "/banners/blank/{series_id}.{ext}")
+            }
+            TvdbImageKind::Text(series_id) => {
+                write!(f, "/banners/text/{series_id}.{ext}")
             }
             TvdbImageKind::Missing => {
                 write!(f, "/banners/images/missing/series.{ext}")
@@ -731,6 +735,8 @@ impl Image {
         let kind = match &array[..] {
             // blank/77092.jpg
             ["blank", series_id] => TvdbImageKind::Blank(series_id.parse()?),
+            // text/240291.jpg
+            ["text", series_id] => TvdbImageKind::Text(series_id.parse()?),
             // images/missing/series.jpg
             ["images", "missing", "series"] => TvdbImageKind::Missing,
             ["v4", "series", series_id, kind, rest] => {
