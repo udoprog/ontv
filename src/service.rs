@@ -1,3 +1,4 @@
+mod series;
 mod watched;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -100,52 +101,6 @@ impl Changes {
 }
 
 #[derive(Default)]
-struct SeriesDatabase {
-    data: Vec<Series>,
-    by_id: HashMap<SeriesId, usize>,
-}
-
-impl SeriesDatabase {
-    /// Get a series immutably.
-    fn get(&self, id: &SeriesId) -> Option<&Series> {
-        let &index = self.by_id.get(id)?;
-        self.data.get(index)
-    }
-
-    /// Get a series mutably.
-    fn get_mut(&mut self, id: &SeriesId) -> Option<&mut Series> {
-        let &index = self.by_id.get(id)?;
-        self.data.get_mut(index)
-    }
-
-    /// Remove the series by the given identifier.
-    fn remove(&mut self, id: &SeriesId) -> Option<Series> {
-        let index = self.by_id.remove(id)?;
-        let value = self.data.swap_remove(index);
-        let data = &mut self.data[index..];
-
-        data.sort_by(|a, b| a.title.cmp(&b.title));
-
-        for (n, s) in data.iter().enumerate() {
-            self.by_id.insert(s.id, index + n);
-        }
-
-        Some(value)
-    }
-
-    /// Insert the given series.
-    fn push(&mut self, series: Series) {
-        self.data.push(series);
-        self.data.sort_by(|a, b| a.title.cmp(&b.title));
-        self.by_id.clear();
-
-        for (index, s) in self.data.iter().enumerate() {
-            self.by_id.insert(s.id, index);
-        }
-    }
-}
-
-#[derive(Default)]
 struct Database {
     /// Application configuration.
     config: Config,
@@ -158,7 +113,7 @@ struct Database {
     /// Episode IDs to remotes.
     remote_episodes_rev: HashMap<EpisodeId, BTreeSet<RemoteEpisodeId>>,
     /// Series database.
-    series: SeriesDatabase,
+    series: series::Database,
     /// Episodes collection.
     episodes: HashMap<SeriesId, Vec<Episode>>,
     /// Seasons collection.
@@ -263,14 +218,14 @@ impl Service {
     }
 
     /// Get list of series.
-    pub(crate) fn all_series(&self) -> &[Series] {
-        &self.db.series.data
+    pub(crate) fn all_series(&self) -> impl ExactSizeIterator<Item = &Series> {
+        self.db.series.iter()
     }
 
     /// Get list of series mutably and mark all series as changed.
-    pub(crate) fn all_series_mut(&mut self) -> &mut [Series] {
+    pub(crate) fn all_series_mut(&mut self) -> impl ExactSizeIterator<Item = &mut Series> {
         self.db.changes.set.insert(Change::Series);
-        &mut self.db.series.data
+        self.db.series.iter_mut()
     }
 
     /// Iterator over available episodes.
@@ -384,7 +339,7 @@ impl Service {
         // Cache series updates for 6 hours.
         const CACHE_TIME: i64 = 3600 * 6;
 
-        for s in &mut self.db.series.data {
+        for s in self.db.series.iter_mut() {
             // Ignore series which are no longer tracked.
             if !s.tracked {
                 continue;
@@ -743,7 +698,7 @@ impl Service {
         let series = changes
             .set
             .contains(Change::Series)
-            .then(|| self.db.series.data.clone());
+            .then(|| self.db.series.export());
 
         let queue = changes
             .set
@@ -1409,9 +1364,7 @@ fn load_database(paths: &Paths) -> Result<Database> {
                 db.remote_series.insert(id, s.id);
             }
 
-            let len = db.series.data.len();
-            db.series.by_id.insert(s.id, len);
-            db.series.data.push(s);
+            db.series.push_raw(s);
         }
     }
 

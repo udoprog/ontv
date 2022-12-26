@@ -33,12 +33,10 @@ impl SeriesList {
                 .mark_with_hint(series.flat_map(|s| s.poster), POSTER_HINT);
         } else {
             self.actions
-                .init_from_iter(s.service.all_series().iter().map(|s| s.id));
+                .init_from_iter(s.service.all_series().map(|s| s.id));
 
-            s.assets.mark_with_hint(
-                s.service.all_series().iter().flat_map(|s| s.poster),
-                POSTER_HINT,
-            );
+            s.assets
+                .mark_with_hint(s.service.all_series().flat_map(|s| s.poster), POSTER_HINT);
         }
     }
 
@@ -83,7 +81,7 @@ impl SeriesList {
             it = filtered.iter().flat_map(|id| s.service.series(id));
             &mut it
         } else {
-            it2 = s.service.all_series().iter();
+            it2 = s.service.all_series();
             &mut it2
         };
 
