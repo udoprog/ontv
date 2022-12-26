@@ -2111,6 +2111,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "slab",
  "tempfile",
  "tokio",
  "twox-hash",

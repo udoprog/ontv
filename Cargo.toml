@@ -40,6 +40,7 @@ pretty_env_logger = "0.4.0"
 reqwest = { version = "0.11.13", features = ["json"] }
 serde = { version = "1.0.151", features = ["derive"] }
 serde_json = "1.0.91"
+slab = "0.4.7"
 tempfile = "3.3.0"
 tokio = { version = "1.23.0", features = ["full"] }
 twox-hash = "1.6.3"

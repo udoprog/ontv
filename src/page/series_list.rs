@@ -33,10 +33,12 @@ impl SeriesList {
                 .mark_with_hint(series.flat_map(|s| s.poster), POSTER_HINT);
         } else {
             self.actions
-                .init_from_iter(s.service.all_series().map(|s| s.id));
+                .init_from_iter(s.service.series_by_name().map(|s| s.id));
 
-            s.assets
-                .mark_with_hint(s.service.all_series().flat_map(|s| s.poster), POSTER_HINT);
+            s.assets.mark_with_hint(
+                s.service.series_by_name().flat_map(|s| s.poster),
+                POSTER_HINT,
+            );
         }
     }
 
@@ -49,7 +51,7 @@ impl SeriesList {
                 self.filtered = if !filter.is_empty() {
                     let mut filtered = Vec::new();
 
-                    for s in s.service.all_series() {
+                    for s in s.service.series_by_name() {
                         if filter.matches(&s.title) {
                             filtered.push(s.id);
                         }
@@ -81,7 +83,7 @@ impl SeriesList {
             it = filtered.iter().flat_map(|id| s.service.series(id));
             &mut it
         } else {
-            it2 = s.service.all_series();
+            it2 = s.service.series_by_name();
             &mut it2
         };
 

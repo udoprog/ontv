@@ -218,8 +218,8 @@ impl Service {
     }
 
     /// Get list of series.
-    pub(crate) fn all_series(&self) -> impl ExactSizeIterator<Item = &Series> {
-        self.db.series.iter()
+    pub(crate) fn series_by_name(&self) -> impl DoubleEndedIterator<Item = &Series> {
+        self.db.series.iter_by_name()
     }
 
     /// Get list of series mutably and mark all series as changed.
@@ -1069,7 +1069,7 @@ impl Service {
         if let Some(current) = self.db.series.get_mut(&data.series.id) {
             *current = data.series;
         } else {
-            self.db.series.push(data.series);
+            self.db.series.insert(data.series);
         }
 
         // Remove any pending episodes for the given series.
@@ -1208,7 +1208,7 @@ impl Service {
         {
             let mut schedule = Vec::new();
 
-            for series in self.all_series() {
+            for series in self.db.series.iter() {
                 if !series.tracked {
                     continue;
                 }
@@ -1364,7 +1364,7 @@ fn load_database(paths: &Paths) -> Result<Database> {
                 db.remote_series.insert(id, s.id);
             }
 
-            db.series.push_raw(s);
+            db.series.insert(s);
         }
     }
 
