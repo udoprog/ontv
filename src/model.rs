@@ -787,14 +787,11 @@ pub(crate) enum TaskKind {
 #[serde(tag = "action", rename_all = "kebab-case")]
 pub(crate) enum TaskFinished {
     /// Update series.
-    UpdateSeries {
+    SeriesSynced {
         /// Series to update.
         series_id: SeriesId,
         /// Remote series id.
         remote_id: RemoteSeriesId,
-        /// Update etag.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        last_etag: Option<Etag>,
         /// Update last modified date.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         last_modified: Option<DateTime<Utc>>,

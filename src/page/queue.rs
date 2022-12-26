@@ -6,12 +6,10 @@ use iced::widget::{button, horizontal_rule, text, vertical_space, Column, Row};
 use iced::{theme, Commands, Element, Length};
 
 use crate::model::{RemoteSeriesId, SeriesId, TaskKind};
-use crate::params::{default_container, duration_display, GAP, HALF_GAP, TITLE_SIZE};
+use crate::params::{default_container, duration_display, GAP, GAP2, SMALL_SIZE, SPACE};
 use crate::state::{Page, State};
 use crate::utils::{TimedOut, Timeout};
 
-const REMOTE_COLUMN: Length = Length::Units(200);
-const DURATION_COLUMN: Length = Length::Units(100);
 const UPDATE_TIMER: u64 = 10;
 
 #[derive(Debug, Clone)]
@@ -64,88 +62,96 @@ impl Queue {
     }
 
     pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
-        let mut page = Column::new();
+        let now = Utc::now();
 
-        let tasks = s.service.tasks();
+        let mut running_col = Column::new();
 
-        if tasks.len() == 0 {
-            page = page.push(
-                Row::new()
-                    .push(
-                        text("Queue is empty")
-                            .size(TITLE_SIZE)
-                            .width(Length::Fill)
-                            .horizontal_alignment(Horizontal::Center),
-                    )
-                    .padding(GAP),
+        let mut running = s.service.running_tasks().peekable();
+
+        running_col = running_col.push(
+            Row::new()
+                .push(
+                    text(format!("Running ({})", running.len()))
+                        .width(Length::Fill)
+                        .horizontal_alignment(Horizontal::Center),
+                )
+                .padding(GAP),
+        );
+
+        if running.len() == 0 {
+            running_col = running_col.push(
+                text("Empty")
+                    .size(SMALL_SIZE)
+                    .width(Length::Fill)
+                    .horizontal_alignment(Horizontal::Center),
             );
-        } else {
-            page = page.push(
-                Row::new()
-                    .push(
-                        text(format!("Queue ({})", tasks.len()))
-                            .size(TITLE_SIZE)
-                            .width(Length::Fill)
-                            .horizontal_alignment(Horizontal::Center),
-                    )
-                    .padding(GAP),
-            );
+        }
 
-            let mut it = tasks.peekable();
+        let mut list = Column::new();
 
-            let now = Utc::now();
+        while let Some(task) = running.next() {
+            let mut row = Row::new();
+            let update = build_task_row(s, &task.kind);
+            row = row.push(update.width(Length::Fill).spacing(GAP));
 
-            while let Some(task) = it.next() {
-                let mut row = Row::new();
-                let mut update = Row::new();
+            list = list.push(row.width(Length::Fill).spacing(GAP));
 
-                match &task.kind {
-                    TaskKind::CheckForUpdates {
-                        series_id,
-                        remote_id,
-                    } => {
-                        update = update.push(text("Check series for updates"));
-                        update = decorate_series(s, series_id, Some(remote_id), update);
-                    }
-                    TaskKind::DownloadSeriesById { series_id, .. } => {
-                        update = update.push(text("Update series"));
-                        update = decorate_series(s, series_id, None, update);
-                    }
-                    TaskKind::DownloadSeriesByRemoteId { remote_id, .. } => {
-                        update = update.push(text("Download series").width(Length::Fill));
-
-                        update = update.push(
-                            button(text(remote_id))
-                                .style(theme::Button::Text)
-                                .padding(0)
-                                .width(REMOTE_COLUMN)
-                                .on_press(Message::OpenRemote(*remote_id)),
-                        );
-                    }
-                }
-
-                row = row.push(update.width(Length::Fill).spacing(GAP));
-
-                let duration = now.signed_duration_since(task.scheduled);
-                let when = duration_display(duration);
-
-                page = page.push(
-                    row.push(
-                        when.horizontal_alignment(Horizontal::Right)
-                            .width(DURATION_COLUMN),
-                    )
-                    .spacing(GAP),
-                );
-
-                if it.peek().is_some() {
-                    page = page.push(horizontal_rule(1));
-                }
+            if running.peek().is_some() {
+                list = list.push(horizontal_rule(1));
             }
         }
 
+        running_col = running_col.push(list.spacing(SPACE));
+
+        let mut tasks_col = Column::new();
+
+        let mut tasks = s.service.tasks().peekable();
+
+        tasks_col = tasks_col.push(
+            Row::new()
+                .push(
+                    text(format!("Queue ({})", tasks.len()))
+                        .width(Length::Fill)
+                        .horizontal_alignment(Horizontal::Center),
+                )
+                .padding(GAP),
+        );
+
+        if tasks.len() == 0 {
+            tasks_col = tasks_col.push(
+                text("Empty")
+                    .size(SMALL_SIZE)
+                    .width(Length::Fill)
+                    .horizontal_alignment(Horizontal::Center),
+            );
+        }
+
+        let mut list = Column::new();
+
+        while let Some(task) = tasks.next() {
+            let mut row = build_task_row(s, &task.kind);
+
+            let duration = now.signed_duration_since(task.scheduled);
+            let when = duration_display(duration);
+
+            row = row.push(when.size(SMALL_SIZE));
+
+            list = list.push(row.width(Length::Fill).spacing(GAP));
+
+            if tasks.peek().is_some() {
+                list = list.push(horizontal_rule(1));
+            }
+        }
+
+        tasks_col = tasks_col.push(list.spacing(SPACE));
+
+        let page = Row::new()
+            .push(tasks_col.width(Length::FillPortion(1)).spacing(GAP))
+            .push(running_col.width(Length::FillPortion(1)).spacing(GAP));
+
         default_container(
             Column::new()
-                .push(page.spacing(HALF_GAP))
+                .push(page.spacing(GAP2))
                 .push(vertical_space(Length::Shrink))
                 .padding(GAP)
                 .spacing(GAP),
@@ -154,33 +160,66 @@ impl Queue {
     }
 }
 
+fn build_task_row<'a>(s: &State, kind: &TaskKind) -> Row<'a, Message> {
+    let mut update = Row::new();
+
+    match &kind {
+        TaskKind::CheckForUpdates {
+            series_id,
+            remote_id,
+        } => {
+            update = update.push(text("Updates").size(SMALL_SIZE));
+            update = decorate_series(s, series_id, Some(remote_id), update);
+        }
+        TaskKind::DownloadSeriesById { series_id, .. } => {
+            update = update.push(text("Downloading").size(SMALL_SIZE));
+            update = decorate_series(s, series_id, None, update);
+        }
+        TaskKind::DownloadSeriesByRemoteId { remote_id, .. } => {
+            update = update.push(text("Downloading").size(SMALL_SIZE).width(Length::Fill));
+
+            update = update.push(
+                button(text(remote_id).size(SMALL_SIZE))
+                    .width(Length::Fill)
+                    .style(theme::Button::Text)
+                    .padding(0)
+                    .on_press(Message::OpenRemote(*remote_id)),
+            );
+        }
+    }
+
+    update
+}
+
 fn decorate_series<'a>(
     state: &State,
     series_id: &SeriesId,
     remote_id: Option<&RemoteSeriesId>,
-    mut update: Row<'a, Message>,
+    mut row: Row<'a, Message>,
 ) -> Row<'a, Message> {
-    if let Some(series) = state.service.series(series_id) {
-        update = update.push(
-            button(text(&series.title).width(Length::Fill))
+    let remote_id = if let Some(series) = state.service.series(series_id) {
+        row = row.push(
+            button(text(&series.title).size(SMALL_SIZE))
                 .style(theme::Button::Text)
                 .padding(0)
-                .width(Length::Fill)
                 .on_press(Message::Navigate(Page::Series(*series_id))),
         );
 
-        if let Some(remote_id) = remote_id.or(series.remote_id.as_ref()) {
-            update = update.push(
-                button(text(remote_id))
-                    .style(theme::Button::Text)
-                    .padding(0)
-                    .width(REMOTE_COLUMN)
-                    .on_press(Message::OpenRemote(*remote_id)),
-            );
-        }
+        remote_id.or(series.remote_id.as_ref())
     } else {
-        update = update.push(text(format!("{series_id} (missing data)")).width(Length::Fill));
+        row = row.push(text(format!("{series_id}")).size(SMALL_SIZE));
+        remote_id
+    };
+
+    if let Some(remote_id) = remote_id {
+        row = row.push(
+            button(text(remote_id).size(SMALL_SIZE))
+                .width(Length::Fill)
+                .style(theme::Button::Text)
+                .padding(0)
+                .on_press(Message::OpenRemote(*remote_id)),
+        );
     }
 
-    update
+    row
 }

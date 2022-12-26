@@ -7,6 +7,12 @@ use crate::model::{Task, TaskFinished, TaskKind};
 
 const DELAY_SECONDS: i64 = 2500;
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TaskRunning {
+    pub(crate) id: Uuid,
+    pub(crate) kind: TaskKind,
+}
+
 /// The current task status.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum TaskStatus {
@@ -19,10 +25,12 @@ pub(crate) enum TaskStatus {
 /// Queue of scheduled actions.
 #[derive(Default)]
 pub(crate) struct Queue {
-    // Pending tasks.
+    /// Pending tasks.
     status: HashMap<TaskKind, TaskStatus>,
-    // Items in the download queue.
+    /// Items in the download queue.
     data: VecDeque<Task>,
+    /// Collection of running tasks.
+    running: Vec<TaskRunning>,
     /// Test if queue has been locally modified.
     modified: bool,
 }
@@ -37,13 +45,20 @@ impl Queue {
     /// Mark the given task kind as completed, returns `true` if the task was
     /// present in the queue.
     #[inline]
-    pub(crate) fn complete(&mut self, kind: &TaskKind) -> Option<TaskStatus> {
-        self.status.remove(kind)
+    pub(crate) fn complete(&mut self, task: &Task) -> Option<TaskStatus> {
+        self.running.retain(|t| t.id != task.id);
+        self.status.remove(&task.kind)
+    }
+
+    /// Running tasks.
+    #[inline]
+    pub(crate) fn running(&self) -> impl ExactSizeIterator<Item = &TaskRunning> {
+        self.running.iter()
     }
 
     /// Get queue data.
     #[inline]
-    pub(crate) fn data(&self) -> impl ExactSizeIterator<Item = &Task> {
+    pub(crate) fn pending(&self) -> impl ExactSizeIterator<Item = &Task> {
         self.data.iter()
     }
 
@@ -97,6 +112,12 @@ impl Queue {
 
         let task = self.data.pop_front()?;
         self.status.insert(task.kind, TaskStatus::Running);
+
+        self.running.push(TaskRunning {
+            id: task.id,
+            kind: task.kind,
+        });
+
         Some(task)
     }
 

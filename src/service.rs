@@ -23,7 +23,7 @@ use crate::model::{
     ScheduledDay, ScheduledSeries, SearchSeries, Season, SeasonNumber, Series, SeriesId, Task,
     TaskFinished, TaskKind, ThemeType, Watched,
 };
-use crate::queue::{Queue, TaskStatus};
+use crate::queue::{Queue, TaskRunning, TaskStatus};
 
 /// Data encapsulating a newly added series.
 #[derive(Clone)]
@@ -304,7 +304,12 @@ impl Service {
 
     /// Get task queue.
     pub(crate) fn tasks(&self) -> impl ExactSizeIterator<Item = &Task> {
-        self.db.tasks.data()
+        self.db.tasks.pending()
+    }
+
+    /// Get task queue.
+    pub(crate) fn running_tasks(&self) -> impl ExactSizeIterator<Item = &TaskRunning> {
+        self.db.tasks.running()
     }
 
     /// Test if episode is watched.
@@ -402,8 +407,13 @@ impl Service {
                 RemoteSeriesId::Imdb { .. } => continue,
             };
 
-            if self.db.tasks.push(kind, None) {
-                s.last_sync.insert(remote_id, *now);
+            let finished = TaskFinished::SeriesSynced {
+                series_id: s.id,
+                remote_id,
+                last_modified: None,
+            };
+
+            if self.db.tasks.push(kind, Some(finished)) {
                 self.db.changes.set.insert(Change::Series);
                 self.db.changes.set.insert(Change::Queue);
             }
@@ -440,12 +450,10 @@ impl Service {
         let remote_id = *remote_id;
 
         Some(async move {
-            log::trace!("{series_id}/{remote_id}: checking for updates");
-
             let finished = match remote_id {
                 RemoteSeriesId::Tvdb { id } => {
                     let Some(update) = tvdb.series_last_modified(id).await? else {
-                        bail!("{remote_id}: missing last-modified in api");
+                        bail!("{series_id}/{remote_id}: missing last-modified in api");
                     };
 
                     log::trace!(
@@ -456,10 +464,9 @@ impl Service {
                         return Ok(None);
                     }
 
-                    TaskFinished::UpdateSeries {
+                    TaskFinished::SeriesSynced {
                         series_id,
                         remote_id,
-                        last_etag: None,
                         last_modified: Some(update),
                     }
                 }
@@ -750,7 +757,7 @@ impl Service {
         let queue = changes
             .set
             .contains(Change::Queue)
-            .then(|| self.db.tasks.data().cloned().collect::<Vec<_>>());
+            .then(|| self.db.tasks.pending().cloned().collect::<Vec<_>>());
 
         let remove_series = changes.remove;
         let mut add_series = Vec::with_capacity(changes.add.len());
@@ -1342,23 +1349,24 @@ impl Service {
     /// Mark task as completed.
     #[inline]
     pub(crate) fn complete_task(&mut self, task: Task) -> Option<TaskStatus> {
-        match task.finished {
-            Some(TaskFinished::UpdateSeries {
+        match &task.finished {
+            Some(TaskFinished::SeriesSynced {
                 series_id,
                 remote_id,
-                last_etag,
                 last_modified,
             }) => {
                 if let Some(s) = self.series_mut(&series_id) {
-                    s.last_etag = last_etag;
-                    s.last_modified = last_modified;
-                    s.last_sync.insert(remote_id, Utc::now());
+                    if let Some(last_modified) = last_modified {
+                        s.last_modified = Some(last_modified.clone());
+                    }
+
+                    s.last_sync.insert(*remote_id, Utc::now());
                 }
             }
             None => {}
         }
 
-        self.db.tasks.complete(&task.kind)
+        self.db.tasks.complete(&task)
     }
 }
 

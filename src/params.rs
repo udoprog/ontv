@@ -6,7 +6,6 @@ use crate::cache::ImageHint;
 use crate::style;
 
 pub(crate) const SPACE: u16 = 5;
-pub(crate) const HALF_GAP: u16 = 10;
 pub(crate) const GAP: u16 = 20;
 pub(crate) const GAP2: u16 = GAP * 2;
 
