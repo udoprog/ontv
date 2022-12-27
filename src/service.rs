@@ -509,7 +509,7 @@ impl Service {
             return;
         };
 
-        self.populate_pending(now, series_id, Some(&last));
+        self.populate_pending(series_id, Some(&last));
     }
 
     /// Mark an episode as watched at the given timestamp.
@@ -527,7 +527,7 @@ impl Service {
         });
 
         self.db.changes.set.insert(Change::Watched);
-        self.populate_pending(now, series_id, Some(episode_id))
+        self.populate_pending(series_id, Some(episode_id))
     }
 
     /// Skip an episode.
@@ -788,7 +788,6 @@ impl Service {
     /// series.
     pub(crate) fn populate_pending(
         &mut self,
-        now: &DateTime<Utc>,
         series_id: &SeriesId,
         from_episode_id: Option<&EpisodeId>,
     ) {
@@ -804,19 +803,11 @@ impl Service {
         let mut last_timestamp = None;
 
         let episode = if let Some(from_episode_id) = from_episode_id {
-            let mut it = episodes.iter();
             last_timestamp = self.watched(from_episode_id).map(|w| w.timestamp).max();
-
-            // Find the first episode which is after the last episode indicated.
-            loop {
-                let Some(e) = it.next() else {
-                    break None;
-                };
-
-                if e.id == *from_episode_id {
-                    break it.next();
-                }
-            }
+            episodes
+                .iter()
+                .skip_while(|e| e.id != *from_episode_id)
+                .next()
         } else {
             let mut last = None;
 
@@ -837,12 +828,12 @@ impl Service {
         self.db.changes.set.insert(Change::Pending);
 
         // Mark the first episode (that has aired).
-        if let Some(e) = episode {
+        if let (Some(timestamp), Some(e)) = (last_timestamp, episode) {
             // Mark the next episode in the show as pending.
             self.db.pending.push(Pending {
                 series: *series_id,
                 episode: e.id,
-                timestamp: last_timestamp.unwrap_or(*now),
+                timestamp,
             });
         }
 
@@ -1006,7 +997,7 @@ impl Service {
     }
 
     /// Insert a new tracked song.
-    pub(crate) fn insert_new_series(&mut self, now: &DateTime<Utc>, data: NewSeries) {
+    pub(crate) fn insert_new_series(&mut self, data: NewSeries) {
         let series_id = data.series.id;
 
         for &remote_id in &data.series.remote_ids {
@@ -1033,7 +1024,7 @@ impl Service {
         }
 
         // Remove any pending episodes for the given series.
-        self.populate_pending(now, &series_id, None);
+        self.populate_pending(&series_id, None);
         self.db.changes.set.insert(Change::Series);
         self.db.changes.remove.remove(&series_id);
         self.db.changes.add.insert(series_id);

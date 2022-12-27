@@ -27,8 +27,6 @@ pub fn import_trakt_watched(
     let f = File::open(path)?;
     let rows: Vec<serde_json::Value> = serde_json::from_reader(f)?;
 
-    let now = Utc::now();
-
     for (index, row) in rows.into_iter().enumerate() {
         let entry: Entry = serde_json::from_value(row.clone())?;
 
@@ -110,7 +108,7 @@ pub fn import_trakt_watched(
             log::info!("imported watch history for `{}`", entry.show.title);
         }
 
-        service.populate_pending(&now, &series_id, None);
+        service.populate_pending(&series_id, None);
         runtime.block_on(service.save_changes())?;
     }
 
@@ -136,9 +134,8 @@ async fn download_series(
         }
     };
 
-    let now = Utc::now();
     let series_id = *new_series.series_id();
-    service.insert_new_series(&now, new_series);
+    service.insert_new_series(new_series);
     service.save_changes().await?;
     Ok(Some(series_id))
 }

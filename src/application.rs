@@ -296,8 +296,7 @@ impl iced::Application for Application {
                 match result {
                     Ok(new_series) => {
                         if let Some(new_series) = new_series {
-                            let now = Utc::now();
-                            self.state.service.insert_new_series(&now, new_series);
+                            self.state.service.insert_new_series(new_series);
                         }
                     }
                     Err(error) => {
