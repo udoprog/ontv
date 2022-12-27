@@ -819,6 +819,7 @@ impl Service {
             episodes
                 .iter()
                 .skip_while(|e| e.id != *from_episode_id)
+                .skip(1)
                 .next()
         } else {
             let mut last = None;
