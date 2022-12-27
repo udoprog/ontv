@@ -250,7 +250,10 @@ impl Service {
 
     /// Get all the watches for the given episode.
     #[inline]
-    pub(crate) fn watched(&self, episode_id: &EpisodeId) -> &[Watched] {
+    pub(crate) fn watched(
+        &self,
+        episode_id: &EpisodeId,
+    ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone {
         self.db.watched.get(episode_id)
     }
 
@@ -606,10 +609,10 @@ impl Service {
             "remove series_id: {series_id}, episode_id: {episode_id}, watch_id: {watch_id}"
         );
 
-        let remaining = self.db.watched.remove_watch(episode_id, watch_id);
-        self.db.changes.set.insert(Change::Watched);
+        let removed = self.db.watched.remove_watch(watch_id);
 
-        if remaining == 0 {
+        if removed.is_some() {
+            self.db.changes.set.insert(Change::Watched);
             self.db.pending.retain(|p| p.series != *series_id);
 
             let last_timestamp = self
@@ -646,11 +649,11 @@ impl Service {
 
         for e in episodes {
             if e.season == *season {
-                removed += self.db.watched.remove(&e.id);
+                removed += self.db.watched.remove_by_episode(&e.id);
             } else {
                 last_timestamp = last_timestamp
                     .into_iter()
-                    .chain(self.db.watched.get(&e.id).iter().map(|w| w.timestamp))
+                    .chain(self.db.watched.get(&e.id).map(|w| w.timestamp))
                     .max();
             }
         }
@@ -825,11 +828,7 @@ impl Service {
 
         let episode = if let Some(from_episode_id) = from_episode_id {
             let mut it = episodes.iter();
-            last_timestamp = self
-                .watched(from_episode_id)
-                .iter()
-                .map(|w| w.timestamp)
-                .max();
+            last_timestamp = self.watched(from_episode_id).map(|w| w.timestamp).max();
 
             // Find the first episode which is after the last episode indicated.
             loop {
@@ -851,7 +850,7 @@ impl Service {
                     continue;
                 }
 
-                last_timestamp = self.watched(&episode.id).iter().map(|w| w.timestamp).max();
+                last_timestamp = self.watched(&episode.id).map(|w| w.timestamp).max();
                 last = None;
             }
 
@@ -1160,9 +1159,7 @@ impl Service {
 
     /// Remove watch history matching the given series.
     pub(crate) fn clear_watches(&mut self, series_id: &SeriesId) {
-        self.db
-            .watched
-            .remove_by_series(series_id, &self.db.episodes);
+        self.db.watched.remove_by_series(series_id);
         self.db.changes.set.insert(Change::Watched);
     }
 

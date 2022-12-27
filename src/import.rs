@@ -96,7 +96,7 @@ pub fn import_trakt_watched(
                     continue;
                 };
 
-                if !service.watched(&episode.id).is_empty() {
+                if service.watched(&episode.id).next().is_some() {
                     continue;
                 }
 

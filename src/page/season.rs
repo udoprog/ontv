@@ -29,11 +29,14 @@ struct EpisodeState {
     remove_watches: Vec<comps::Confirm>,
 }
 
-impl Component<(SeriesId, EpisodeId, &[Watched])> for EpisodeState {
+impl<'a, I> Component<(SeriesId, EpisodeId, I)> for EpisodeState
+where
+    I: DoubleEndedIterator<Item = &'a Watched> + Clone,
+{
     #[inline]
-    fn new((series_id, episode_id, watched): (SeriesId, EpisodeId, &[Watched])) -> Self {
+    fn new((series_id, episode_id, watched): (SeriesId, EpisodeId, I)) -> Self {
         Self {
-            remove_last_watch: watched.last().map(move |w| {
+            remove_last_watch: watched.clone().next_back().map(move |w| {
                 comps::Confirm::new(comps::confirm::Props::new(
                     comps::confirm::Kind::RemoveWatch {
                         series_id,
@@ -43,7 +46,6 @@ impl Component<(SeriesId, EpisodeId, &[Watched])> for EpisodeState {
                 ))
             }),
             remove_watches: watched
-                .iter()
                 .map(move |w| {
                     comps::Confirm::new(
                         comps::confirm::Props::new(comps::confirm::Kind::RemoveWatch {
@@ -59,16 +61,16 @@ impl Component<(SeriesId, EpisodeId, &[Watched])> for EpisodeState {
     }
 
     #[inline]
-    fn changed(&mut self, (series_id, episode_id, watched): (SeriesId, EpisodeId, &[Watched])) {
+    fn changed(&mut self, (series_id, episode_id, watched): (SeriesId, EpisodeId, I)) {
         self.remove_last_watch
-            .init_from_iter(watched.last().map(move |w| {
+            .init_from_iter(watched.clone().next_back().map(move |w| {
                 comps::confirm::Props::new(comps::confirm::Kind::RemoveWatch {
                     series_id,
                     episode_id,
                     watch_id: w.id,
                 })
             }));
-        self.remove_watches.init_from_iter(watched.iter().map(|w| {
+        self.remove_watches.init_from_iter(watched.map(|w| {
             comps::confirm::Props::new(comps::confirm::Kind::RemoveWatch {
                 series_id,
                 episode_id,
@@ -201,8 +203,8 @@ impl Season {
 
             let mut actions = Row::new().spacing(SPACE);
 
-            let watch_text = match watched {
-                [] => text("First watch"),
+            let watch_text = match watched.len() {
+                0 => text("First watch"),
                 _ => text("Watch again"),
             };
 
@@ -212,9 +214,9 @@ impl Season {
                     .on_press(Message::Watch(series.id, episode.id)),
             );
 
-            let remove_last = match (watched, &data.remove_last_watch) {
-                ([_], Some(c)) => Some(("Remove watch", c)),
-                ([.., _], Some(c)) => Some(("Remove last watch", c)),
+            let remove_last = match (watched.len(), &data.remove_last_watch) {
+                (1, Some(c)) => Some(("Remove watch", c)),
+                (_, Some(c)) => Some(("Remove last watch", c)),
                 _ => None,
             };
 
@@ -246,14 +248,21 @@ impl Season {
                 }
             }
 
-            let watched_text = match watched {
-                [] => text("Never watched").style(s.warning_text()),
-                [once] => text(format!("Watched once on {}", once.timestamp.date_naive())),
-                all @ [.., last] => text(format!(
-                    "Watched {} times, last on {}",
-                    all.len(),
-                    last.timestamp.date_naive()
-                )),
+            let watched_text = {
+                let mut it = watched.clone();
+                let len = it.len();
+
+                match (len, it.next(), it.next_back()) {
+                    (1, Some(once), _) => {
+                        text(format!("Watched once on {}", once.timestamp.date_naive()))
+                    }
+                    (len, _, Some(last)) if len > 0 => text(format!(
+                        "Watched {} times, last on {}",
+                        len,
+                        last.timestamp.date_naive()
+                    )),
+                    _ => text("Never watched").style(s.warning_text()),
+                }
             };
 
             show_info = show_info.push(watched_text.size(SMALL));
@@ -266,12 +275,12 @@ impl Season {
 
             let mut info = Column::new().push(info_top).push(overview);
 
-            if !watched.is_empty() {
+            if watched.len() > 0 {
                 let mut history = Column::new();
 
                 history = history.push(text("Watch history"));
 
-                for ((n, watch), c) in watched.iter().enumerate().zip(&data.remove_watches) {
+                for ((n, watch), c) in watched.enumerate().zip(&data.remove_watches) {
                     let mut row = Row::new();
 
                     row = row.push(
