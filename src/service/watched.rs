@@ -29,6 +29,20 @@ impl Database {
         indexes.iter().map(|&index| &self.data[index])
     }
 
+    /// Get all watches for the given series.
+    pub(crate) fn get_by_series(
+        &self,
+        series_id: &SeriesId,
+    ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone {
+        let indexes = self
+            .by_series
+            .get(series_id)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+
+        indexes.iter().map(|&index| &self.data[index])
+    }
+
     /// Insert a new entry into watch history.
     pub(crate) fn insert(&mut self, w: Watched) {
         let id = w.id;

@@ -576,15 +576,27 @@ impl Service {
     ) {
         self.db.changes.set.insert(Change::Pending);
 
+        let timestamp = self
+            .db
+            .watched
+            .get_by_series(series_id)
+            .map(|w| w.timestamp)
+            .max();
+
         // Try to modify in-place.
         if let Some(pending) = self.db.pending.iter_mut().find(|p| p.series == *series_id) {
             pending.episode = *episode_id;
-            pending.timestamp = *now;
+
+            // Only update timestamp in case an existing one is found based on
+            // watch history, else preserve the old one.
+            if let Some(timestamp) = timestamp {
+                pending.timestamp = timestamp;
+            }
         } else {
             self.db.pending.push(Pending {
                 series: *series_id,
                 episode: *episode_id,
-                timestamp: *now,
+                timestamp: timestamp.unwrap_or(*now),
             });
         }
 
