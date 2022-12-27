@@ -135,7 +135,7 @@ impl Search {
         let mut results = Column::new();
 
         for series in self.series.iter().skip(self.page * PER_PAGE).take(PER_PAGE) {
-            let local_series = s.service.get_series_by_remote(series.id);
+            let local_series = s.service.get_series_by_remote(&series.id);
 
             let handle = match series
                 .poster

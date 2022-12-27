@@ -1,7 +1,8 @@
+mod remotes;
 mod series;
 mod watched;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::future::Future;
 use std::path::Path;
@@ -22,9 +23,9 @@ use crate::api::thetvdb;
 use crate::assets::ImageKey;
 use crate::cache::{self};
 use crate::model::{
-    Config, Episode, EpisodeId, Etag, Image, RemoteEpisodeId, RemoteId, RemoteSeriesId,
-    ScheduledDay, ScheduledSeries, SearchSeries, Season, SeasonNumber, Series, SeriesId, Task,
-    TaskFinished, TaskKind, ThemeType, Watched,
+    Config, Episode, EpisodeId, Etag, Image, RemoteId, RemoteSeriesId, ScheduledDay,
+    ScheduledSeries, SearchSeries, Season, SeasonNumber, Series, SeriesId, Task, TaskFinished,
+    TaskKind, ThemeType, Watched,
 };
 use crate::queue::{Queue, TaskRunning, TaskStatus};
 
@@ -104,14 +105,8 @@ impl Changes {
 struct Database {
     /// Application configuration.
     config: Config,
-    /// Remote series.
-    remote_series: BTreeMap<RemoteSeriesId, SeriesId>,
-    /// Episode IDs to remotes.
-    remote_series_rev: HashMap<SeriesId, BTreeSet<RemoteSeriesId>>,
-    /// Remote episodes.
-    remote_episodes: BTreeMap<RemoteEpisodeId, EpisodeId>,
-    /// Episode IDs to remotes.
-    remote_episodes_rev: HashMap<EpisodeId, BTreeSet<RemoteEpisodeId>>,
+    /// Remotes database.
+    remotes: remotes::Database,
     /// Series database.
     series: series::Database,
     /// Episodes collection.
@@ -728,25 +723,7 @@ impl Service {
         }
 
         let remotes = if changes.set.contains(Change::Remotes) {
-            let mut output = Vec::with_capacity(
-                self.db.remote_series_rev.len() + self.db.remote_episodes_rev.len(),
-            );
-
-            for (&uuid, remotes) in &self.db.remote_series_rev {
-                output.push(RemoteId::Series {
-                    uuid,
-                    remotes: remotes.clone(),
-                });
-            }
-
-            for (&uuid, remotes) in &self.db.remote_episodes_rev {
-                output.push(RemoteId::Episode {
-                    uuid,
-                    remotes: remotes.clone(),
-                });
-            }
-
-            Some(output)
+            Some(self.db.remotes.export())
         } else {
             None
         };
@@ -912,9 +889,9 @@ impl Service {
     }
 
     /// Check if series is tracked.
-    pub(crate) fn get_series_by_remote(&self, id: RemoteSeriesId) -> Option<&Series> {
-        let id = self.db.remote_series.get(&id)?;
-        self.db.series.get(id)
+    pub(crate) fn get_series_by_remote(&self, id: &RemoteSeriesId) -> Option<&Series> {
+        let id = self.db.remotes.get_series(id)?;
+        self.db.series.get(&id)
     }
 
     /// Remove the given series by ID.
@@ -949,20 +926,17 @@ impl Service {
     ) -> impl Future<Output = Result<Option<NewSeries>>> {
         let tvdb = self.tvdb.clone();
         let tmdb = self.tmdb.clone();
-        let series = self.db.remote_series.clone();
-        let episodes = self.db.remote_episodes.clone();
-        let episodes_remotes = self.db.remote_episodes_rev.clone();
 
-        let lookup_series =
-            move |q| Some(*series.iter().find(|(remote_id, _)| **remote_id == q)?.1);
+        let proxy = self.db.remotes.proxy();
 
         let remote_id = *remote_id;
 
         let if_none_match = if_none_match.cloned();
 
         async move {
-            let lookup_episode =
-                move |q| Some(*episodes.iter().find(|(remote_id, _)| **remote_id == q)?.1);
+            let lookup_series = |q| proxy.find_series_by_remote(q);
+
+            let lookup_episode = |q| proxy.find_episode_by_remote(q);
 
             let (series, seasons, episodes) = match remote_id {
                 RemoteSeriesId::Tvdb { id } => {
@@ -981,11 +955,8 @@ impl Service {
                     let mut episodes = Vec::new();
 
                     for season in &seasons {
-                        let new_episodes = tmdb
-                            .episodes(id, season.number, &lookup_episode, |id| {
-                                episodes_remotes.get(&id)
-                            })
-                            .await?;
+                        let new_episodes =
+                            tmdb.episodes(id, season.number, &lookup_episode).await?;
                         episodes.extend(new_episodes);
                     }
 
@@ -1008,7 +979,7 @@ impl Service {
 
     /// If the series is already loaded in the local database, simply mark it as tracked.
     pub(crate) fn set_tracked_by_remote(&mut self, id: &RemoteSeriesId) -> bool {
-        let Some(&id) = self.db.remote_series.get(id) else {
+        let Some(id) = self.db.remotes.get_series(id) else {
             return false;
         };
 
@@ -1039,30 +1010,16 @@ impl Service {
         let series_id = data.series.id;
 
         for &remote_id in &data.series.remote_ids {
-            if !matches!(self.db.remote_series.insert(remote_id, series_id), Some(id) if id == series_id)
-            {
+            if self.db.remotes.insert_series(remote_id, series_id) {
                 self.db.changes.set.insert(Change::Remotes);
             }
-
-            self.db
-                .remote_series_rev
-                .entry(series_id)
-                .or_default()
-                .insert(remote_id);
         }
 
         for episode in &data.episodes {
             for &remote_id in &episode.remote_ids {
-                if !matches!(self.db.remote_episodes.insert(remote_id, episode.id), Some(id) if id == episode.id)
-                {
+                if self.db.remotes.insert_episode(remote_id, episode.id) {
                     self.db.changes.set.insert(Change::Remotes);
                 }
-
-                self.db
-                    .remote_episodes_rev
-                    .entry(episode.id)
-                    .or_default()
-                    .insert(remote_id);
             }
         }
 
@@ -1127,12 +1084,12 @@ impl Service {
     }
 
     /// Get existing id by remote if it exists.
-    pub(crate) fn existing_by_remote_ids<I>(&self, ids: I) -> Option<&SeriesId>
+    pub(crate) fn existing_by_remote_ids<I>(&self, ids: I) -> Option<SeriesId>
     where
         I: IntoIterator<Item = RemoteSeriesId>,
     {
         for remote_id in ids {
-            if let Some(id) = self.db.remote_series.get(&remote_id) {
+            if let Some(id) = self.db.remotes.get_series(&remote_id) {
                 return Some(id);
             }
         }
@@ -1331,20 +1288,12 @@ fn load_database(paths: &Paths) -> Result<Database> {
             match remote_id {
                 RemoteId::Series { uuid, remotes } => {
                     for remote_id in remotes {
-                        db.remote_series.insert(remote_id, uuid);
-                        db.remote_series_rev
-                            .entry(uuid)
-                            .or_default()
-                            .insert(remote_id);
+                        db.remotes.insert_series(remote_id, uuid);
                     }
                 }
                 RemoteId::Episode { uuid, remotes } => {
                     for remote_id in remotes {
-                        db.remote_episodes.insert(remote_id, uuid);
-                        db.remote_episodes_rev
-                            .entry(uuid)
-                            .or_default()
-                            .insert(remote_id);
+                        db.remotes.insert_episode(remote_id, uuid);
                     }
                 }
             }
@@ -1362,7 +1311,9 @@ fn load_database(paths: &Paths) -> Result<Database> {
     if let Some(series) = load_series(&paths.series)? {
         for s in series {
             for &id in &s.remote_ids {
-                db.remote_series.insert(id, s.id);
+                if db.remotes.insert_series(id, s.id) {
+                    db.changes.set.insert(Change::Remotes);
+                }
             }
 
             db.series.insert(s);
@@ -1379,8 +1330,16 @@ fn load_database(paths: &Paths) -> Result<Database> {
         db.pending = pending;
     }
 
-    if let Some(episodes) = load_directory(&paths.episodes)? {
+    if let Some(episodes) = load_directory::<SeriesId, Episode>(&paths.episodes)? {
         for (id, episodes) in episodes {
+            for e in &episodes {
+                for &remote_id in &e.remote_ids {
+                    if db.remotes.insert_episode(remote_id, e.id) {
+                        db.changes.set.insert(Change::Remotes);
+                    }
+                }
+            }
+
             db.episodes.insert(id, episodes);
         }
     }

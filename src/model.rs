@@ -193,11 +193,11 @@ impl Config {
 pub(crate) enum RemoteId {
     Series {
         uuid: SeriesId,
-        remotes: BTreeSet<RemoteSeriesId>,
+        remotes: Vec<RemoteSeriesId>,
     },
     Episode {
         uuid: EpisodeId,
-        remotes: BTreeSet<RemoteEpisodeId>,
+        remotes: Vec<RemoteEpisodeId>,
     },
 }
 

@@ -271,16 +271,12 @@ impl Client {
     }
 
     /// Download episodes.
-    pub(crate) async fn episodes<'a, R>(
+    pub(crate) async fn episodes(
         &self,
         series_id: u32,
         season: SeasonNumber,
         lookup: impl common::LookupEpisodeId,
-        remotes: R,
-    ) -> Result<Vec<Episode>>
-    where
-        R: Fn(EpisodeId) -> Option<&'a BTreeSet<RemoteEpisodeId>>,
-    {
+    ) -> Result<Vec<Episode>> {
         let season_number = match season {
             SeasonNumber::Specials => 0,
             SeasonNumber::Number(n) => n,
@@ -331,7 +327,6 @@ impl Client {
                     season_number,
                     e,
                     &lookup,
-                    &remotes,
                 ));
 
                 n += 1;
@@ -372,7 +367,7 @@ impl Client {
         }
     }
 
-    async fn download_remote_ids<'a, 'e, R>(
+    async fn download_remote_ids(
         &self,
         index: usize,
         remote_id: RemoteEpisodeId,
@@ -380,17 +375,13 @@ impl Client {
         season_number: u32,
         episode: EpisodeDetail,
         lookup: &impl common::LookupEpisodeId,
-        _remotes: R,
     ) -> Result<(
         usize,
         BTreeSet<RemoteEpisodeId>,
         RemoteEpisodeId,
         EpisodeId,
         EpisodeDetail,
-    )>
-    where
-        R: Fn(EpisodeId) -> Option<&'a BTreeSet<RemoteEpisodeId>>,
-    {
+    )> {
         log::trace!(
             "downloading remote ids for: series: {series_id}, season: {season_number}, episode: {}",
             episode.episode_number

@@ -56,7 +56,7 @@ pub fn import_trakt_watched(
 
         // TODO: use more databases.
         let series_id = match service.existing_by_remote_ids(ids) {
-            Some(&series_id) => {
+            Some(series_id) => {
                 if service.series(&series_id).is_none() && import_missing {
                     let Some(..) = runtime.block_on(download_series(service, &entry, &tmdb_remote_id))? else {
                         continue;
