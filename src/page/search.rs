@@ -275,7 +275,7 @@ impl Search {
                             format!("{kind}"),
                             *kind,
                             Some(s.service.config().search_kind),
-                            |search_kind| Message::SearchKindChanged(search_kind),
+                            Message::SearchKindChanged,
                         )
                         .size(SMALL),
                     )

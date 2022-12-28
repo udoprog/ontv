@@ -54,7 +54,7 @@ impl Settings {
                     format!("{theme:?}"),
                     *theme,
                     Some(config.theme),
-                    |theme| Message::ThemeChanged(theme),
+                    Message::ThemeChanged,
                 ))
             },
         ));

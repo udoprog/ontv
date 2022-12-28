@@ -387,11 +387,7 @@ impl Client {
             episode.episode_number
         );
 
-        let id = if let Some(id) = lookup.lookup([remote_id]) {
-            Some(id)
-        } else {
-            None
-        };
+        let id = lookup.lookup([remote_id]);
 
         let external_ids = self
             .episode_external_ids(series_id, season_number, episode.episode_number)

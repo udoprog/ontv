@@ -141,7 +141,7 @@ impl iced::Application for Application {
                     return format!("{BASE} - Series overview");
                 }
                 Page::Series(id) => {
-                    if let Some(series) = self.state.service.series(&id) {
+                    if let Some(series) = self.state.service.series(id) {
                         return format!("{BASE} - {}", series.title);
                     }
                 }
@@ -149,7 +149,7 @@ impl iced::Application for Application {
                     return format!("{BASE} - Settings");
                 }
                 Page::Season(series, season) => {
-                    if let Some(series) = self.state.service.series(&series) {
+                    if let Some(series) = self.state.service.series(series) {
                         return format!("{BASE} - {} - {season}", series.title);
                     }
                 }
@@ -611,7 +611,7 @@ impl Application {
                     }
                 }
                 TaskKind::DownloadSeriesById { series_id } => {
-                    if let Some(future) = self.state.refresh_series(&series_id) {
+                    if let Some(future) = self.state.refresh_series(series_id) {
                         commands.perform(future, move |result| match result {
                             Ok(new_series) => {
                                 Message::TaskSeriesDownloaded(Ok(new_series), task.clone())
@@ -625,13 +625,13 @@ impl Application {
                     }
                 }
                 TaskKind::DownloadSeriesByRemoteId { remote_id } => {
-                    if self.state.service.set_tracked_by_remote(&remote_id) {
+                    if self.state.service.set_tracked_by_remote(remote_id) {
                         self.state.service.complete_task(task);
                     } else {
                         commands.perform(
                             self.state
                                 .service
-                                .download_series_by_remote(&remote_id, None),
+                                .download_series_by_remote(remote_id, None),
                             move |result| {
                                 Message::TaskSeriesDownloaded(
                                     result.map_err(Into::into),

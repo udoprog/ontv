@@ -323,17 +323,14 @@ impl Service {
             return None;
         };
 
-        match s.remote_id {
-            Some(RemoteSeriesId::Tmdb { .. }) => {
-                let kind = TaskKind::DownloadSeriesById { series_id: s.id };
+        if let Some(RemoteSeriesId::Tmdb { .. }) = &s.remote_id {
+            let kind = TaskKind::DownloadSeriesById { series_id: s.id };
 
-                if self.db.tasks.push(kind, None) {
-                    self.db.changes.change(Change::Queue);
-                }
-
-                return None;
+            if self.db.tasks.push(kind, None) {
+                self.db.changes.change(Change::Queue);
             }
-            _ => {}
+
+            return None;
         }
 
         let last_modified = s.last_modified;
@@ -635,11 +632,11 @@ impl Service {
         series_id: &SeriesId,
         from_episode_id: Option<&EpisodeId>,
     ) {
-        let eps = self.db.episodes.get(series_id).into_iter().flatten();
+        let mut eps = self.db.episodes.get(series_id).into_iter().flatten();
 
         let (timestamp, episode, pending) = if let Some(id) = from_episode_id {
             let ts = self.watched(id).map(|w| w.timestamp).max();
-            let ep = eps.skip_while(|e| e.id != *id).skip(1).next();
+            let ep = eps.skip_while(|e| e.id != *id).nth(1);
             let p = self.db.pending.iter_mut().find(|p| p.series == *series_id);
             (ts, ep, p)
         } else {
@@ -649,9 +646,7 @@ impl Service {
             }
 
             let ts = self.db.watched.series(series_id).map(|w| w.timestamp).max();
-            let ep = eps
-                .skip_while(|e| self.watch_count(&e.id) > 0 || e.season.is_special())
-                .next();
+            let ep = eps.find(|e| self.watch_count(&e.id) == 0 && !e.season.is_special());
             (ts, ep, None)
         };
 
@@ -1069,9 +1064,9 @@ impl Service {
                 remote_id,
                 last_modified,
             }) => {
-                if let Some(s) = self.series_mut(&series_id) {
+                if let Some(s) = self.series_mut(series_id) {
                     if let Some(last_modified) = last_modified {
-                        s.last_modified = Some(last_modified.clone());
+                        s.last_modified = Some(*last_modified);
                     }
 
                     s.last_sync.insert(*remote_id, Utc::now());

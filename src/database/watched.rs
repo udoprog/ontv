@@ -110,7 +110,7 @@ impl Database {
         let mut export = BTreeMap::new();
 
         for (_, w) in &self.data {
-            export.insert((w.timestamp, w.id), w.clone());
+            export.insert((w.timestamp, w.id), *w);
         }
 
         export.into_values()

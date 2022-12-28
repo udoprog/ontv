@@ -82,7 +82,7 @@ pub(crate) fn duration_display(d: Duration) -> Text<'static> {
                 1 => Text::new("one minute ago"),
                 n => Text::new(format!("{n} minutes ago")),
             },
-            _ => Text::new(format!("< one minute ago")),
+            _ => Text::new("< one minute ago"),
         }
     } else {
         let seconds = seconds.unsigned_abs();
@@ -93,7 +93,7 @@ pub(crate) fn duration_display(d: Duration) -> Text<'static> {
                 1 => Text::new("in one minute"),
                 n => Text::new(format!("in {n} minutes")),
             },
-            _ => Text::new(format!("< one minute")),
+            _ => Text::new("< one minute"),
         }
     }
 }
