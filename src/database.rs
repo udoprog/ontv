@@ -249,11 +249,11 @@ pub(crate) enum Change {
 #[derive(Default)]
 pub(crate) struct Changes {
     // Set of changes to apply to database.
-    pub(crate) set: fixed_map::Set<Change>,
+    set: fixed_map::Set<Change>,
     // Series removed.
-    pub(crate) remove: HashSet<SeriesId>,
+    remove: HashSet<SeriesId>,
     // Series added.
-    pub(crate) add: HashSet<SeriesId>,
+    add: HashSet<SeriesId>,
 }
 
 impl Changes {
@@ -262,9 +262,28 @@ impl Changes {
         self.set.insert(change);
     }
 
+    /// Test if we contain the given change.
+    pub(crate) fn contains(&self, change: Change) -> bool {
+        self.set.contains(change)
+    }
+
     #[inline]
     pub(crate) fn has_changes(&self) -> bool {
         !self.set.is_empty() || !self.remove.is_empty() || !self.add.is_empty()
+    }
+
+    /// Mark a series as added.
+    pub(crate) fn add_series(&mut self, id: &SeriesId) {
+        self.set.insert(Change::Series);
+        self.remove.remove(id);
+        self.add.insert(*id);
+    }
+
+    /// Marker a series for removal.
+    pub(crate) fn remove_series(&mut self, id: &SeriesId) {
+        self.set.insert(Change::Series);
+        self.add.remove(id);
+        self.remove.insert(*id);
     }
 }
 

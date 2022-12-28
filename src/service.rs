@@ -621,9 +621,7 @@ impl Service {
 
     /// Save changes made.
     pub(crate) fn save_changes(&mut self) -> impl Future<Output = Result<()>> {
-        if self.db.changes.set.contains(Change::Series)
-            || self.db.changes.set.contains(Change::Schedule)
-        {
+        if self.db.changes.contains(Change::Series) || self.db.changes.contains(Change::Schedule) {
             self.build_schedule();
         }
 
@@ -727,10 +725,8 @@ impl Service {
         let _ = self.db.series.remove(series_id);
         let _ = self.db.episodes.remove(series_id);
         let _ = self.db.seasons.remove(series_id);
-        self.db.changes.change(Change::Series);
         self.db.changes.change(Change::Queue);
-        self.db.changes.add.remove(series_id);
-        self.db.changes.remove.insert(*series_id);
+        self.db.changes.remove_series(series_id);
 
         if self.db.tasks.remove_tasks_by(|t| t.is_series(series_id)) != 0 {
             self.db.changes.change(Change::Queue);
@@ -854,7 +850,7 @@ impl Service {
         self.db.episodes.insert(series_id, data.episodes.clone());
         self.db.seasons.insert(series_id, data.seasons.clone());
 
-        if let Some(current) = self.db.series.get_mut(&data.series.id) {
+        if let Some(current) = self.db.series.get_mut(&series_id) {
             *current = data.series;
         } else {
             self.db.series.insert(data.series);
@@ -862,9 +858,7 @@ impl Service {
 
         // Remove any pending episodes for the given series.
         self.populate_pending(&series_id, None);
-        self.db.changes.change(Change::Series);
-        self.db.changes.remove.remove(&series_id);
-        self.db.changes.add.insert(series_id);
+        self.db.changes.add_series(&series_id);
     }
 
     /// Ensure that a collection of the given image ids are loaded.
