@@ -391,7 +391,7 @@ pub(crate) enum SeasonNumber {
 
 impl SeasonNumber {
     #[inline]
-    fn is_special(&self) -> bool {
+    pub(crate) fn is_special(&self) -> bool {
         matches!(self, SeasonNumber::Specials)
     }
 

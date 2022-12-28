@@ -532,6 +532,12 @@ impl Service {
             .sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
     }
 
+    /// Clear next episode as pending.
+    pub(crate) fn clear_pending(&mut self, episode_id: &EpisodeId) {
+        self.db.changes.change(Change::Pending);
+        self.db.pending.retain(|p| p.episode != *episode_id);
+    }
+
     /// Remove all watches of the given episode.
     pub(crate) fn remove_episode_watch(
         &mut self,
@@ -631,30 +637,41 @@ impl Service {
         series_id: &SeriesId,
         from_episode_id: Option<&EpisodeId>,
     ) {
-        // Remove any pending episodes for the given series.
-        self.db.pending.retain(|p| p.series != *series_id);
-        self.db.changes.change(Change::Pending);
-
         let eps = self.db.episodes.get(series_id).into_iter().flatten();
 
-        let (timestamp, episode) = if let Some(id) = from_episode_id {
+        let (timestamp, episode, pending) = if let Some(id) = from_episode_id {
             let ts = self.watched(id).map(|w| w.timestamp).max();
             let ep = eps.skip_while(|e| e.id != *id).skip(1).next();
-            (ts, ep)
+            let p = self.db.pending.iter_mut().find(|p| p.series == *series_id);
+            (ts, ep, p)
         } else {
+            if self.db.pending.iter().any(|p| p.series == *series_id) {
+                // Do nothing since we already have a pending episode.
+                return;
+            }
+
             let ts = self.db.watched.series(series_id).map(|w| w.timestamp).max();
-            let ep = eps.skip_while(|e| self.watch_count(&e.id) > 0).next();
-            (ts, ep)
+            let ep = eps
+                .skip_while(|e| self.watch_count(&e.id) > 0 || e.season.is_special())
+                .next();
+            (ts, ep, None)
         };
 
         // Mark the first episode (that has aired).
         if let (Some(timestamp), Some(e)) = (timestamp, episode) {
+            self.db.changes.change(Change::Pending);
+
             // Mark the next episode in the show as pending.
-            self.db.pending.push(Pending {
-                series: *series_id,
-                episode: e.id,
-                timestamp,
-            });
+            if let Some(p) = pending {
+                p.episode = e.id;
+                p.timestamp = timestamp;
+            } else {
+                self.db.pending.push(Pending {
+                    series: *series_id,
+                    episode: e.id,
+                    timestamp,
+                });
+            }
 
             self.db
                 .pending

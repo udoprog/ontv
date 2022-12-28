@@ -20,6 +20,7 @@ pub(crate) enum Message {
     RemoveWatch(usize, usize, comps::confirm::Message),
     Watch(SeriesId, EpisodeId),
     SelectPending(SeriesId, EpisodeId),
+    ClearPending(EpisodeId),
     SeasonInfo(comps::season_info::Message),
     SeriesBanner(comps::series_banner::Message),
 }
@@ -150,6 +151,9 @@ impl Season {
                 let now = Utc::now();
                 s.service.select_pending(&now, &series, &episode);
             }
+            Message::ClearPending(episode) => {
+                s.service.clear_pending(&episode);
+            }
             Message::SeasonInfo(message) => {
                 self.season_info.update(s, message);
             }
@@ -234,8 +238,11 @@ impl Season {
                         .on_press(Message::SelectPending(series.id, episode.id)),
                 );
             } else {
-                actions = actions
-                    .push(button(text("Next episode").size(SMALL)).style(theme::Button::Secondary));
+                actions = actions.push(
+                    button(text("Clear next episode").size(SMALL))
+                        .style(theme::Button::Destructive)
+                        .on_press(Message::ClearPending(episode.id)),
+                );
             }
 
             let mut show_info = Column::new();
