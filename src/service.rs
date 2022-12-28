@@ -252,6 +252,12 @@ impl Service {
         self.db.watched.get(episode_id)
     }
 
+    /// Get the watch count for the given episodes.
+    #[inline]
+    pub(crate) fn watch_count(&self, episode_id: &EpisodeId) -> usize {
+        self.db.watched.get(episode_id).len()
+    }
+
     /// Get task queue.
     pub(crate) fn tasks(&self) -> impl ExactSizeIterator<Item = &Task> {
         self.db.tasks.pending()
@@ -260,11 +266,6 @@ impl Service {
     /// Get task queue.
     pub(crate) fn running_tasks(&self) -> impl ExactSizeIterator<Item = &TaskRunning> {
         self.db.tasks.running()
-    }
-
-    /// Test if episode is watched.
-    pub(crate) fn watch_count(&self, episode_id: &EpisodeId) -> usize {
-        self.db.watched.get(episode_id).len()
     }
 
     /// Get season summary statistics.
@@ -282,7 +283,7 @@ impl Service {
             .filter(|e| e.season == *season)
         {
             total += 1;
-            watched += usize::from(self.watch_count(&episode.id) != 0);
+            watched += usize::from(self.watched(&episode.id).len() != 0);
         }
 
         (watched, total)
@@ -485,7 +486,7 @@ impl Service {
             .flatten()
             .filter(|e| e.season == *season)
         {
-            if self.watch_count(&episode.id) > 0 {
+            if self.watched(&episode.id).len() > 0 {
                 continue;
             }
 
@@ -576,12 +577,7 @@ impl Service {
     ) {
         self.db.changes.set.insert(Change::Pending);
 
-        let timestamp = self
-            .db
-            .watched
-            .get_by_series(series_id)
-            .map(|w| w.timestamp)
-            .max();
+        let timestamp = self.db.watched.series(series_id).map(|w| w.timestamp).max();
 
         // Try to modify in-place.
         if let Some(pending) = self.db.pending.iter_mut().find(|p| p.series == *series_id) {
@@ -807,52 +803,31 @@ impl Service {
         self.db.pending.retain(|p| p.series != *series_id);
         self.db.changes.set.insert(Change::Pending);
 
-        // Populate the next pending episode.
-        let Some(episodes) = self.db.episodes.get(series_id) else {
-            return;
-        };
+        let eps = self.db.episodes.get(series_id).into_iter().flatten();
 
-        let mut last_timestamp = None;
-
-        let episode = if let Some(from_episode_id) = from_episode_id {
-            last_timestamp = self.watched(from_episode_id).map(|w| w.timestamp).max();
-            episodes
-                .iter()
-                .skip_while(|e| e.id != *from_episode_id)
-                .skip(1)
-                .next()
+        let (timestamp, episode) = if let Some(id) = from_episode_id {
+            let ts = self.watched(id).map(|w| w.timestamp).max();
+            let ep = eps.skip_while(|e| e.id != *id).skip(1).next();
+            (ts, ep)
         } else {
-            let mut last = None;
-
-            // Find the first episode which is *not* in our watch history.
-            for episode in episodes {
-                if self.watch_count(&episode.id) == 0 {
-                    last = Some(last.unwrap_or(episode));
-                    continue;
-                }
-
-                last_timestamp = self.watched(&episode.id).map(|w| w.timestamp).max();
-                last = None;
-            }
-
-            last
+            let ts = self.db.watched.series(series_id).map(|w| w.timestamp).max();
+            let ep = eps.skip_while(|e| self.watch_count(&e.id) > 0).next();
+            (ts, ep)
         };
-
-        self.db.changes.set.insert(Change::Pending);
 
         // Mark the first episode (that has aired).
-        if let (Some(timestamp), Some(e)) = (last_timestamp, episode) {
+        if let (Some(timestamp), Some(e)) = (timestamp, episode) {
             // Mark the next episode in the show as pending.
             self.db.pending.push(Pending {
                 series: *series_id,
                 episode: e.id,
                 timestamp,
             });
-        }
 
-        self.db
-            .pending
-            .sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+            self.db
+                .pending
+                .sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        }
     }
 
     /// Get current configuration.

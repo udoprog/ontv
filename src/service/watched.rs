@@ -30,7 +30,7 @@ impl Database {
     }
 
     /// Get all watches for the given series.
-    pub(crate) fn get_by_series(
+    pub(crate) fn series(
         &self,
         series_id: &SeriesId,
     ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone {
