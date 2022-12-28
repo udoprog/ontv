@@ -877,6 +877,14 @@ impl Task {
     }
 }
 
+/// A pending thing to watch.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub(crate) struct Pending {
+    pub(crate) series: SeriesId,
+    pub(crate) episode: EpisodeId,
+    pub(crate) timestamp: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct SearchSeries {
     pub(crate) id: RemoteSeriesId,

@@ -49,6 +49,7 @@ mod assets;
 mod cache;
 mod component;
 mod comps;
+mod database;
 mod error;
 pub mod import;
 mod model;
