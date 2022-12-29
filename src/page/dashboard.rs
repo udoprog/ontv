@@ -10,11 +10,12 @@ use crate::model::{Episode, EpisodeId, Image, SeasonNumber, SeriesId};
 use crate::params::{centered, GAP, GAP2, POSTER_HINT, SMALL, SPACE, SUBTITLE_SIZE};
 use crate::service::PendingRef;
 use crate::state::{Page, State};
-use crate::style;
 use crate::utils::Hoverable;
+use crate::{comps, style};
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
+    Calendar(comps::calendar::Message),
     /// Hover a scheduled series.
     HoverScheduled(SeriesId),
     /// Skip an episode.
@@ -33,6 +34,7 @@ pub(crate) enum Message {
 
 /// The state for the settings page.
 pub(crate) struct Dashboard {
+    calendar: comps::Calendar,
     schedule_focus: Option<(SeriesId, Option<Image>)>,
 }
 
@@ -51,7 +53,10 @@ impl Dashboard {
             }
         }
 
-        Self { schedule_focus }
+        Self {
+            calendar: comps::Calendar::new(*s.today(), chrono::Weekday::Sun),
+            schedule_focus,
+        }
     }
 
     pub(crate) fn prepare(&mut self, s: &mut State) {
@@ -73,6 +78,9 @@ impl Dashboard {
 
     pub(crate) fn update(&mut self, s: &mut State, message: Message) {
         match message {
+            Message::Calendar(message) => {
+                self.calendar.update(message);
+            }
             Message::HoverScheduled(series_id) => {
                 if let Some(series) = s.service.series(&series_id) {
                     self.schedule_focus = Some((series_id, series.poster));
@@ -176,6 +184,7 @@ impl Dashboard {
         let scheduled = self.render_scheduled(s);
 
         Column::new()
+            .push(self.calendar.view().map(Message::Calendar))
             .push(vertical_space(Length::Shrink))
             .push(centered(up_next_title, None))
             .push(centered(

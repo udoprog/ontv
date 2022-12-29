@@ -9,3 +9,6 @@ pub(crate) use self::series_banner::SeriesBanner;
 
 pub(crate) mod confirm;
 pub(crate) use self::confirm::Confirm;
+
+pub(crate) mod calendar;
+pub(crate) use self::calendar::Calendar;
