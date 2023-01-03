@@ -184,7 +184,7 @@ impl Dashboard {
         let scheduled = self.render_scheduled(s);
 
         Column::new()
-            .push(self.calendar.view().map(Message::Calendar))
+            // .push(self.calendar.view().map(Message::Calendar))
             .push(vertical_space(Length::Shrink))
             .push(centered(up_next_title, None))
             .push(centered(

@@ -633,21 +633,21 @@ impl Service {
         from_episode_id: Option<&EpisodeId>,
     ) {
         let mut eps = self.db.episodes.get(series_id).into_iter().flatten();
+        let pending = self.db.pending.iter().position(|p| p.series == *series_id);
 
-        let (timestamp, episode, pending) = if let Some(id) = from_episode_id {
-            let ts = self.watched(id).map(|w| w.timestamp).max();
+        let (timestamp, episode) = if let Some(id) = from_episode_id {
+            let ts = self.db.watched.get(id).map(|w| w.timestamp).max();
             let ep = eps.skip_while(|e| e.id != *id).nth(1);
-            let p = self.db.pending.iter_mut().find(|p| p.series == *series_id);
-            (ts, ep, p)
+            (ts, ep)
         } else {
-            if self.db.pending.iter().any(|p| p.series == *series_id) {
+            if pending.is_some() {
                 // Do nothing since we already have a pending episode.
                 return;
             }
 
             let ts = self.db.watched.series(series_id).map(|w| w.timestamp).max();
             let ep = eps.find(|e| self.watch_count(&e.id) == 0 && !e.season.is_special());
-            (ts, ep, None)
+            (ts, ep)
         };
 
         // Mark the first episode (that has aired).
@@ -655,7 +655,7 @@ impl Service {
             self.db.changes.change(Change::Pending);
 
             // Mark the next episode in the show as pending.
-            if let Some(p) = pending {
+            if let Some(p) = pending.and_then(|index| self.db.pending.get_mut(index)) {
                 p.episode = e.id;
                 p.timestamp = timestamp;
             } else {
@@ -665,11 +665,13 @@ impl Service {
                     timestamp,
                 });
             }
-
-            self.db
-                .pending
-                .sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        } else {
+            self.db.pending.retain(|p| p.series != *series_id);
         }
+
+        self.db
+            .pending
+            .sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
     }
 
     /// Get current configuration.
