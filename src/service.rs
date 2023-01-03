@@ -4,7 +4,7 @@ use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{bail, Error, Result};
 use chrono::{DateTime, Days, Local, NaiveDate, Utc};
 use futures::stream::FuturesUnordered;
 use iced::Theme;
@@ -81,22 +81,24 @@ pub struct Service {
 
 impl Service {
     /// Construct and setup in-memory state of
-    pub fn new() -> Result<Self> {
-        let dirs = directories_next::ProjectDirs::from("se.tedro", "setbac", "OnTV")
-            .context("missing project dirs")?;
-
+    pub fn new(config: &Path, cache: &Path) -> Result<Self> {
         let paths = Paths {
             lock: tokio::sync::Mutex::new(()),
-            config: dirs.config_dir().join("config.json").into(),
-            remotes: dirs.config_dir().join("remotes.json").into(),
-            queue: dirs.config_dir().join("queue.json").into(),
-            series: dirs.config_dir().join("series.json").into(),
-            watched: dirs.config_dir().join("watched.json").into(),
-            pending: dirs.config_dir().join("pending.json").into(),
-            episodes: dirs.config_dir().join("episodes").into(),
-            seasons: dirs.config_dir().join("seasons").into(),
-            images: dirs.cache_dir().join("images").into(),
+            config: config.join("config.json").into(),
+            remotes: config.join("remotes.json").into(),
+            queue: config.join("queue.json").into(),
+            series: config.join("series.json").into(),
+            watched: config.join("watched.json").into(),
+            pending: config.join("pending.json").into(),
+            episodes: config.join("episodes").into(),
+            seasons: config.join("seasons").into(),
+            images: cache.join("images").into(),
         };
+
+        if !paths.images.is_dir() {
+            log::debug!("creating images directory: {}", paths.images.display());
+            std::fs::create_dir_all(&paths.images)?;
+        }
 
         let db = Database::load(&paths)?;
         let tvdb = thetvdb::Client::new(&db.config.tvdb_legacy_apikey)?;

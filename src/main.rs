@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 
 #[derive(Parser)]
@@ -25,13 +25,35 @@ struct Opts {
     /// Don't save anything.
     #[arg(long)]
     test: bool,
+    /// Configuration directory.
+    #[arg(long, name = "config")]
+    config: Option<PathBuf>,
+    /// Print project paths.
+    #[arg(long)]
+    paths: bool,
 }
 
 pub fn main() -> Result<()> {
     pretty_env_logger::init();
-    let mut service = ontv::Service::new()?;
 
     let opts = Opts::try_parse()?;
+
+    let dirs = directories_next::ProjectDirs::from("se.tedro", "setbac", "OnTV")
+        .context("missing project dirs")?;
+
+    let config = match &opts.config {
+        Some(config) => config,
+        None => dirs.config_dir(),
+    };
+
+    let cache = dirs.cache_dir();
+
+    if opts.paths {
+        println!("config: {}", config.display());
+        println!("cache: {}", cache.display());
+    }
+
+    let mut service = ontv::Service::new(config, cache)?;
 
     if opts.test {
         service.do_not_save();

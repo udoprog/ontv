@@ -82,6 +82,7 @@ pub(crate) enum ThemeType {
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum SearchKind {
     Tvdb,
     #[default]
