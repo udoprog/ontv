@@ -1410,7 +1410,7 @@ dependencies = [
 [[package]]
 name = "iced"
 version = "0.6.0"
-source = "git+https://github.com/udoprog/iced?branch=commands#64713e506a783a9b5917914ba13fd55d57a83b0e"
+source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
 dependencies = [
  "iced_core",
  "iced_futures",
@@ -1426,7 +1426,7 @@ dependencies = [
 [[package]]
 name = "iced_core"
 version = "0.6.2"
-source = "git+https://github.com/udoprog/iced?branch=commands#64713e506a783a9b5917914ba13fd55d57a83b0e"
+source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
 dependencies = [
  "bitflags",
  "palette",
@@ -1436,7 +1436,7 @@ dependencies = [
 [[package]]
 name = "iced_futures"
 version = "0.5.1"
-source = "git+https://github.com/udoprog/iced?branch=commands#64713e506a783a9b5917914ba13fd55d57a83b0e"
+source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
 dependencies = [
  "futures",
  "log",
@@ -1448,7 +1448,7 @@ dependencies = [
 [[package]]
 name = "iced_glow"
 version = "0.5.1"
-source = "git+https://github.com/udoprog/iced?branch=commands#64713e506a783a9b5917914ba13fd55d57a83b0e"
+source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
 dependencies = [
  "bytemuck",
  "euclid",
@@ -1463,7 +1463,7 @@ dependencies = [
 [[package]]
 name = "iced_graphics"
 version = "0.5.0"
-source = "git+https://github.com/udoprog/iced?branch=commands#64713e506a783a9b5917914ba13fd55d57a83b0e"
+source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
 dependencies = [
  "bitflags",
  "bytemuck",
@@ -1480,7 +1480,7 @@ dependencies = [
 [[package]]
 name = "iced_native"
 version = "0.7.0"
-source = "git+https://github.com/udoprog/iced?branch=commands#64713e506a783a9b5917914ba13fd55d57a83b0e"
+source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
 dependencies = [
  "iced_core",
  "iced_futures",
@@ -1493,7 +1493,7 @@ dependencies = [
 [[package]]
 name = "iced_style"
 version = "0.5.1"
-source = "git+https://github.com/udoprog/iced?branch=commands#64713e506a783a9b5917914ba13fd55d57a83b0e"
+source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
 dependencies = [
  "iced_core",
  "once_cell",
@@ -1503,7 +1503,7 @@ dependencies = [
 [[package]]
 name = "iced_wgpu"
 version = "0.7.0"
-source = "git+https://github.com/udoprog/iced?branch=commands#64713e506a783a9b5917914ba13fd55d57a83b0e"
+source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
 dependencies = [
  "bitflags",
  "bytemuck",
@@ -1523,7 +1523,7 @@ dependencies = [
 [[package]]
 name = "iced_winit"
 version = "0.6.0"
-source = "git+https://github.com/udoprog/iced?branch=commands#64713e506a783a9b5917914ba13fd55d57a83b0e"
+source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
 dependencies = [
  "iced_futures",
  "iced_graphics",
@@ -3066,9 +3066,9 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "tokio"
-version = "1.23.0"
+version = "1.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eab6d665857cc6ca78d6e80303a02cea7a7851e85dfbd77cbdc09bd129f1ef46"
+checksum = "38a54aca0c15d014013256222ba0ebed095673f89345dd79119d912eb561b7a8"
 dependencies = [
  "autocfg",
  "bytes",
