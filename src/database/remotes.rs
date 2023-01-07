@@ -1,9 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
 
 use crate::model::{EpisodeId, RemoteEpisodeId, RemoteId, RemoteSeriesId, SeriesId};
+use crate::utils::OptionIter;
 
 #[derive(Default)]
 struct Inner {
@@ -14,6 +15,7 @@ struct Inner {
 #[derive(Default)]
 pub(crate) struct Database {
     inner: Arc<Mutex<Inner>>,
+    by_series: HashMap<SeriesId, BTreeSet<RemoteSeriesId>>,
 }
 
 impl Database {
@@ -22,10 +24,24 @@ impl Database {
         Some(*self.inner.lock().series.get(remote_id)?)
     }
 
+    /// Get remote by series.
+    pub(crate) fn get_by_series(
+        &self,
+        series_id: &SeriesId,
+    ) -> impl ExactSizeIterator<Item = RemoteSeriesId> + '_ {
+        OptionIter::new(self.by_series.get(series_id).map(|it| it.into_iter())).copied()
+    }
+
     /// Insert a series remote.
     pub(crate) fn insert_series(&mut self, remote_id: RemoteSeriesId, series_id: SeriesId) -> bool {
         let mut inner = self.inner.lock();
         let replaced = inner.series.insert(remote_id, series_id);
+
+        self.by_series
+            .entry(series_id)
+            .or_default()
+            .insert(remote_id);
+
         !matches!(replaced, Some(id) if id == series_id)
     }
 

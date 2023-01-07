@@ -87,14 +87,16 @@ impl Series {
 
         let mut top = Column::new().push(self.banner.view(s, series).map(Message::SeriesBanner));
 
-        if !series.remote_ids.is_empty() {
+        let remote_ids = s.service.remotes_by_series(&series.id);
+
+        if remote_ids.len() > 0 {
             let mut remotes = Row::new();
 
-            for remote_id in &series.remote_ids {
+            for remote_id in remote_ids {
                 remotes = remotes.push(
                     button(text(remote_id.to_string()))
                         .style(theme::Button::Text)
-                        .on_press(Message::OpenRemote(*remote_id)),
+                        .on_press(Message::OpenRemote(remote_id)),
                 );
             }
 

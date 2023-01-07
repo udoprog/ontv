@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::fmt;
 use std::future::Future;
 use std::path::Path;
@@ -18,6 +19,8 @@ use crate::cache::{self};
 use crate::database::Change;
 use crate::database::Database;
 use crate::model::Pending;
+use crate::model::RemoteEpisodeId;
+use crate::model::WatchedKind;
 use crate::model::{
     Config, Episode, EpisodeId, Etag, Image, RemoteSeriesId, ScheduledDay, ScheduledSeries,
     SearchSeries, Season, SeasonNumber, Series, SeriesId, Task, TaskFinished, TaskKind, ThemeType,
@@ -29,8 +32,16 @@ use crate::queue::{TaskRunning, TaskStatus};
 #[derive(Clone)]
 pub(crate) struct NewSeries {
     series: Series,
-    episodes: Vec<Episode>,
+    remote_ids: BTreeSet<RemoteSeriesId>,
+    episodes: Vec<NewEpisode>,
     seasons: Vec<Season>,
+}
+
+/// New episode.
+#[derive(Clone)]
+pub(crate) struct NewEpisode {
+    pub(crate) episode: Episode,
+    pub(crate) remote_ids: BTreeSet<RemoteEpisodeId>,
 }
 
 impl NewSeries {
@@ -427,9 +438,11 @@ impl Service {
 
             self.db.watched.insert(Watched {
                 id: Uuid::new_v4(),
-                series: *series_id,
-                episode: episode.id,
                 timestamp: *now,
+                kind: WatchedKind::Series {
+                    series: *series_id,
+                    episode: episode.id,
+                },
             });
 
             self.db.changes.change(Change::Watched);
@@ -452,9 +465,11 @@ impl Service {
     ) {
         self.db.watched.insert(Watched {
             id: Uuid::new_v4(),
-            series: *series_id,
-            episode: *episode_id,
             timestamp: *now,
+            kind: WatchedKind::Series {
+                series: *series_id,
+                episode: *episode_id,
+            },
         });
 
         self.db.changes.change(Change::Watched);
@@ -751,16 +766,16 @@ impl Service {
 
             let lookup_episode = |q| proxy.find_episode_by_remote(q);
 
-            let (series, seasons, episodes) = match remote_id {
+            let (series, remote_ids, seasons, episodes) = match remote_id {
                 RemoteSeriesId::Tvdb { id } => {
                     let series = tvdb.series(id, lookup_series);
                     let episodes = tvdb.series_episodes(id, lookup_episode);
-                    let (series, episodes) = tokio::try_join!(series, episodes)?;
+                    let ((series, remote_ids), episodes) = tokio::try_join!(series, episodes)?;
                     let seasons = episodes_into_seasons(&episodes);
-                    (series, seasons, episodes)
+                    (series, remote_ids, seasons, episodes)
                 }
                 RemoteSeriesId::Tmdb { id } => {
-                    let Some((series, seasons)) = tmdb.series(id, lookup_series, if_none_match.as_ref()).await? else {
+                    let Some((series, remote_ids, seasons)) = tmdb.series(id, lookup_series, if_none_match.as_ref()).await? else {
                         log::trace!("{remote_id}: not changed");
                         return Ok(None);
                     };
@@ -773,7 +788,7 @@ impl Service {
                         episodes.extend(new_episodes);
                     }
 
-                    (series, seasons, episodes)
+                    (series, remote_ids, seasons, episodes)
                 }
                 RemoteSeriesId::Imdb { .. } => {
                     bail!("cannot download series data from imdb")
@@ -782,6 +797,7 @@ impl Service {
 
             let data = NewSeries {
                 series,
+                remote_ids,
                 episodes,
                 seasons,
             };
@@ -822,21 +838,29 @@ impl Service {
     pub(crate) fn insert_new_series(&mut self, data: NewSeries) {
         let series_id = data.series.id;
 
-        for &remote_id in &data.series.remote_ids {
+        for &remote_id in &data.remote_ids {
             if self.db.remotes.insert_series(remote_id, series_id) {
                 self.db.changes.change(Change::Remotes);
             }
         }
 
-        for episode in &data.episodes {
+        let mut episodes = Vec::with_capacity(data.episodes.len());
+
+        for episode in data.episodes {
             for &remote_id in &episode.remote_ids {
-                if self.db.remotes.insert_episode(remote_id, episode.id) {
+                if self
+                    .db
+                    .remotes
+                    .insert_episode(remote_id, episode.episode.id)
+                {
                     self.db.changes.change(Change::Remotes);
                 }
             }
+
+            episodes.push(episode.episode);
         }
 
-        self.db.episodes.insert(series_id, data.episodes.clone());
+        self.db.episodes.insert(series_id, episodes);
         self.db.seasons.insert(series_id, data.seasons.clone());
 
         if let Some(current) = self.db.series.get_mut(&series_id) {
@@ -917,9 +941,11 @@ impl Service {
     ) {
         self.db.watched.insert(Watched {
             id: Uuid::new_v4(),
-            series: series_id,
-            episode: episode_id,
             timestamp,
+            kind: WatchedKind::Series {
+                series: series_id,
+                episode: episode_id,
+            },
         });
 
         self.db.changes.change(Change::Watched);
@@ -1071,19 +1097,27 @@ impl Service {
 
         self.db.tasks.complete(&task)
     }
+
+    /// Get remotes by series.
+    pub(crate) fn remotes_by_series(
+        &self,
+        series_id: &SeriesId,
+    ) -> impl ExactSizeIterator<Item = RemoteSeriesId> + '_ {
+        self.db.remotes.get_by_series(series_id)
+    }
 }
 
 /// Helper to build seasons out of known episodes.
-fn episodes_into_seasons(episodes: &[Episode]) -> Vec<Season> {
+fn episodes_into_seasons(episodes: &[NewEpisode]) -> Vec<Season> {
     let mut map = BTreeMap::new();
 
-    for e in episodes {
-        let season = map.entry(e.season).or_insert_with(|| Season {
-            number: e.season,
+    for NewEpisode { episode, .. } in episodes {
+        let season = map.entry(episode.season).or_insert_with(|| Season {
+            number: episode.season,
             ..Season::default()
         });
 
-        season.air_date = match (season.air_date, e.aired) {
+        season.air_date = match (season.air_date, episode.aired) {
             (Some(a), Some(b)) => Some(a.min(b)),
             (Some(t), _) | (_, Some(t)) => Some(t),
             _ => None,

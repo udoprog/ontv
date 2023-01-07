@@ -2,7 +2,7 @@ mod etag;
 mod hex;
 mod raw;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
@@ -15,63 +15,43 @@ pub(crate) use self::etag::Etag;
 pub(crate) use self::hex::Hex;
 pub(crate) use self::raw::Raw;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[repr(transparent)]
-#[serde(transparent)]
-pub(crate) struct SeriesId(Uuid);
+macro_rules! id {
+    ($name:ident) => {
+        #[derive(
+            Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+        )]
+        #[repr(transparent)]
+        #[serde(transparent)]
+        pub(crate) struct $name(Uuid);
 
-impl SeriesId {
-    /// Generate a new random series identifier.
-    #[inline]
-    pub(crate) fn random() -> Self {
-        Self(Uuid::new_v4())
-    }
+        impl $name {
+            /// Generate a new random series identifier.
+            #[inline]
+            pub(crate) fn random() -> Self {
+                Self(Uuid::new_v4())
+            }
+        }
+
+        impl fmt::Display for $name {
+            #[inline]
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                self.0.fmt(f)
+            }
+        }
+
+        impl FromStr for $name {
+            type Err = uuid::Error;
+
+            #[inline]
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Ok(Self(uuid::Uuid::from_str(s)?))
+            }
+        }
+    };
 }
 
-impl fmt::Display for SeriesId {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl FromStr for SeriesId {
-    type Err = uuid::Error;
-
-    #[inline]
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self(uuid::Uuid::from_str(s)?))
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[repr(transparent)]
-#[serde(transparent)]
-pub(crate) struct EpisodeId(Uuid);
-
-impl EpisodeId {
-    /// Generate a new random episode identifier.
-    #[inline]
-    pub(crate) fn random() -> Self {
-        Self(Uuid::new_v4())
-    }
-}
-
-impl fmt::Display for EpisodeId {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl FromStr for EpisodeId {
-    type Err = uuid::Error;
-
-    #[inline]
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self(uuid::Uuid::from_str(s)?))
-    }
-}
+id!(SeriesId);
+id!(EpisodeId);
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -292,9 +272,6 @@ pub(crate) struct Series {
     /// The remote identifier that is used to synchronize this series.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) remote_id: Option<RemoteSeriesId>,
-    /// Remote series ids.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) remote_ids: Vec<RemoteSeriesId>,
 }
 
 #[inline]
@@ -367,16 +344,28 @@ mod btree_as_vec {
 
 /// A season in a series.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", untagged)]
+pub(crate) enum WatchedKind {
+    /// The watch kind is a series.
+    Series {
+        /// Identifier of watched series.
+        series: SeriesId,
+        /// Identifier of watched episode.
+        episode: EpisodeId,
+    },
+}
+
+/// A season in a series.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct Watched {
     /// Unique identifier for this watch.
     pub(crate) id: Uuid,
-    /// Identifier of watched series.
-    pub(crate) series: SeriesId,
-    /// Identifier of watched episode.
-    pub(crate) episode: EpisodeId,
     /// Timestamp when it was watched.
     pub(crate) timestamp: DateTime<Utc>,
+    /// Watched kind.
+    #[serde(flatten)]
+    pub(crate) kind: WatchedKind,
 }
 
 /// Season number.
@@ -471,9 +460,6 @@ pub(crate) struct Episode {
     /// The remote identifier that is used to synchronize this episode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) remote_id: Option<RemoteEpisodeId>,
-    /// Remote episode ids.
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub(crate) remote_ids: BTreeSet<RemoteEpisodeId>,
 }
 
 impl Episode {

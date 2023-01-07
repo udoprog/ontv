@@ -18,6 +18,7 @@ use crate::model::{
     Episode, EpisodeId, Etag, Image, Raw, RemoteEpisodeId, RemoteSeriesId, SearchSeries, Season,
     SeasonNumber, Series, SeriesId, TmdbImage,
 };
+use crate::service::NewEpisode;
 
 const BASE_URL: &str = "https://api.themoviedb.org/3";
 const IMAGE_URL: &str = "https://image.tmdb.org";
@@ -153,7 +154,7 @@ impl Client {
         id: u32,
         lookup: impl common::LookupSeriesId,
         if_none_match: Option<&Etag>,
-    ) -> Result<Option<(Series, Vec<Season>)>> {
+    ) -> Result<Option<(Series, BTreeSet<RemoteSeriesId>, Vec<Season>)>> {
         let mut details = self.request_with_auth(Method::GET, &["tv", &id.to_string()]);
 
         if let Some(etag) = if_none_match {
@@ -190,10 +191,10 @@ impl Client {
 
         let remote_id = RemoteSeriesId::Tmdb { id: details.id };
 
-        let mut remote_ids = Vec::from([remote_id]);
+        let mut remote_ids = BTreeSet::from([remote_id]);
 
         for remote_id in external_ids.as_remote_series() {
-            remote_ids.push(remote_id?);
+            remote_ids.insert(remote_id?);
         }
 
         // Try to lookup the series by known remote ids.
@@ -217,7 +218,6 @@ impl Client {
             last_etag,
             last_sync: BTreeMap::new(),
             remote_id: Some(remote_id),
-            remote_ids,
         };
 
         let mut seasons = Vec::with_capacity(details.seasons.len());
@@ -237,7 +237,7 @@ impl Client {
             });
         }
 
-        return Ok(Some((series, seasons)));
+        return Ok(Some((series, remote_ids, seasons)));
 
         #[derive(Deserialize)]
         struct Details {
@@ -276,7 +276,7 @@ impl Client {
         series_id: u32,
         season: SeasonNumber,
         lookup: impl common::LookupEpisodeId,
-    ) -> Result<Vec<Episode>> {
+    ) -> Result<Vec<NewEpisode>> {
         let season_number = match season {
             SeasonNumber::Specials => 0,
             SeasonNumber::Number(n) => n,
@@ -344,7 +344,7 @@ impl Client {
         for (_, remote_ids, remote_id, id, e) in output {
             let filename = process_image(e.still_path.as_deref()).context("bad still image")?;
 
-            episodes.push(Episode {
+            let episode = Episode {
                 id,
                 name: e.name,
                 overview: e.overview,
@@ -354,6 +354,10 @@ impl Client {
                 aired: e.air_date,
                 filename,
                 remote_id: Some(remote_id),
+            };
+
+            episodes.push(NewEpisode {
+                episode,
                 remote_ids,
             });
         }

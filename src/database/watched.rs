@@ -4,7 +4,7 @@ use std::collections::hash_map::{self, HashMap};
 use slab::Slab;
 use uuid::Uuid;
 
-use crate::model::{EpisodeId, SeriesId, Watched};
+use crate::model::{EpisodeId, SeriesId, Watched, WatchedKind};
 
 #[derive(Default)]
 pub(crate) struct Database {
@@ -46,12 +46,16 @@ impl Database {
     /// Insert a new entry into watch history.
     pub(crate) fn insert(&mut self, w: Watched) {
         let id = w.id;
-        let episode_id = w.episode;
-        let series_id = w.series;
+        let kind = w.kind;
         let index = self.data.insert(w);
         self.by_id.insert(id, index);
-        self.by_episode.entry(episode_id).or_default().push(index);
-        self.by_series.entry(series_id).or_default().push(index);
+
+        match kind {
+            WatchedKind::Series { series, episode } => {
+                self.by_episode.entry(episode).or_default().push(index);
+                self.by_series.entry(series).or_default().push(index);
+            }
+        }
     }
 
     /// Remove all episodes matching a series.
@@ -66,7 +70,12 @@ impl Database {
             };
 
             let _ = self.by_id.remove(&w.id);
-            let _ = self.by_episode.remove(&w.episode);
+
+            match w.kind {
+                WatchedKind::Series { episode, .. } => {
+                    let _ = self.by_episode.remove(&episode);
+                }
+            }
         }
     }
 
@@ -84,7 +93,12 @@ impl Database {
             };
 
             let _ = self.by_id.remove(&w.id);
-            self.clear_series_by_id(&w.series, index);
+
+            match w.kind {
+                WatchedKind::Series { series, .. } => {
+                    self.clear_series_by_id(&series, index);
+                }
+            }
         }
 
         len
@@ -100,8 +114,13 @@ impl Database {
             return None;
         };
 
-        self.clear_series_by_id(&w.series, index);
-        self.clear_episode_by_id(&w.episode, index);
+        match w.kind {
+            WatchedKind::Series { series, episode } => {
+                self.clear_series_by_id(&series, index);
+                self.clear_episode_by_id(&episode, index);
+            }
+        }
+
         Some(w)
     }
 

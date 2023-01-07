@@ -78,12 +78,6 @@ impl Database {
 
         if let Some(series) = load_series(&paths.series)? {
             for s in series {
-                for &id in &s.remote_ids {
-                    if db.remotes.insert_series(id, s.id) {
-                        db.changes.set.insert(Change::Remotes);
-                    }
-                }
-
                 db.series.insert(s);
             }
         }
@@ -100,14 +94,6 @@ impl Database {
 
         if let Some(episodes) = load_directory::<SeriesId, Episode>(&paths.episodes)? {
             for (id, episodes) in episodes {
-                for e in &episodes {
-                    for &remote_id in &e.remote_ids {
-                        if db.remotes.insert_episode(remote_id, e.id) {
-                            db.changes.set.insert(Change::Remotes);
-                        }
-                    }
-                }
-
                 db.episodes.insert(id, episodes);
             }
         }

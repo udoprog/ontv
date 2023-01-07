@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 use std::mem;
 
 use chrono::{Datelike, Days, Months, NaiveDate, Weekday};

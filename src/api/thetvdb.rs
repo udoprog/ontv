@@ -15,6 +15,7 @@ use crate::model::{
     Episode, EpisodeId, Image, Raw, RemoteEpisodeId, RemoteSeriesId, SearchSeries, SeasonNumber,
     Series, SeriesId, TvdbImage,
 };
+use crate::service::NewEpisode;
 
 const BASE_URL: &str = "https://api.thetvdb.com";
 const ARTWORKS_URL: &str = "https://artworks.thetvdb.com";
@@ -160,7 +161,7 @@ impl Client {
         &self,
         id: u32,
         lookup: impl common::LookupSeriesId,
-    ) -> Result<Series> {
+    ) -> Result<(Series, BTreeSet<RemoteSeriesId>)> {
         let res = self
             .request_with_auth(Method::GET, &["series", &id.to_string()])
             .await?
@@ -196,10 +197,10 @@ impl Client {
 
         let remote_id = RemoteSeriesId::Tvdb { id };
 
-        let mut remote_ids = Vec::from([remote_id]);
+        let mut remote_ids = BTreeSet::from([remote_id]);
 
         if let Some(imdb_id) = value.imdb_id.filter(|id| !id.is_empty()) {
-            remote_ids.push(RemoteSeriesId::Imdb {
+            remote_ids.insert(RemoteSeriesId::Imdb {
                 id: Raw::new(&imdb_id).context("id overflow")?,
             });
         }
@@ -209,7 +210,7 @@ impl Client {
             .lookup(remote_ids.iter().copied())
             .unwrap_or_else(SeriesId::random);
 
-        return Ok(Series {
+        let series = Series {
             id,
             title: value.series_name.to_owned(),
             first_air_date: None,
@@ -218,12 +219,13 @@ impl Client {
             poster: Some(poster),
             fanart,
             remote_id: Some(remote_id),
-            remote_ids,
             tracked: true,
             last_etag,
             last_modified,
             last_sync: BTreeMap::new(),
-        });
+        };
+
+        return Ok((series, remote_ids));
 
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -252,7 +254,7 @@ impl Client {
         &self,
         id: u32,
         lookup: impl common::LookupEpisodeId,
-    ) -> Result<Vec<Episode>> {
+    ) -> Result<Vec<NewEpisode>> {
         let path = ["series", &id.to_string(), "episodes"];
 
         return self
@@ -277,7 +279,7 @@ impl Client {
                     .lookup(remote_ids.iter().copied())
                     .unwrap_or_else(EpisodeId::random);
 
-                Ok(Episode {
+                let episode = Episode {
                     id,
                     name: row.episode_name,
                     overview: row.overview.filter(|o| !o.is_empty()),
@@ -291,6 +293,10 @@ impl Client {
                     aired: row.first_aired,
                     filename,
                     remote_id: Some(remote_id),
+                };
+
+                Ok(NewEpisode {
+                    episode,
                     remote_ids,
                 })
             })
