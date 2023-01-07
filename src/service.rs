@@ -510,15 +510,16 @@ impl Service {
         let timestamp = self.db.watched.series(series_id).map(|w| w.timestamp).max();
 
         // Try to modify in-place.
-        if let Some(pending) = self.db.pending.get_mut_by_series(series_id) {
-            pending.episode = *episode_id;
+        if let Some(index) = self.db.pending.position_for_series(series_id) {
+            self.db.pending.modify(index, move |p| {
+                p.episode = *episode_id;
 
-            // Only update timestamp in case an existing one is found based on
-            // watch history, else preserve the old one.
-            if let Some(timestamp) = timestamp {
-                pending.timestamp = timestamp;
-                self.db.pending.sort();
-            }
+                // Only update timestamp in case an existing one is found based on
+                // watch history, else preserve the old one.
+                if let Some(timestamp) = timestamp {
+                    p.timestamp = timestamp;
+                }
+            });
         } else {
             self.db.pending.extend([Pending {
                 series: *series_id,
@@ -650,23 +651,18 @@ impl Service {
 
         self.db.changes.change(Change::Pending);
 
+        if let Some(index) = pending {
+            self.db.pending.remove_by_index(index);
+        }
+
         // Mark the first episode (that has aired).
         if let (Some(timestamp), Some(e)) = (timestamp, episode) {
             // Mark the next episode in the show as pending.
-            if let Some(p) = pending.and_then(|index| self.db.pending.get_mut(index)) {
-                p.episode = e.id;
-                p.timestamp = timestamp;
-
-                self.db.pending.sort();
-            } else {
-                self.db.pending.extend([Pending {
-                    series: *series_id,
-                    episode: e.id,
-                    timestamp,
-                }]);
-            }
-        } else {
-            self.db.pending.remove_by(|p| p.series == *series_id);
+            self.db.pending.extend([Pending {
+                series: *series_id,
+                episode: e.id,
+                timestamp,
+            }]);
         }
     }
 
