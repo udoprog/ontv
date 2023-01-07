@@ -4,9 +4,9 @@ version = 3
 
 [[package]]
 name = "ab_glyph"
-version = "0.2.18"
+version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4dcdbc68024b653943864d436fe8a24b028095bc1cf91a8926f8241e4aaffe59"
+checksum = "e5568a4aa5ba8adf5175c5c460b030e27d8893412976cc37bef0e4fbc16cfbba"
 dependencies = [
  "ab_glyph_rasterizer",
  "owned_ttf_parser",
@@ -1410,7 +1410,7 @@ dependencies = [
 [[package]]
 name = "iced"
 version = "0.6.0"
-source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
+source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
 dependencies = [
  "iced_core",
  "iced_futures",
@@ -1426,7 +1426,7 @@ dependencies = [
 [[package]]
 name = "iced_core"
 version = "0.6.2"
-source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
+source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
 dependencies = [
  "bitflags",
  "palette",
@@ -1436,7 +1436,7 @@ dependencies = [
 [[package]]
 name = "iced_futures"
 version = "0.5.1"
-source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
+source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
 dependencies = [
  "futures",
  "log",
@@ -1448,7 +1448,7 @@ dependencies = [
 [[package]]
 name = "iced_glow"
 version = "0.5.1"
-source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
+source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
 dependencies = [
  "bytemuck",
  "euclid",
@@ -1463,7 +1463,7 @@ dependencies = [
 [[package]]
 name = "iced_graphics"
 version = "0.5.0"
-source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
+source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
 dependencies = [
  "bitflags",
  "bytemuck",
@@ -1480,7 +1480,7 @@ dependencies = [
 [[package]]
 name = "iced_native"
 version = "0.7.0"
-source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
+source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
 dependencies = [
  "iced_core",
  "iced_futures",
@@ -1493,7 +1493,7 @@ dependencies = [
 [[package]]
 name = "iced_style"
 version = "0.5.1"
-source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
+source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
 dependencies = [
  "iced_core",
  "once_cell",
@@ -1503,7 +1503,7 @@ dependencies = [
 [[package]]
 name = "iced_wgpu"
 version = "0.7.0"
-source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
+source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
 dependencies = [
  "bitflags",
  "bytemuck",
@@ -1523,7 +1523,7 @@ dependencies = [
 [[package]]
 name = "iced_winit"
 version = "0.6.0"
-source = "git+https://github.com/udoprog/iced?branch=commands#6212f101f56ec05963cbed4a35e41e9dd6d2881b"
+source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
 dependencies = [
  "iced_futures",
  "iced_graphics",
@@ -2202,9 +2202,9 @@ checksum = "9b7820b9daea5457c9f21c69448905d723fbd21136ccf521748f23fd49e723ee"
 
 [[package]]
 name = "owned_ttf_parser"
-version = "0.17.1"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18904d3c65493a9f0d7542293d1a7f69bfdc309a6b9ef4f46dc3e58b0577edc5"
+checksum = "2a5f3c7ca08b6879e7965fb25e24d1f5eeb32ea73f9ad99b3854778a38c57e93"
 dependencies = [
  "ttf-parser",
 ]
@@ -3066,9 +3066,9 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "tokio"
-version = "1.23.1"
+version = "1.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38a54aca0c15d014013256222ba0ebed095673f89345dd79119d912eb561b7a8"
+checksum = "1d9f76183f91ecfb55e1d7d5602bd1d979e38a3a522fe900241cf195624d67ae"
 dependencies = [
  "autocfg",
  "bytes",
@@ -3156,15 +3156,15 @@ dependencies = [
 
 [[package]]
 name = "try-lock"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59547bce71d9c38b83d9c0e92b6066c4253371f15005def0c30d9657f50c7642"
+checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 
 [[package]]
 name = "ttf-parser"
-version = "0.17.1"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "375812fa44dab6df41c195cd2f7fecb488f6c09fbaafb62807488cefab642bff"
+checksum = "dbf554b6e535f9a160b2ed4ea83f99000f21cbc0a693df26e258eaf2c226a151"
 
 [[package]]
 name = "twox-hash"

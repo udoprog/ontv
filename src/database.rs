@@ -1,3 +1,4 @@
+mod pending;
 mod remotes;
 mod series;
 mod watched;
@@ -32,7 +33,7 @@ pub(crate) struct Database {
     /// Episode to watch history.
     pub(crate) watched: watched::Database,
     /// Ordered list of things to watch.
-    pub(crate) pending: Vec<Pending>,
+    pub(crate) pending: pending::Database,
     /// Keeping track of changes to be saved.
     pub(crate) changes: Changes,
     /// Download queue.
@@ -93,8 +94,8 @@ impl Database {
             }
         }
 
-        if let Some(pending) = load_array(&paths.pending)? {
-            db.pending = pending;
+        if let Some(pending) = load_array::<Pending>(&paths.pending)? {
+            db.pending.extend(pending);
         }
 
         if let Some(episodes) = load_directory::<SeriesId, Episode>(&paths.episodes)? {
@@ -140,7 +141,7 @@ impl Database {
         let pending = changes
             .set
             .contains(Change::Pending)
-            .then(|| self.pending.clone());
+            .then(|| self.pending.export());
 
         let series = changes
             .set

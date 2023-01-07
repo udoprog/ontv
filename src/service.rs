@@ -224,7 +224,7 @@ impl Service {
 
     /// Get the pending episode for the given series.
     pub(crate) fn get_pending(&self, series_id: &SeriesId) -> Option<&Pending> {
-        self.db.pending.iter().find(|p| p.series == *series_id)
+        self.db.pending.by_series(series_id)
     }
 
     /// Return list of pending episodes.
@@ -483,7 +483,7 @@ impl Service {
         self.db.changes.change(Change::Pending);
 
         let Some(episode) = it.next() else {
-            self.db.pending.retain(|p| p.series != *series_id);
+            self.db.pending.remove_by(|p| p.series == *series_id);
             return;
         };
 
@@ -510,31 +510,28 @@ impl Service {
         let timestamp = self.db.watched.series(series_id).map(|w| w.timestamp).max();
 
         // Try to modify in-place.
-        if let Some(pending) = self.db.pending.iter_mut().find(|p| p.series == *series_id) {
+        if let Some(pending) = self.db.pending.get_mut_by_series(series_id) {
             pending.episode = *episode_id;
 
             // Only update timestamp in case an existing one is found based on
             // watch history, else preserve the old one.
             if let Some(timestamp) = timestamp {
                 pending.timestamp = timestamp;
+                self.db.pending.sort();
             }
         } else {
-            self.db.pending.push(Pending {
+            self.db.pending.extend([Pending {
                 series: *series_id,
                 episode: *episode_id,
                 timestamp: timestamp.unwrap_or(*now),
-            });
+            }]);
         }
-
-        self.db
-            .pending
-            .sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
     }
 
     /// Clear next episode as pending.
     pub(crate) fn clear_pending(&mut self, episode_id: &EpisodeId) {
         self.db.changes.change(Change::Pending);
-        self.db.pending.retain(|p| p.episode != *episode_id);
+        self.db.pending.remove_by(|p| p.episode == *episode_id);
     }
 
     /// Remove all watches of the given episode.
@@ -552,23 +549,22 @@ impl Service {
 
         if removed.is_some() {
             self.db.changes.change(Change::Watched);
-            self.db.pending.retain(|p| p.series != *series_id);
+            self.db.changes.change(Change::Pending);
+            self.db.pending.remove_by(|p| p.series == *series_id);
 
             let last_timestamp = self
                 .episodes(series_id)
                 .iter()
                 .take_while(|e| e.id != *episode_id)
-                .flat_map(|e| self.watched(&e.id))
+                .flat_map(|e| self.db.watched.get(&e.id))
                 .map(|w| w.timestamp)
                 .max();
 
-            self.db.pending.push(Pending {
+            self.db.pending.extend([Pending {
                 series: *series_id,
                 episode: *episode_id,
                 timestamp: last_timestamp.unwrap_or_else(Utc::now),
-            });
-
-            self.db.changes.change(Change::Pending);
+            }]);
         }
     }
 
@@ -601,7 +597,7 @@ impl Service {
             self.db.changes.change(Change::Watched);
         }
 
-        self.db.pending.retain(|p| p.series != *series_id);
+        self.db.pending.remove_by(|p| p.series == *series_id);
         self.db.changes.change(Change::Pending);
 
         let Some(episodes) = self.db.episodes.get(series_id) else {
@@ -610,11 +606,11 @@ impl Service {
 
         // Find the first episode matching the cleared season.
         if let Some(episode) = episodes.iter().find(|e| e.season == *season) {
-            self.db.pending.push(Pending {
+            self.db.pending.extend([Pending {
                 series: *series_id,
                 episode: episode.id,
                 timestamp: last_timestamp.unwrap_or(*now),
-            });
+            }]);
         }
     }
 
@@ -635,7 +631,7 @@ impl Service {
         from_episode_id: Option<&EpisodeId>,
     ) {
         let mut eps = self.db.episodes.get(series_id).into_iter().flatten();
-        let pending = self.db.pending.iter().position(|p| p.series == *series_id);
+        let pending = self.db.pending.position_for_series(series_id);
 
         let (timestamp, episode) = if let Some(id) = from_episode_id {
             let ts = self.db.watched.get(id).map(|w| w.timestamp).max();
@@ -652,28 +648,26 @@ impl Service {
             (ts, ep)
         };
 
+        self.db.changes.change(Change::Pending);
+
         // Mark the first episode (that has aired).
         if let (Some(timestamp), Some(e)) = (timestamp, episode) {
-            self.db.changes.change(Change::Pending);
-
             // Mark the next episode in the show as pending.
             if let Some(p) = pending.and_then(|index| self.db.pending.get_mut(index)) {
                 p.episode = e.id;
                 p.timestamp = timestamp;
+
+                self.db.pending.sort();
             } else {
-                self.db.pending.push(Pending {
+                self.db.pending.extend([Pending {
                     series: *series_id,
                     episode: e.id,
                     timestamp,
-                });
+                }]);
             }
         } else {
-            self.db.pending.retain(|p| p.series != *series_id);
+            self.db.pending.remove_by(|p| p.series == *series_id);
         }
-
-        self.db
-            .pending
-            .sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
     }
 
     /// Get current configuration.
