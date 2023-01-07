@@ -15,8 +15,8 @@ use serde::Deserialize;
 
 use crate::api::common;
 use crate::model::{
-    Episode, EpisodeId, Etag, Image, Raw, RemoteEpisodeId, RemoteSeriesId, SearchSeries, Season,
-    SeasonNumber, Series, SeriesId, TmdbImage,
+    Episode, EpisodeId, Etag, Image, Raw, RemoteEpisodeId, RemoteMovieId, RemoteSeriesId,
+    SearchMovie, SearchSeries, Season, SeasonNumber, Series, SeriesId, TmdbImage,
 };
 use crate::service::NewEpisode;
 
@@ -137,6 +137,57 @@ impl Client {
             poster_path: Option<String>,
             #[serde(default)]
             first_air_date: Option<String>,
+        }
+    }
+
+    /// Search movies result.
+    pub(crate) async fn search_movies(&self, query: &str) -> Result<Vec<SearchMovie>> {
+        let res = self
+            .request_with_auth(Method::GET, &["search", "movie"])
+            .query(&[&("query", query)])
+            .send()
+            .await?;
+
+        let bytes: Bytes = handle_res(res).await?;
+
+        if log::log_enabled!(log::Level::Trace) {
+            let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
+            log::trace!("search/movie: {raw}");
+        }
+
+        let mut output = Vec::new();
+
+        let data: Data<Vec<Row>> = serde_json::from_slice(&bytes)?;
+
+        for row in data.results {
+            let poster = process_image(row.poster_path.as_deref()).context("bad poster image")?;
+
+            let release_date = match row.release_date {
+                Some(release_date) if !release_date.is_empty() => Some(str::parse(&release_date)?),
+                _ => None,
+            };
+
+            output.push(SearchMovie {
+                id: RemoteMovieId::Tmdb { id: row.id },
+                title: row.original_title,
+                poster,
+                overview: row.overview,
+                release_date,
+            });
+        }
+
+        return Ok(output);
+
+        #[derive(Deserialize)]
+        struct Row {
+            id: u32,
+            original_title: String,
+            #[serde(default)]
+            overview: Option<String>,
+            #[serde(default)]
+            poster_path: Option<String>,
+            #[serde(default)]
+            release_date: Option<String>,
         }
     }
 

@@ -31,6 +31,7 @@ pub(crate) enum Message {
     Search(page::search::Message),
     SeriesList(page::series_list::Message),
     Series(page::series::Message),
+    Movie(page::movie::Message),
     Season(page::season::Message),
     Queue(page::queue::Message),
     Errors(page::errors::Message),
@@ -62,6 +63,7 @@ enum Current {
     Settings(page::Settings),
     Search(page::Search),
     Series(page::Series),
+    Movie(page::Movie),
     SeriesList(page::SeriesList),
     Season(page::Season),
     Queue(page::Queue),
@@ -143,6 +145,11 @@ impl iced::Application for Application {
                 Page::Series(id) => {
                     if let Some(series) = self.state.service.series(id) {
                         return format!("{BASE} - {}", series.title);
+                    }
+                }
+                Page::Movie(id) => {
+                    if let Some(movie) = self.state.service.movie(id) {
+                        return format!("{BASE} - {}", movie.title);
                     }
                 }
                 Page::Settings => {
@@ -325,6 +332,7 @@ impl iced::Application for Application {
                 Page::Search => Current::Search(page::Search::default()),
                 Page::SeriesList => Current::SeriesList(page::SeriesList::default()),
                 Page::Series(series_id) => Current::Series(page::Series::new(series_id)),
+                Page::Movie(movie_id) => Current::Movie(page::Movie::new(movie_id)),
                 Page::Settings => Current::Settings(page::Settings::default()),
                 Page::Season(series_id, season) => {
                     Current::Season(page::Season::new(series_id, season))
@@ -441,6 +449,7 @@ impl iced::Application for Application {
             Current::Search(page) => page.view(&self.state).map(Message::Search),
             Current::SeriesList(page) => page.view(&self.state).map(Message::SeriesList),
             Current::Series(page) => page.view(&self.state).map(Message::Series),
+            Current::Movie(page) => page.view(&self.state).map(Message::Movie),
             Current::Settings(page) => page.view(&self.state).map(Message::Settings),
             Current::Season(page) => page.view(&self.state).map(Message::Season),
             Current::Queue(page) => page.view(&self.state).map(Message::Queue),
@@ -516,6 +525,9 @@ impl Application {
                 page.prepare(&mut self.state);
             }
             Current::Series(page) => {
+                page.prepare(&mut self.state);
+            }
+            Current::Movie(page) => {
                 page.prepare(&mut self.state);
             }
             Current::Settings(page) => {
@@ -625,7 +637,7 @@ impl Application {
                     }
                 }
                 TaskKind::DownloadSeriesByRemoteId { remote_id } => {
-                    if self.state.service.set_tracked_by_remote(remote_id) {
+                    if self.state.service.set_series_tracked_by_remote(remote_id) {
                         self.state.service.complete_task(task);
                     } else {
                         commands.perform(
@@ -640,6 +652,10 @@ impl Application {
                             },
                         );
                     }
+                }
+                TaskKind::DownloadMovieByRemoteId { .. } => {
+                    // TODO: implement task
+                    self.state.service.complete_task(task);
                 }
             }
         }

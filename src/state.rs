@@ -6,7 +6,7 @@ use chrono::{Duration, NaiveDate, Utc};
 
 use crate::assets::Assets;
 use crate::error::{ErrorId, ErrorInfo};
-use crate::model::{SeasonNumber, SeriesId};
+use crate::model::{MovieId, SeasonNumber, SeriesId};
 use crate::service::{NewSeries, Service};
 
 /// The current page.
@@ -16,6 +16,7 @@ pub(crate) enum Page {
     Search,
     SeriesList,
     Series(SeriesId),
+    Movie(MovieId),
     Settings,
     Season(SeriesId, SeasonNumber),
     Queue,

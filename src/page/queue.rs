@@ -5,7 +5,7 @@ use iced::alignment::Horizontal;
 use iced::widget::{button, horizontal_rule, text, vertical_space, Column, Row};
 use iced::{theme, Commands, Element, Length};
 
-use crate::model::{RemoteSeriesId, SeriesId, TaskKind};
+use crate::model::{RemoteMovieId, RemoteSeriesId, SeriesId, TaskKind};
 use crate::params::{default_container, duration_display, GAP, GAP2, SMALL, SPACE};
 use crate::state::{Page, State};
 use crate::utils::{TimedOut, Timeout};
@@ -18,8 +18,10 @@ pub(crate) enum Message {
     Navigate(Page),
     /// Tick the page.
     Tick(TimedOut),
-    /// Open the given remote URL.
-    OpenRemote(RemoteSeriesId),
+    /// Open the given remote series.
+    OpenRemoteSeries(RemoteSeriesId),
+    /// Open the given remote movie.
+    OpenRemoteMovie(RemoteMovieId),
 }
 
 /// The state for the settings page.
@@ -54,7 +56,11 @@ impl Queue {
                 let future = self.timeout.set(Duration::from_secs(UPDATE_TIMER));
                 commands.perform(future, Message::Tick);
             }
-            Message::OpenRemote(remote_id) => {
+            Message::OpenRemoteSeries(remote_id) => {
+                let url = remote_id.url();
+                let _ = webbrowser::open(&url);
+            }
+            Message::OpenRemoteMovie(remote_id) => {
                 let url = remote_id.url();
                 let _ = webbrowser::open(&url);
             }
@@ -163,7 +169,7 @@ impl Queue {
 fn build_task_row<'a>(s: &State, kind: &TaskKind) -> Row<'a, Message> {
     let mut update = Row::new();
 
-    match &kind {
+    match kind {
         TaskKind::CheckForUpdates {
             series_id,
             remote_id,
@@ -183,7 +189,18 @@ fn build_task_row<'a>(s: &State, kind: &TaskKind) -> Row<'a, Message> {
                     .width(Length::Fill)
                     .style(theme::Button::Text)
                     .padding(0)
-                    .on_press(Message::OpenRemote(*remote_id)),
+                    .on_press(Message::OpenRemoteSeries(*remote_id)),
+            );
+        }
+        TaskKind::DownloadMovieByRemoteId { remote_id } => {
+            update = update.push(text("Downloading").size(SMALL).width(Length::Fill));
+
+            update = update.push(
+                button(text(remote_id).size(SMALL))
+                    .width(Length::Fill)
+                    .style(theme::Button::Text)
+                    .padding(0)
+                    .on_press(Message::OpenRemoteMovie(*remote_id)),
             );
         }
     }
@@ -217,7 +234,7 @@ fn decorate_series<'a>(
                 .width(Length::Fill)
                 .style(theme::Button::Text)
                 .padding(0)
-                .on_press(Message::OpenRemote(*remote_id)),
+                .on_press(Message::OpenRemoteSeries(*remote_id)),
         );
     }
 

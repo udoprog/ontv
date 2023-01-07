@@ -52,6 +52,7 @@ macro_rules! id {
 
 id!(SeriesId);
 id!(EpisodeId);
+id!(MovieId);
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -230,11 +231,44 @@ pub(crate) enum RemoteEpisodeId {
     Imdb { id: Raw<16> },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", tag = "remote")]
+pub(crate) enum RemoteMovieId {
+    Tmdb { id: u32 },
+    Imdb { id: Raw<16> },
+}
+
+impl RemoteMovieId {
+    pub(crate) fn url(&self) -> String {
+        match self {
+            RemoteMovieId::Tmdb { id } => {
+                format!("https://www.themoviedb.org/tv/{id}")
+            }
+            RemoteMovieId::Imdb { id } => {
+                format!("https://www.imdb.com/title/{id}/")
+            }
+        }
+    }
+}
+
+impl fmt::Display for RemoteMovieId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RemoteMovieId::Tmdb { id } => {
+                write!(f, "themoviedb.org ({id})")
+            }
+            RemoteMovieId::Imdb { id } => {
+                write!(f, "imdb.com ({id})")
+            }
+        }
+    }
+}
+
 /// A series.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct Series {
-    /// Allocated UUID.
+    /// Unique identifier for series.
     pub(crate) id: SeriesId,
     /// Title of the series.
     pub(crate) title: String,
@@ -277,6 +311,19 @@ pub(crate) struct Series {
 #[inline]
 fn is_false(b: &bool) -> bool {
     !*b
+}
+
+/// A movie.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) struct Movie {
+    /// Unique identifier for movie.
+    pub(crate) id: MovieId,
+    /// The title of the movie.
+    pub(crate) title: String,
+    /// The remote identifier that is used to synchronize this movie.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) remote_id: Option<RemoteMovieId>,
 }
 
 mod btree_as_vec {
@@ -819,6 +866,8 @@ pub(crate) enum TaskKind {
     DownloadSeriesById { series_id: SeriesId },
     /// Task to add a series by a remote identifier.
     DownloadSeriesByRemoteId { remote_id: RemoteSeriesId },
+    /// Task to add download a movie by a remote identifier.
+    DownloadMovieByRemoteId { remote_id: RemoteMovieId },
 }
 
 /// Actions that can be performed after a task has completed.
@@ -860,6 +909,7 @@ impl Task {
             TaskKind::DownloadSeriesById { series_id, .. } => *series_id == *id,
             TaskKind::CheckForUpdates { series_id, .. } => *series_id == *id,
             TaskKind::DownloadSeriesByRemoteId { .. } => false,
+            TaskKind::DownloadMovieByRemoteId { .. } => false,
         }
     }
 }
@@ -879,6 +929,15 @@ pub(crate) struct SearchSeries {
     pub(crate) poster: Option<Image>,
     pub(crate) overview: Option<String>,
     pub(crate) first_aired: Option<NaiveDate>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SearchMovie {
+    pub(crate) id: RemoteMovieId,
+    pub(crate) title: String,
+    pub(crate) poster: Option<Image>,
+    pub(crate) overview: Option<String>,
+    pub(crate) release_date: Option<NaiveDate>,
 }
 
 /// A series that is scheduled to be aired.

@@ -18,13 +18,11 @@ use crate::assets::ImageKey;
 use crate::cache::{self};
 use crate::database::Change;
 use crate::database::Database;
-use crate::model::Pending;
-use crate::model::RemoteEpisodeId;
-use crate::model::WatchedKind;
 use crate::model::{
-    Config, Episode, EpisodeId, Etag, Image, RemoteSeriesId, ScheduledDay, ScheduledSeries,
-    SearchSeries, Season, SeasonNumber, Series, SeriesId, Task, TaskFinished, TaskKind, ThemeType,
-    Watched,
+    Config, Episode, EpisodeId, Etag, Image, Movie, MovieId, Pending, RemoteEpisodeId,
+    RemoteMovieId, RemoteSeriesId, ScheduledDay, ScheduledSeries, SearchMovie, SearchSeries,
+    Season, SeasonNumber, Series, SeriesId, Task, TaskFinished, TaskKind, ThemeType, Watched,
+    WatchedKind,
 };
 use crate::queue::{TaskRunning, TaskStatus};
 
@@ -147,6 +145,12 @@ impl Service {
     /// Get a single series.
     pub(crate) fn series(&self, id: &SeriesId) -> Option<&Series> {
         self.db.series.get(id)
+    }
+
+    /// Get a single movie.
+    pub(crate) fn movie(&self, id: &MovieId) -> Option<&Movie> {
+        // TODO: implement this
+        None
     }
 
     /// Get a single series mutably.
@@ -724,6 +728,12 @@ impl Service {
         self.db.series.get(&id)
     }
 
+    /// Check if movie is tracked.
+    pub(crate) fn get_movie_by_remote(&self, id: &RemoteMovieId) -> Option<&Movie> {
+        // TODO: implement this.
+        None
+    }
+
     /// Remove the given series by ID.
     pub(crate) fn remove_series(&mut self, series_id: &SeriesId) {
         let _ = self.db.series.remove(series_id);
@@ -807,7 +817,7 @@ impl Service {
     }
 
     /// If the series is already loaded in the local database, simply mark it as tracked.
-    pub(crate) fn set_tracked_by_remote(&mut self, id: &RemoteSeriesId) -> bool {
+    pub(crate) fn set_series_tracked_by_remote(&mut self, id: &RemoteSeriesId) -> bool {
         let Some(id) = self.db.remotes.get_series(id) else {
             return false;
         };
@@ -979,14 +989,24 @@ impl Service {
         async move { tvdb.search_by_name(&query).await }
     }
 
-    /// Search tmdb.
-    pub(crate) fn search_tmdb(
+    /// Search series from tmdb.
+    pub(crate) fn search_series_tmdb(
         &self,
         query: &str,
     ) -> impl Future<Output = Result<Vec<SearchSeries>>> {
         let tmdb = self.tmdb.clone();
         let query = query.to_owned();
         async move { tmdb.search_series(&query).await }
+    }
+
+    /// Search movies from tmdb.
+    pub(crate) fn search_movies_tmdb(
+        &self,
+        query: &str,
+    ) -> impl Future<Output = Result<Vec<SearchMovie>>> {
+        let tmdb = self.tmdb.clone();
+        let query = query.to_owned();
+        async move { tmdb.search_movies(&query).await }
     }
 
     /// Build schedule information.

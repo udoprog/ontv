@@ -4,9 +4,13 @@ use iced::{theme, Alignment, Commands, Element, Length};
 use uuid::Uuid;
 
 use crate::error::{ErrorId, ErrorInfo};
-use crate::model::{RemoteSeriesId, SearchKind, SearchSeries, SeriesId, TaskKind};
+use crate::model::{
+    MovieId, RemoteMovieId, RemoteSeriesId, SearchKind, SearchMovie, SearchSeries, SeriesId,
+    TaskKind,
+};
 use crate::params::{
-    default_container, GAP, GAP2, IMAGE_HEIGHT, POSTER_HINT, SMALL, SPACE, TITLE_SIZE,
+    default_container, GAP, GAP2, IMAGE_HEIGHT, POSTER_HINT, SMALL, SPACE, SUBTITLE_SIZE,
+    TITLE_SIZE,
 };
 use crate::queue::TaskStatus;
 use crate::state::{Page, State};
@@ -21,12 +25,16 @@ pub(crate) enum Message {
     Navigate(Page),
     Search,
     Change(String),
-    Page(usize),
-    Result(Vec<SearchSeries>),
+    SeriesPage(usize),
+    MoviesPage(usize),
+    Result(Vec<SearchSeries>, Vec<SearchMovie>),
     SearchKindChanged(SearchKind),
     AddSeriesByRemote(RemoteSeriesId),
     SwitchSeries(SeriesId, RemoteSeriesId),
     RemoveSeries(SeriesId),
+    AddMovieByRemote(RemoteMovieId),
+    SwitchMovie(MovieId, RemoteMovieId),
+    RemoveMovie(MovieId),
 }
 
 /// The state for the settings page.
@@ -34,7 +42,9 @@ pub(crate) enum Message {
 pub(crate) struct Search {
     text: String,
     series: Vec<SearchSeries>,
-    page: usize,
+    movies: Vec<SearchMovie>,
+    series_page: usize,
+    movies_page: usize,
     // Unique identifier of last search so that we can look up any recorded errors.
     search_id: Uuid,
 }
@@ -45,7 +55,16 @@ impl Search {
         s.assets.mark_with_hint(
             self.series
                 .iter()
-                .skip(self.page * PER_PAGE)
+                .skip(self.series_page * PER_PAGE)
+                .take(PER_PAGE)
+                .flat_map(|s| s.poster),
+            POSTER_HINT,
+        );
+
+        s.assets.mark_with_hint(
+            self.movies
+                .iter()
+                .skip(self.movies_page * PER_PAGE)
                 .take(PER_PAGE)
                 .flat_map(|s| s.poster),
             POSTER_HINT,
@@ -72,12 +91,17 @@ impl Search {
             Message::Change(text) => {
                 self.text = text;
             }
-            Message::Page(page) => {
-                self.page = page;
+            Message::SeriesPage(page) => {
+                self.series_page = page;
                 s.assets.clear();
             }
-            Message::Result(series) => {
+            Message::MoviesPage(page) => {
+                self.movies_page = page;
+                s.assets.clear();
+            }
+            Message::Result(series, movies) => {
                 self.series = series;
+                self.movies = movies;
                 s.assets.clear();
             }
             Message::SearchKindChanged(kind) => {
@@ -96,6 +120,9 @@ impl Search {
             Message::RemoveSeries(series_id) => {
                 s.remove_series(&series_id);
             }
+            Message::AddMovieByRemote(_) => {}
+            Message::SwitchMovie(_, _) => {}
+            Message::RemoveMovie(_) => {}
         }
     }
 
@@ -104,52 +131,70 @@ impl Search {
             return;
         }
 
-        self.page = 0;
+        self.series_page = 0;
+        self.movies_page = 0;
 
         let search_id = Uuid::new_v4();
         let query = self.text.clone();
         let search_kind = s.service.config().search_kind;
         self.search_id = search_id;
 
-        let translate = move |out: Result<_>| match out
-            .with_context(|| anyhow!("Searching {search_kind} for `{query}`"))
-        {
-            Ok(series) => Message::Result(series),
-            Err(error) => Message::Error(ErrorInfo::new(ErrorId::Search(search_id), error)),
-        };
-
         match search_kind {
             SearchKind::Tvdb => {
                 let op = s.service.search_tvdb(&self.text);
+
+                let translate = move |out: Result<_>| match out
+                    .with_context(|| anyhow!("Searching {search_kind} for `{query}`"))
+                {
+                    Ok(series) => Message::Result(series, Vec::new()),
+                    Err(error) => Message::Error(ErrorInfo::new(ErrorId::Search(search_id), error)),
+                };
+
                 commands.perform(op, translate);
             }
             SearchKind::Tmdb => {
-                let op = s.service.search_tmdb(&self.text);
-                commands.perform(op, translate);
+                let series = s.service.search_series_tmdb(&self.text);
+                let movies = s.service.search_movies_tmdb(&self.text);
+
+                let op = async move {
+                    match tokio::try_join!(series, movies) {
+                        Ok((series, movies)) => Message::Result(series, movies),
+                        Err(error) => {
+                            Message::Error(ErrorInfo::new(ErrorId::Search(search_id), error))
+                        }
+                    }
+                };
+
+                commands.perform(op, |out| out);
             }
         }
     }
 
     /// Generate the view for the settings page.
-    pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
-        let mut results = Column::new();
+    pub(crate) fn view(&self, st: &State) -> Element<'static, Message> {
+        let mut series = Column::new();
 
-        for series in self.series.iter().skip(self.page * PER_PAGE).take(PER_PAGE) {
-            let local_series = s.service.get_series_by_remote(&series.id);
+        for s in self
+            .series
+            .iter()
+            .skip(self.series_page * PER_PAGE)
+            .take(PER_PAGE)
+        {
+            let local_series = st.service.get_series_by_remote(&s.id);
 
-            let handle = match series
+            let handle = match s
                 .poster
-                .and_then(|p| s.assets.image_with_hint(&p, POSTER_HINT))
+                .and_then(|p| st.assets.image_with_hint(&p, POSTER_HINT))
             {
                 Some(handle) => handle,
-                None => s.missing_poster(),
+                None => st.missing_poster(),
             };
 
             let mut actions = Row::new();
 
-            let status = s.service.task_status(&TaskKind::DownloadSeriesByRemoteId {
-                remote_id: series.id,
-            });
+            let status = st
+                .service
+                .task_status(&TaskKind::DownloadSeriesByRemoteId { remote_id: s.id });
 
             match status {
                 Some(TaskStatus::Pending) => {
@@ -162,41 +207,41 @@ impl Search {
                     );
                 }
                 None => {
-                    if let Some(s) = local_series {
-                        if s.remote_id != Some(series.id) {
+                    if let Some(local) = local_series {
+                        if local.remote_id != Some(s.id) {
                             actions = actions.push(
                                 button(text("Switch").size(SMALL))
                                     .style(theme::Button::Primary)
-                                    .on_press(Message::SwitchSeries(s.id, series.id)),
+                                    .on_press(Message::SwitchSeries(local.id, s.id)),
                             );
                         }
 
                         actions = actions.push(
                             button(text("Remove").size(SMALL))
                                 .style(theme::Button::Destructive)
-                                .on_press(Message::RemoveSeries(s.id)),
+                                .on_press(Message::RemoveSeries(local.id)),
                         );
                     } else {
                         actions = actions.push(
                             button(text("Add").size(SMALL))
                                 .style(theme::Button::Positive)
-                                .on_press(Message::AddSeriesByRemote(series.id)),
+                                .on_press(Message::AddSeriesByRemote(s.id)),
                         );
                     }
                 }
             }
 
-            let overview = series.overview.as_deref().unwrap_or_default();
+            let overview = s.overview.as_deref().unwrap_or_default();
 
             let mut first_aired = Column::new();
 
-            if let Some(date) = series.first_aired {
+            if let Some(date) = s.first_aired {
                 first_aired = first_aired.push(text(format!("First aired: {date}")).size(SMALL));
             }
 
             let mut result = Column::new();
 
-            let series_name = text(&series.name).size(24);
+            let series_name = text(&s.name).size(SUBTITLE_SIZE);
 
             if let Some(local_series) = local_series {
                 result = result.push(
@@ -212,7 +257,7 @@ impl Search {
             result = result.push(first_aired);
             result = result.push(actions.spacing(SPACE));
 
-            results = results.push(
+            series = series.push(
                 Row::new()
                     .push(image(handle).height(Length::Units(IMAGE_HEIGHT)))
                     .push(
@@ -225,34 +270,115 @@ impl Search {
             );
         }
 
-        let mut pages = Row::new();
+        series = series.push(paginate(
+            self.series_page,
+            self.series.len(),
+            Message::SeriesPage,
+        ));
 
-        if self.series.len() > PER_PAGE {
-            let mut prev = button("previous page").style(theme::Button::Positive);
-            let mut next = button("next page").style(theme::Button::Positive);
+        let mut movies = Column::new();
 
-            if let Some(page) = self.page.checked_sub(1) {
-                prev = prev.on_press(Message::Page(page));
+        for m in self
+            .movies
+            .iter()
+            .skip(self.movies_page * PER_PAGE)
+            .take(PER_PAGE)
+        {
+            let local_movie = st.service.get_movie_by_remote(&m.id);
+
+            let handle = match m
+                .poster
+                .and_then(|p| st.assets.image_with_hint(&p, POSTER_HINT))
+            {
+                Some(handle) => handle,
+                None => st.missing_poster(),
+            };
+
+            let mut actions = Row::new();
+
+            let status = st
+                .service
+                .task_status(&TaskKind::DownloadMovieByRemoteId { remote_id: m.id });
+
+            match status {
+                Some(TaskStatus::Pending) => {
+                    actions = actions
+                        .push(button(text("Queued...").size(SMALL)).style(theme::Button::Primary));
+                }
+                Some(TaskStatus::Running) => {
+                    actions = actions.push(
+                        button(text("Downloading...").size(SMALL)).style(theme::Button::Primary),
+                    );
+                }
+                None => {
+                    if let Some(local) = local_movie {
+                        if local.remote_id != Some(m.id) {
+                            actions = actions.push(
+                                button(text("Switch").size(SMALL))
+                                    .style(theme::Button::Primary)
+                                    .on_press(Message::SwitchMovie(local.id, m.id)),
+                            );
+                        }
+
+                        actions = actions.push(
+                            button(text("Remove").size(SMALL))
+                                .style(theme::Button::Destructive)
+                                .on_press(Message::RemoveMovie(local.id)),
+                        );
+                    } else {
+                        actions = actions.push(
+                            button(text("Add").size(SMALL))
+                                .style(theme::Button::Positive)
+                                .on_press(Message::AddMovieByRemote(m.id)),
+                        );
+                    }
+                }
             }
 
-            if (self.page + 1) * PER_PAGE < self.series.len() {
-                next = next.on_press(Message::Page(self.page + 1));
+            let overview = m.overview.as_deref().unwrap_or_default();
+
+            let mut release_date = Column::new();
+
+            if let Some(date) = m.release_date {
+                release_date = release_date.push(text(format!("First aired: {date}")).size(SMALL));
             }
 
-            let text = text(format!(
-                "{}-{} ({})",
-                self.page * PER_PAGE,
-                ((self.page + 1) * PER_PAGE).min(self.series.len()),
-                self.series.len(),
-            ));
+            let mut result = Column::new();
 
-            pages = Row::new()
-                .push(prev)
-                .push(next)
-                .push(text)
-                .align_items(Alignment::Center)
-                .spacing(GAP);
+            let movie_title = text(&m.title).size(SUBTITLE_SIZE);
+
+            if let Some(local_movie) = local_movie {
+                result = result.push(
+                    button(movie_title)
+                        .style(theme::Button::Text)
+                        .padding(0)
+                        .on_press(Message::Navigate(Page::Movie(local_movie.id))),
+                );
+            } else {
+                result = result.push(movie_title);
+            }
+
+            result = result.push(release_date);
+            result = result.push(actions.spacing(SPACE));
+
+            movies = movies.push(
+                Row::new()
+                    .push(image(handle).height(Length::Units(IMAGE_HEIGHT)))
+                    .push(
+                        Column::new()
+                            .push(result.spacing(SPACE))
+                            .push(text(overview))
+                            .spacing(GAP),
+                    )
+                    .spacing(GAP),
+            );
         }
+
+        movies = movies.push(paginate(
+            self.movies_page,
+            self.movies.len(),
+            Message::MoviesPage,
+        ));
 
         let query = text_input("Query...", &self.text, Message::Change).on_submit(Message::Search);
 
@@ -272,9 +398,9 @@ impl Search {
                 .fold(search_kind, |column, kind| {
                     column.push(
                         radio(
-                            format!("{kind}"),
+                            kind.to_string(),
                             *kind,
-                            Some(s.service.config().search_kind),
+                            Some(st.service.config().search_kind),
                             Message::SearchKindChanged,
                         )
                         .size(SMALL),
@@ -286,7 +412,7 @@ impl Search {
         page = page.push(text("Search").size(TITLE_SIZE));
         page = page.push(Row::new().push(query).push(submit));
 
-        if let Some(e) = s.get_error(ErrorId::Search(self.search_id)) {
+        if let Some(e) = st.get_error(ErrorId::Search(self.search_id)) {
             page = page.push(
                 button(text(format!("Error: {}", e.message)))
                     .width(Length::Fill)
@@ -296,9 +422,47 @@ impl Search {
         }
 
         page = page.push(search_kind.spacing(SPACE));
-        page = page.push(results.spacing(GAP2));
-        page = page.push(pages);
 
+        let mut row = Row::new();
+        row = row.push(series.spacing(GAP2).width(Length::FillPortion(1)));
+        row = row.push(movies.spacing(GAP2).width(Length::FillPortion(1)));
+        page = page.push(row.spacing(GAP2));
         default_container(page.spacing(GAP).padding(GAP)).into()
     }
+}
+
+fn paginate<M>(page: usize, len: usize, m: M) -> Row<'static, Message>
+where
+    M: FnOnce(usize) -> Message + Copy,
+{
+    let mut row = Row::new();
+
+    if len > PER_PAGE {
+        let mut prev = button("previous page").style(theme::Button::Positive);
+        let mut next = button("next page").style(theme::Button::Positive);
+
+        if let Some(page) = page.checked_sub(1) {
+            prev = prev.on_press(m(page));
+        }
+
+        if (page + 1) * PER_PAGE < len {
+            next = next.on_press(m(page + 1));
+        }
+
+        let text = text(format!(
+            "{}-{} ({})",
+            page * PER_PAGE,
+            ((page + 1) * PER_PAGE).min(len),
+            len,
+        ));
+
+        row = Row::new()
+            .push(prev)
+            .push(next)
+            .push(text)
+            .align_items(Alignment::Center)
+            .spacing(GAP);
+    }
+
+    row
 }

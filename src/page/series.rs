@@ -79,7 +79,6 @@ impl Series {
         }
     }
 
-    /// Render view of series.
     pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
         let Some(series) = s.service.series(&self.series_id) else {
             return Column::new().into();

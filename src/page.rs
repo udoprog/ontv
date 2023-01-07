@@ -13,6 +13,9 @@ pub(crate) use self::season::Season;
 pub(crate) mod series;
 pub(crate) use self::series::Series;
 
+pub(crate) mod movie;
+pub(crate) use self::movie::Movie;
+
 pub(crate) mod series_list;
 pub(crate) use self::series_list::SeriesList;
 
