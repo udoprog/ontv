@@ -1410,7 +1410,7 @@ dependencies = [
 [[package]]
 name = "iced"
 version = "0.6.0"
-source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
+source = "git+https://github.com/iced-rs/iced?branch=master#7ccd87c36b54e0d53f65f5774f140a0528ae4504"
 dependencies = [
  "iced_core",
  "iced_futures",
@@ -1426,7 +1426,7 @@ dependencies = [
 [[package]]
 name = "iced_core"
 version = "0.6.2"
-source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
+source = "git+https://github.com/iced-rs/iced?branch=master#7ccd87c36b54e0d53f65f5774f140a0528ae4504"
 dependencies = [
  "bitflags",
  "palette",
@@ -1436,7 +1436,7 @@ dependencies = [
 [[package]]
 name = "iced_futures"
 version = "0.5.1"
-source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
+source = "git+https://github.com/iced-rs/iced?branch=master#7ccd87c36b54e0d53f65f5774f140a0528ae4504"
 dependencies = [
  "futures",
  "log",
@@ -1448,7 +1448,7 @@ dependencies = [
 [[package]]
 name = "iced_glow"
 version = "0.5.1"
-source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
+source = "git+https://github.com/iced-rs/iced?branch=master#7ccd87c36b54e0d53f65f5774f140a0528ae4504"
 dependencies = [
  "bytemuck",
  "euclid",
@@ -1463,7 +1463,7 @@ dependencies = [
 [[package]]
 name = "iced_graphics"
 version = "0.5.0"
-source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
+source = "git+https://github.com/iced-rs/iced?branch=master#7ccd87c36b54e0d53f65f5774f140a0528ae4504"
 dependencies = [
  "bitflags",
  "bytemuck",
@@ -1480,7 +1480,7 @@ dependencies = [
 [[package]]
 name = "iced_native"
 version = "0.7.0"
-source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
+source = "git+https://github.com/iced-rs/iced?branch=master#7ccd87c36b54e0d53f65f5774f140a0528ae4504"
 dependencies = [
  "iced_core",
  "iced_futures",
@@ -1493,7 +1493,7 @@ dependencies = [
 [[package]]
 name = "iced_style"
 version = "0.5.1"
-source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
+source = "git+https://github.com/iced-rs/iced?branch=master#7ccd87c36b54e0d53f65f5774f140a0528ae4504"
 dependencies = [
  "iced_core",
  "once_cell",
@@ -1503,7 +1503,7 @@ dependencies = [
 [[package]]
 name = "iced_wgpu"
 version = "0.7.0"
-source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
+source = "git+https://github.com/iced-rs/iced?branch=master#7ccd87c36b54e0d53f65f5774f140a0528ae4504"
 dependencies = [
  "bitflags",
  "bytemuck",
@@ -1523,7 +1523,7 @@ dependencies = [
 [[package]]
 name = "iced_winit"
 version = "0.6.0"
-source = "git+https://github.com/udoprog/iced?branch=commands#fc0f0f501aae4ab5d819af7b14ab1ebe8d1b8d00"
+source = "git+https://github.com/iced-rs/iced?branch=master#7ccd87c36b54e0d53f65f5774f140a0528ae4504"
 dependencies = [
  "iced_futures",
  "iced_graphics",

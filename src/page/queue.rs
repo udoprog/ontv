@@ -3,8 +3,9 @@ use std::time::Duration;
 use chrono::Utc;
 use iced::alignment::Horizontal;
 use iced::widget::{button, horizontal_rule, text, vertical_space, Column, Row};
-use iced::{theme, Commands, Element, Length};
+use iced::{theme, Element, Length};
 
+use crate::commands::Commands;
 use crate::model::{RemoteMovieId, RemoteSeriesId, SeriesId, TaskKind};
 use crate::params::{default_container, duration_display, GAP, GAP2, SMALL, SPACE};
 use crate::state::{Page, State};

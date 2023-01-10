@@ -52,9 +52,9 @@ uuid = { version = "1.2.2", features = ["v4", "serde"] }
 webbrowser = "0.8.4"
 
 [patch.crates-io]
-iced = { git = "https://github.com/udoprog/iced", branch = "commands" }
-iced_futures = { git = "https://github.com/udoprog/iced", branch = "commands" }
-iced_native = { git = "https://github.com/udoprog/iced", branch = "commands" }
+iced = { git = "https://github.com/iced-rs/iced", branch = "master" }
+iced_futures = { git = "https://github.com/iced-rs/iced", branch = "master" }
+iced_native = { git = "https://github.com/iced-rs/iced", branch = "master" }
 
 [build-dependencies]
 anyhow = "1.0.68"

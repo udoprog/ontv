@@ -3,12 +3,14 @@ use std::time::Duration;
 use anyhow::Result;
 use chrono::Utc;
 use iced::theme::{self, Theme};
+use iced::widget::scrollable::RelativeOffset;
 use iced::widget::{button, horizontal_rule, scrollable, text, Button, Column, Row, Space};
-use iced::{window, Alignment, Commands, Element, Length};
+use iced::{window, Alignment, Command, Element, Length};
 use iced_native::image::Handle;
 use uuid::Uuid;
 
 use crate::assets::{Assets, ImageKey};
+use crate::commands::{Commands, CommandsBuf};
 use crate::error::ErrorInfo;
 use crate::model::{Task, TaskFinished, TaskKind};
 use crate::page;
@@ -46,7 +48,7 @@ pub(crate) enum Message {
     /// Navigate history by the specified stride.
     History(isize),
     /// A scroll happened.
-    Scroll(f32),
+    Scroll(RelativeOffset),
     /// Images have been loaded in the background.
     ImagesLoaded(Result<Vec<(ImageKey, Handle)>, ErrorInfo>),
     /// Update download queue with the given items.
@@ -72,6 +74,8 @@ enum Current {
 
 /// Main application.
 pub(crate) struct Application {
+    /// Our own command buffer.
+    commands: CommandsBuf<Message>,
     /// Application state.
     state: State,
     /// Current page state.
@@ -102,13 +106,14 @@ impl iced::Application for Application {
     type Theme = Theme;
     type Flags = Flags;
 
-    fn new(flags: Self::Flags, mut commands: impl Commands<Self::Message>) -> Self {
+    fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
         let today = Utc::now().date_naive();
 
         let state = State::new(flags.service, Assets::new(), today);
         let current = Current::Dashboard(page::dashboard::Dashboard::new(&state));
 
         let mut this = Application {
+            commands: CommandsBuf::default(),
             state,
             current,
             database_timeout: Timeout::default(),
@@ -121,10 +126,12 @@ impl iced::Application for Application {
         };
 
         this.prepare();
-        this.handle_image_loading(commands.by_ref());
-        this.handle_process_queue(commands.by_ref(), None);
-        commands.perform(async { TimedOut::TimedOut }, Message::CheckForUpdates);
-        this
+        this.handle_image_loading();
+        this.handle_process_queue(None);
+        this.commands
+            .perform(async { TimedOut::TimedOut }, Message::CheckForUpdates);
+        let command = this.commands.build();
+        (this, command)
     }
 
     #[inline]
@@ -173,7 +180,7 @@ impl iced::Application for Application {
         BASE.to_string()
     }
 
-    fn update(&mut self, message: Message, mut commands: impl Commands<Self::Message>) {
+    fn update(&mut self, message: Message) -> Command<Message> {
         log::trace!("{message:?}");
 
         match (message, &mut self.current) {
@@ -187,7 +194,7 @@ impl iced::Application for Application {
                 page.update(
                     &mut self.state,
                     message,
-                    commands.by_ref().map(Message::Search),
+                    self.commands.by_ref().map(Message::Search),
                 );
             }
             (Message::SeriesList(message), Current::SeriesList(page)) => {
@@ -203,7 +210,7 @@ impl iced::Application for Application {
                 page.update(
                     &mut self.state,
                     message,
-                    commands.by_ref().map(Message::Queue),
+                    self.commands.by_ref().map(Message::Queue),
                 );
             }
             (Message::Errors(message), Current::Errors(page)) => {
@@ -217,24 +224,25 @@ impl iced::Application for Application {
                 if self.database_timeout.is_set() {
                     self.database_timeout.clear();
                 } else {
-                    commands.command(window::close());
+                    self.commands.command(window::close());
                 }
 
-                return;
+                return self.commands.build();
             }
             (Message::Save(timed_out), _) => {
                 // To avoid a cancellation loop we need to return here.
                 if !matches!(timed_out, TimedOut::TimedOut) && !self.exit_after_save {
-                    return;
+                    return self.commands.build();
                 }
 
                 self.database_timeout.clear();
                 self.state.set_saving(true);
 
-                commands.perform(self.state.service.save_changes(), |result| match result {
-                    Ok(()) => Message::Saved(Ok(())),
-                    Err(error) => Message::Saved(Err(error.into())),
-                })
+                self.commands
+                    .perform(self.state.service.save_changes(), |result| match result {
+                        Ok(()) => Message::Saved(Ok(())),
+                        Err(error) => Message::Saved(Err(error.into())),
+                    })
             }
             (Message::Saved(result), _) => {
                 if let Err(error) = result {
@@ -242,7 +250,7 @@ impl iced::Application for Application {
                 }
 
                 if self.exit_after_save {
-                    commands.command(window::close());
+                    self.commands.command(window::close());
                 }
 
                 self.state.set_saving(false);
@@ -258,7 +266,7 @@ impl iced::Application for Application {
                 }
 
                 // Schedule next update.
-                commands.perform(
+                self.commands.perform(
                     self.update_timeout.set(Duration::from_secs(UPDATE_TIMEOUT)),
                     Message::CheckForUpdates,
                 );
@@ -296,8 +304,8 @@ impl iced::Application for Application {
                 }
 
                 self.image_loader.clear();
-                self.handle_image_loading(&mut commands);
-                return;
+                self.handle_image_loading();
+                return self.commands.build();
             }
             (Message::TaskSeriesDownloaded(result, task), _) => {
                 match result {
@@ -314,13 +322,13 @@ impl iced::Application for Application {
                 self.state.service.complete_task(task);
             }
             (Message::ProcessQueue(TimedOut::TimedOut, id), _) => {
-                self.handle_process_queue(&mut commands, Some(id));
+                self.handle_process_queue(Some(id));
             }
             _ => {}
         };
 
         if self.state.service.has_changes() && !self.exit_after_save {
-            commands.perform(
+            self.commands.perform(
                 self.database_timeout.set(Duration::from_secs(5)),
                 Message::Save,
             );
@@ -338,19 +346,21 @@ impl iced::Application for Application {
                     Current::Season(page::Season::new(series_id, season))
                 }
                 Page::Queue => {
-                    let page = page::Queue::new(commands.by_ref().map(Message::Queue));
+                    let page = page::Queue::new(self.commands.by_ref().map(Message::Queue));
                     Current::Queue(page)
                 }
                 Page::Errors => Current::Errors(page::Errors::default()),
             };
 
-            commands.command(scrollable::snap_to(self.scrollable_id.clone(), scroll));
+            self.commands
+                .command(scrollable::snap_to(self.scrollable_id.clone(), scroll));
         }
 
         self.prepare();
 
-        self.handle_image_loading(commands.by_ref());
-        self.handle_setup_queue(commands.by_ref());
+        self.handle_image_loading();
+        self.handle_setup_queue();
+        self.commands.build()
     }
 
     #[inline]
@@ -552,7 +562,7 @@ impl Application {
     }
 
     /// Handle image loading.
-    fn handle_image_loading(&mut self, mut commands: impl Commands<Message>) {
+    fn handle_image_loading(&mut self) {
         fn translate(value: Option<Result<Vec<(ImageKey, Handle)>>>) -> Message {
             match value {
                 Some(Ok(value)) => Message::ImagesLoaded(Ok(value)),
@@ -582,22 +592,18 @@ impl Application {
         let future = self
             .image_loader
             .set(self.state.service.load_images(&self.images));
-        commands.perform(future, translate);
+        self.commands.perform(future, translate);
     }
 
     /// Setup queue processing.
-    fn handle_setup_queue(&mut self, commands: impl Commands<Message>) {
+    fn handle_setup_queue(&mut self) {
         if self.state.service.take_tasks_modified() {
-            self.handle_process_queue(commands, None)
+            self.handle_process_queue(None)
         }
     }
 
     /// Handle process queue.
-    fn handle_process_queue(
-        &mut self,
-        mut commands: impl Commands<Message>,
-        timed_out: Option<Uuid>,
-    ) {
+    fn handle_process_queue(&mut self, timed_out: Option<Uuid>) {
         let now = Utc::now();
 
         while let Some(task) = self.state.service.next_task(&now, timed_out) {
@@ -610,7 +616,7 @@ impl Application {
                 } => {
                     if let Some(future) = self.state.service.check_for_updates(series_id, remote_id)
                     {
-                        commands.perform(future, move |output| match output {
+                        self.commands.perform(future, move |output| match output {
                             Ok(update) => {
                                 Message::TaskUpdateDownloadQueue(Ok(update), task.clone())
                             }
@@ -624,7 +630,7 @@ impl Application {
                 }
                 TaskKind::DownloadSeriesById { series_id } => {
                     if let Some(future) = self.state.refresh_series(series_id) {
-                        commands.perform(future, move |result| match result {
+                        self.commands.perform(future, move |result| match result {
                             Ok(new_series) => {
                                 Message::TaskSeriesDownloaded(Ok(new_series), task.clone())
                             }
@@ -640,7 +646,7 @@ impl Application {
                     if self.state.service.set_series_tracked_by_remote(remote_id) {
                         self.state.service.complete_task(task);
                     } else {
-                        commands.perform(
+                        self.commands.perform(
                             self.state
                                 .service
                                 .download_series_by_remote(remote_id, None),
@@ -665,7 +671,7 @@ impl Application {
         if let Some((seconds, id)) = self.state.service.next_task_sleep(&now) {
             log::trace!("next queue sleep: {seconds}s");
 
-            commands.perform(
+            self.commands.perform(
                 self.queue_timeout.set(Duration::from_secs(seconds)),
                 move |timed_out| Message::ProcessQueue(timed_out, id),
             );

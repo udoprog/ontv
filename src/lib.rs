@@ -47,6 +47,7 @@ mod api;
 mod application;
 mod assets;
 mod cache;
+mod commands;
 mod component;
 mod comps;
 mod database;

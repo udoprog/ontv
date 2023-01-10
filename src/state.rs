@@ -3,6 +3,7 @@ use std::future::Future;
 
 use anyhow::Result;
 use chrono::{Duration, NaiveDate, Utc};
+use iced::widget::scrollable::RelativeOffset;
 
 use crate::assets::Assets;
 use crate::error::{ErrorId, ErrorInfo};
@@ -29,7 +30,7 @@ pub(crate) struct State {
     /// Asset loader.
     pub(crate) assets: Assets,
     // History entries.
-    history: Vec<(Page, f32)>,
+    history: Vec<(Page, RelativeOffset)>,
     // Current history entry.
     history_index: usize,
     // History has changed.
@@ -51,7 +52,7 @@ impl State {
         Self {
             service,
             assets,
-            history: vec![(Page::Dashboard, 0.0)],
+            history: vec![(Page::Dashboard, RelativeOffset::default())],
             history_index: 0,
             history_changed: false,
             error_ids: HashSet::new(),
@@ -84,13 +85,13 @@ impl State {
             self.history.pop();
         }
 
-        self.history.push((page, 0.0));
+        self.history.push((page, RelativeOffset::default()));
         self.history_index += 1;
         self.history_changed = true;
     }
 
     /// Update scroll location in history.
-    pub(crate) fn history_scroll(&mut self, scroll: f32) {
+    pub(crate) fn history_scroll(&mut self, scroll: RelativeOffset) {
         if let Some((_, s)) = self.history.get_mut(self.history_index) {
             *s = scroll;
         }
@@ -109,7 +110,7 @@ impl State {
     }
 
     /// Acquire history scroll to restore.
-    pub(crate) fn history_change(&mut self) -> Option<(Page, f32)> {
+    pub(crate) fn history_change(&mut self) -> Option<(Page, RelativeOffset)> {
         if !self.history_changed {
             return None;
         }

@@ -1,8 +1,9 @@
 use anyhow::{anyhow, Context, Result};
 use iced::widget::{button, image, radio, text, text_input, Column, Row};
-use iced::{theme, Alignment, Commands, Element, Length};
+use iced::{theme, Alignment, Element, Length};
 use uuid::Uuid;
 
+use crate::commands::Commands;
 use crate::error::{ErrorId, ErrorInfo};
 use crate::model::{
     MovieId, RemoteMovieId, RemoteSeriesId, SearchKind, SearchMovie, SearchSeries, SeriesId,
