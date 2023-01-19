@@ -108,7 +108,7 @@ pub fn import_trakt_watched(
             log::info!("imported watch history for `{}`", entry.show.title);
         }
 
-        service.populate_pending(&series_id, None);
+        service.populate_pending(&series_id);
         runtime.block_on(service.save_changes())?;
     }
 

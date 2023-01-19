@@ -34,9 +34,9 @@ clap = { version = "4.0.32", features = ["derive"] }
 directories-next = "2.0.0"
 fixed-map = "0.8.1"
 futures = "0.3.25"
-iced = { version = "0.6.0", features = ["image", "tokio"] }
+iced = { version = "0.7.0", features = ["image", "tokio"] }
 iced_futures = { version = "0.5.1", features = ["tokio"] }
-iced_native = "0.7.0"
+iced_native = "0.8.0"
 image_rs = { version = "0.24.5", package = "image" }
 log = "0.4.17"
 parking_lot = "0.12.1"
@@ -50,11 +50,6 @@ tokio = { version = "1.23.1", features = ["full"] }
 twox-hash = "1.6.3"
 uuid = { version = "1.2.2", features = ["v4", "serde"] }
 webbrowser = "0.8.4"
-
-[patch.crates-io]
-iced = { git = "https://github.com/iced-rs/iced", branch = "master" }
-iced_futures = { git = "https://github.com/iced-rs/iced", branch = "master" }
-iced_native = { git = "https://github.com/iced-rs/iced", branch = "master" }
 
 [build-dependencies]
 anyhow = "1.0.68"

@@ -17,13 +17,13 @@ impl Movie {
         Self { movie_id }
     }
 
-    pub(crate) fn prepare(&mut self, s: &mut State) {}
+    pub(crate) fn prepare(&mut self, _: &mut State) {}
 
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
+    pub(crate) fn update(&mut self, _: &mut State, message: Message) {
         match message {}
     }
 
-    pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
+    pub(crate) fn view(&self, _: &State) -> Element<'static, Message> {
         let id = text(self.movie_id.to_string());
 
         Column::new().push(id).into()

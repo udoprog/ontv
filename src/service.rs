@@ -148,7 +148,7 @@ impl Service {
     }
 
     /// Get a single movie.
-    pub(crate) fn movie(&self, id: &MovieId) -> Option<&Movie> {
+    pub(crate) fn movie(&self, _: &MovieId) -> Option<&Movie> {
         // TODO: implement this
         None
     }
@@ -198,12 +198,6 @@ impl Service {
         episode_id: &EpisodeId,
     ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone {
         self.db.watched.get(episode_id)
-    }
-
-    /// Get the watch count for the given episodes.
-    #[inline]
-    pub(crate) fn watch_count(&self, episode_id: &EpisodeId) -> usize {
-        self.db.watched.get(episode_id).len()
     }
 
     /// Get task queue.
@@ -453,11 +447,11 @@ impl Service {
             last = Some(episode.id);
         }
 
-        let Some(last) = last else {
-            return;
-        };
-
-        self.populate_pending(series_id, Some(&last));
+        if let Some(last) = last {
+            self.populate_pending_from(series_id, &last);
+        } else {
+            self.remove_pending(series_id);
+        }
     }
 
     /// Mark an episode as watched at the given timestamp.
@@ -477,7 +471,7 @@ impl Service {
         });
 
         self.db.changes.change(Change::Watched);
-        self.populate_pending(series_id, Some(episode_id))
+        self.populate_pending_from(series_id, episode_id);
     }
 
     /// Skip an episode.
@@ -643,39 +637,73 @@ impl Service {
         self.db.save_changes(&self.paths, self.do_not_save)
     }
 
-    /// Ensure that at least one pending episode is present for the given
-    /// series.
-    pub(crate) fn populate_pending(
-        &mut self,
-        series_id: &SeriesId,
-        from_episode_id: Option<&EpisodeId>,
-    ) {
-        let mut eps = self.db.episodes.get(series_id).into_iter().flatten();
+    /// Remove pending for the given series.
+    fn remove_pending(&mut self, series_id: &SeriesId) {
+        if let Some(index) = self.db.pending.position_for_series(series_id) {
+            self.db.changes.change(Change::Pending);
+            self.db.pending.remove_by_index(index);
+        }
+    }
+
+    /// Populate pending from a series where we don't know which episode to
+    /// populate from.
+    pub(crate) fn populate_pending(&mut self, series_id: &SeriesId) {
         let pending = self.db.pending.position_for_series(series_id);
 
-        let (timestamp, episode) = if let Some(id) = from_episode_id {
-            let ts = self.db.watched.get(id).map(|w| w.timestamp).max();
-            let ep = eps.skip_while(|e| e.id != *id).nth(1);
-            (ts, ep)
-        } else {
-            if pending.is_some() {
-                // Do nothing since we already have a pending episode.
-                return;
+        if pending.is_some() {
+            // Do nothing since we already have a pending episode.
+            return;
+        }
+
+        let mut episode = None;
+
+        for e in self.db.episodes.get(series_id).into_iter().flatten() {
+            if self.db.watched.get(&e.id).len() > 0 {
+                episode = None;
+                continue;
             }
 
-            let ts = self.db.watched.series(series_id).map(|w| w.timestamp).max();
-            let ep = eps.find(|e| self.watch_count(&e.id) == 0 && !e.season.is_special());
-            (ts, ep)
-        };
+            if episode.is_none() {
+                episode = Some(e);
+            }
+        }
 
-        self.db.changes.change(Change::Pending);
+        let timestamp = self.db.watched.series(series_id).map(|w| w.timestamp).max();
 
         if let Some(index) = pending {
+            self.db.changes.change(Change::Pending);
             self.db.pending.remove_by_index(index);
         }
 
         // Mark the first episode (that has aired).
         if let (Some(timestamp), Some(e)) = (timestamp, episode) {
+            self.db.changes.change(Change::Pending);
+            // Mark the next episode in the show as pending.
+            self.db.pending.extend([Pending {
+                series: *series_id,
+                episode: e.id,
+                timestamp,
+            }]);
+        }
+    }
+
+    /// Populate pending from a known episode ID.
+    fn populate_pending_from(&mut self, series_id: &SeriesId, id: &EpisodeId) {
+        let pending = self.db.pending.position_for_series(series_id);
+
+        let timestamp = self.db.watched.get(&id).map(|w| w.timestamp).max();
+
+        if let Some(index) = pending {
+            self.db.changes.change(Change::Pending);
+            self.db.pending.remove_by_index(index);
+        }
+
+        let eps = self.db.episodes.get(series_id).into_iter().flatten();
+        let episode = eps.skip_while(|e| e.id != *id).nth(1);
+
+        // Mark the first episode (that has aired).
+        if let (Some(timestamp), Some(e)) = (timestamp, episode) {
+            self.db.changes.change(Change::Pending);
             // Mark the next episode in the show as pending.
             self.db.pending.extend([Pending {
                 series: *series_id,
@@ -729,7 +757,7 @@ impl Service {
     }
 
     /// Check if movie is tracked.
-    pub(crate) fn get_movie_by_remote(&self, id: &RemoteMovieId) -> Option<&Movie> {
+    pub(crate) fn get_movie_by_remote(&self, _: &RemoteMovieId) -> Option<&Movie> {
         // TODO: implement this.
         None
     }
@@ -880,7 +908,7 @@ impl Service {
         }
 
         // Remove any pending episodes for the given series.
-        self.populate_pending(&series_id, None);
+        self.populate_pending(&series_id);
         self.db.changes.add_series(&series_id);
     }
 
