@@ -472,13 +472,13 @@ pub(crate) struct Season {
     /// The number of the season.
     #[serde(default, skip_serializing_if = "SeasonNumber::is_special")]
     pub(crate) number: SeasonNumber,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) air_date: Option<NaiveDate>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) name: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) overview: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) poster: Option<Image>,
 }
 
