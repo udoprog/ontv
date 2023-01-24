@@ -39,6 +39,32 @@
 //! episode already has a watch history it will simply skip over that episode.
 //!
 //! This will take a while, so go get a ☕.
+//!
+//! <br>
+//!
+//! ## Storing your database in git
+//!
+//! > **Make sure that whatever repository you're using is private**, since
+//! > `config.json` will contain your API keys.
+//!
+//! OnTV is designed to store its state in a human-readable, filesystem-friendly
+//! text format, and will probably continue to do so until it turns out to not
+//! be a great idea any longer.
+//!
+//! If you want to store the configuration directory in git you'll have to find
+//! them first:
+//!
+//! * Windows: `%APPDATA%/setbac/ontv/config`
+//! * Linux: `~/.config/ontv` (I think).
+//!
+//! After this, you'll want to use a `.gitignore` file which excludes
+//! `sync.json` and `queue.json`, unless you want to be plagued by frequent
+//! changes:
+//!
+//! ```
+//! /sync.json
+//! /queue.json
+//! ```
 
 #![allow(incomplete_features)]
 #![feature(async_fn_in_trait)]
