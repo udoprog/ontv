@@ -1,6 +1,7 @@
 mod pending;
 mod remotes;
 mod series;
+mod sync;
 mod watched;
 
 use std::collections::{HashMap, HashSet};
@@ -34,6 +35,8 @@ pub(crate) struct Database {
     pub(crate) watched: watched::Database,
     /// Ordered list of things to watch.
     pub(crate) pending: pending::Database,
+    /// Synchronization state.
+    pub(crate) sync: sync::Database,
     /// Keeping track of changes to be saved.
     pub(crate) changes: Changes,
     /// Download queue.
@@ -68,6 +71,12 @@ impl Database {
             }
         }
 
+        if let Some(syncs) = load_array::<sync::Export>(&paths.sync)? {
+            for sync in syncs {
+                db.sync.import_push(sync);
+            }
+        }
+
         if let Some(tasks) = load_array::<Task>(&paths.queue)? {
             for task in tasks {
                 db.tasks.import_push(task);
@@ -77,7 +86,20 @@ impl Database {
         }
 
         if let Some(series) = load_series(&paths.series)? {
-            for s in series {
+            for mut s in series {
+                if let Some(etag) = s.compat_last_etag.take() {
+                    if db.sync.series_last_etag(&s.id, etag) {
+                        db.changes.change(Change::Sync);
+                    }
+                }
+
+                for (remote_id, last_sync) in std::mem::take(&mut s.compat_last_sync) {
+                    if db.sync.series_last_sync(&s.id, &remote_id, last_sync) {
+                        println!("save last sync");
+                        db.changes.change(Change::Sync);
+                    }
+                }
+
                 db.series.insert(s);
             }
         }
@@ -107,6 +129,7 @@ impl Database {
         Ok(db)
     }
 
+    /// Save any pending changes.
     pub(crate) fn save_changes(
         &mut self,
         paths: &Arc<Paths>,
@@ -118,6 +141,11 @@ impl Database {
             .set
             .contains(Change::Config)
             .then(|| self.config.clone());
+
+        let sync = changes
+            .set
+            .contains(Change::Sync)
+            .then(|| self.sync.export());
 
         let watched = changes
             .set
@@ -173,6 +201,10 @@ impl Database {
                 save_pretty("config", &paths.config, config).await?;
             }
 
+            if let Some(sync) = sync {
+                save_array("sync", &paths.sync, sync).await?;
+            }
+
             if let Some(series) = series {
                 save_array("series", &paths.series, series).await?;
             }
@@ -219,6 +251,8 @@ impl Database {
 pub(crate) enum Change {
     // Configuration file has changed.
     Config,
+    // Synchronization change.
+    Sync,
     // Watched list has changed.
     Watched,
     // Pending list has changed.

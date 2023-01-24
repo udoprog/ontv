@@ -31,6 +31,7 @@ use crate::queue::{TaskRunning, TaskStatus};
 pub(crate) struct NewSeries {
     series: Series,
     remote_ids: BTreeSet<RemoteSeriesId>,
+    last_etag: Option<Etag>,
     episodes: Vec<NewEpisode>,
     seasons: Vec<Season>,
 }
@@ -66,6 +67,7 @@ pub(crate) struct PendingRef<'a> {
 pub(crate) struct Paths {
     pub(crate) lock: tokio::sync::Mutex<()>,
     pub(crate) config: Box<Path>,
+    pub(crate) sync: Box<Path>,
     pub(crate) remotes: Box<Path>,
     pub(crate) queue: Box<Path>,
     pub(crate) images: Box<Path>,
@@ -94,6 +96,7 @@ impl Service {
         let paths = Paths {
             lock: tokio::sync::Mutex::new(()),
             config: config.join("config.json").into(),
+            sync: config.join("sync.json").into(),
             remotes: config.join("remotes.json").into(),
             queue: config.join("queue.json").into(),
             series: config.join("series.json").into(),
@@ -163,12 +166,6 @@ impl Service {
     /// Get list of series.
     pub(crate) fn series_by_name(&self) -> impl DoubleEndedIterator<Item = &Series> {
         self.db.series.iter_by_name()
-    }
-
-    /// Get list of series mutably and mark all series as changed.
-    pub(crate) fn all_series_mut(&mut self) -> impl ExactSizeIterator<Item = &mut Series> {
-        self.db.changes.change(Change::Series);
-        self.db.series.iter_mut()
     }
 
     /// Iterator over available episodes.
@@ -296,7 +293,7 @@ impl Service {
 
             // Reduce the number of API requests by ensuring we don't check for
             // updates more than each CACHE_TIME interval.
-            if let Some(last_sync) = s.last_sync.get(&remote_id) {
+            if let Some(last_sync) = self.db.sync.last_sync(&s.id, &remote_id) {
                 if now.signed_duration_since(*last_sync).num_seconds() < CACHE_TIME {
                     continue;
                 }
@@ -804,16 +801,24 @@ impl Service {
 
             let lookup_episode = |q| proxy.find_episode_by_remote(q);
 
-            let (series, remote_ids, seasons, episodes) = match remote_id {
+            let data = match remote_id {
                 RemoteSeriesId::Tvdb { id } => {
                     let series = tvdb.series(id, lookup_series);
                     let episodes = tvdb.series_episodes(id, lookup_episode);
-                    let ((series, remote_ids), episodes) = tokio::try_join!(series, episodes)?;
+                    let ((series, remote_ids, last_etag), episodes) =
+                        tokio::try_join!(series, episodes)?;
                     let seasons = episodes_into_seasons(&episodes);
-                    (series, remote_ids, seasons, episodes)
+
+                    NewSeries {
+                        series,
+                        remote_ids,
+                        last_etag,
+                        episodes,
+                        seasons,
+                    }
                 }
                 RemoteSeriesId::Tmdb { id } => {
-                    let Some((series, remote_ids, seasons)) = tmdb.series(id, lookup_series, if_none_match.as_ref()).await? else {
+                    let Some((series, remote_ids, last_etag, seasons)) = tmdb.series(id, lookup_series, if_none_match.as_ref()).await? else {
                         log::trace!("{remote_id}: not changed");
                         return Ok(None);
                     };
@@ -826,18 +831,17 @@ impl Service {
                         episodes.extend(new_episodes);
                     }
 
-                    (series, remote_ids, seasons, episodes)
+                    NewSeries {
+                        series,
+                        remote_ids,
+                        last_etag,
+                        episodes,
+                        seasons,
+                    }
                 }
                 RemoteSeriesId::Imdb { .. } => {
                     bail!("cannot download series data from imdb")
                 }
-            };
-
-            let data = NewSeries {
-                series,
-                remote_ids,
-                episodes,
-                seasons,
             };
 
             Ok::<_, Error>(Some(data))
@@ -879,6 +883,12 @@ impl Service {
         for &remote_id in &data.remote_ids {
             if self.db.remotes.insert_series(remote_id, series_id) {
                 self.db.changes.change(Change::Remotes);
+            }
+        }
+
+        if let Some(etag) = data.last_etag {
+            if self.db.sync.series_last_etag(&series_id, etag) {
+                self.db.changes.change(Change::Sync);
             }
         }
 
@@ -1136,8 +1146,14 @@ impl Service {
                     if let Some(last_modified) = last_modified {
                         s.last_modified = Some(*last_modified);
                     }
+                }
 
-                    s.last_sync.insert(*remote_id, Utc::now());
+                if self
+                    .db
+                    .sync
+                    .series_last_sync(series_id, remote_id, Utc::now())
+                {
+                    self.db.changes.change(Change::Sync);
                 }
             }
             None => {}
@@ -1152,6 +1168,20 @@ impl Service {
         series_id: &SeriesId,
     ) -> impl ExactSizeIterator<Item = RemoteSeriesId> + '_ {
         self.db.remotes.get_by_series(series_id)
+    }
+
+    /// Clear last sync.
+    pub(crate) fn clear_last_sync(&mut self) {
+        for s in self.db.series.iter() {
+            if self.db.sync.clear_last_sync(&s.id) {
+                self.db.changes.change(Change::Sync);
+            }
+        }
+    }
+
+    /// Get last etag for the given series id.
+    pub(crate) fn last_etag(&self, series_id: &SeriesId) -> Option<&Etag> {
+        self.db.sync.last_etag(series_id)
     }
 }
 

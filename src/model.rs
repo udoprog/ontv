@@ -54,6 +54,14 @@ id!(SeriesId);
 id!(EpisodeId);
 id!(MovieId);
 
+impl SeriesId {
+    /// Get underlying uuid.
+    #[inline]
+    pub(crate) fn id(&self) -> &Uuid {
+        &self.0
+    }
+}
+
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum ThemeType {
@@ -294,15 +302,11 @@ pub(crate) struct Series {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) last_modified: Option<DateTime<Utc>>,
     /// Locally known last etag.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) last_etag: Option<Etag>,
+    #[serde(rename = "last_etag", default, skip_serializing)]
+    pub(crate) compat_last_etag: Option<Etag>,
     /// Last sync time for each remote.
-    #[serde(
-        default,
-        skip_serializing_if = "BTreeMap::is_empty",
-        with = "btree_as_vec"
-    )]
-    pub(crate) last_sync: BTreeMap<RemoteSeriesId, DateTime<Utc>>,
+    #[serde(rename = "last_sync", default, skip_serializing, with = "btree_as_vec")]
+    pub(crate) compat_last_sync: BTreeMap<RemoteSeriesId, DateTime<Utc>>,
     /// The remote identifier that is used to synchronize this series.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) remote_id: Option<RemoteSeriesId>,
@@ -326,7 +330,7 @@ pub(crate) struct Movie {
     pub(crate) remote_id: Option<RemoteMovieId>,
 }
 
-mod btree_as_vec {
+pub(crate) mod btree_as_vec {
     use std::collections::BTreeMap;
     use std::fmt;
 

@@ -205,7 +205,7 @@ impl Client {
         id: u32,
         lookup: impl common::LookupSeriesId,
         if_none_match: Option<&Etag>,
-    ) -> Result<Option<(Series, BTreeSet<RemoteSeriesId>, Vec<Season>)>> {
+    ) -> Result<Option<(Series, BTreeSet<RemoteSeriesId>, Option<Etag>, Vec<Season>)>> {
         let mut details = self.request_with_auth(Method::GET, &["tv", &id.to_string()]);
 
         if let Some(etag) = if_none_match {
@@ -266,8 +266,8 @@ impl Client {
             fanart: None,
             tracked: true,
             last_modified,
-            last_etag,
-            last_sync: BTreeMap::new(),
+            compat_last_etag: None,
+            compat_last_sync: BTreeMap::new(),
             remote_id: Some(remote_id),
         };
 
@@ -288,7 +288,7 @@ impl Client {
             });
         }
 
-        return Ok(Some((series, remote_ids, seasons)));
+        return Ok(Some((series, remote_ids, last_etag, seasons)));
 
         #[derive(Deserialize)]
         struct Details {

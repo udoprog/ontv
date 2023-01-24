@@ -34,9 +34,7 @@ impl Settings {
                 s.service.set_tmdb_api_key(string);
             }
             Message::ClearLastSync => {
-                for s in s.service.all_series_mut() {
-                    s.last_sync.clear();
-                }
+                s.service.clear_last_sync();
             }
         }
     }

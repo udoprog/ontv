@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::common;
 use crate::model::{
-    Episode, EpisodeId, Image, Raw, RemoteEpisodeId, RemoteSeriesId, SearchSeries, SeasonNumber,
-    Series, SeriesId, TvdbImage,
+    Episode, EpisodeId, Etag, Image, Raw, RemoteEpisodeId, RemoteSeriesId, SearchSeries,
+    SeasonNumber, Series, SeriesId, TvdbImage,
 };
 use crate::service::NewEpisode;
 
@@ -161,7 +161,7 @@ impl Client {
         &self,
         id: u32,
         lookup: impl common::LookupSeriesId,
-    ) -> Result<(Series, BTreeSet<RemoteSeriesId>)> {
+    ) -> Result<(Series, BTreeSet<RemoteSeriesId>, Option<Etag>)> {
         let res = self
             .request_with_auth(Method::GET, &["series", &id.to_string()])
             .await?
@@ -220,12 +220,12 @@ impl Client {
             fanart,
             remote_id: Some(remote_id),
             tracked: true,
-            last_etag,
             last_modified,
-            last_sync: BTreeMap::new(),
+            compat_last_etag: None,
+            compat_last_sync: BTreeMap::new(),
         };
 
-        return Ok((series, remote_ids));
+        return Ok((series, remote_ids, last_etag));
 
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]

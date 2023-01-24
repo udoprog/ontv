@@ -155,7 +155,7 @@ impl State {
     ) -> Option<impl Future<Output = Result<Option<NewSeries>>>> {
         let s = self.service.series(series_id)?;
         let remote_id = s.remote_id?;
-        let none_if_match = s.last_etag.clone();
+        let none_if_match = self.service.last_etag(series_id).cloned();
         Some(
             self.service
                 .download_series(&remote_id, none_if_match.as_ref()),
