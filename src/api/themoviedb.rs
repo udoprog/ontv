@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use bytes::Bytes;
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use reqwest::header;
@@ -205,7 +205,15 @@ impl Client {
         id: u32,
         lookup: impl common::LookupSeriesId,
         if_none_match: Option<&Etag>,
-    ) -> Result<Option<(Series, BTreeSet<RemoteSeriesId>, Option<Etag>, Vec<Season>)>> {
+    ) -> Result<
+        Option<(
+            Series,
+            BTreeSet<RemoteSeriesId>,
+            Option<DateTime<Utc>>,
+            Option<Etag>,
+            Vec<Season>,
+        )>,
+    > {
         let mut details = self.request_with_auth(Method::GET, &["tv", &id.to_string()]);
 
         if let Some(etag) = if_none_match {
@@ -265,7 +273,6 @@ impl Client {
             banner,
             fanart: None,
             tracked: true,
-            last_modified,
             compat_last_etag: None,
             compat_last_sync: BTreeMap::new(),
             remote_id: Some(remote_id),
@@ -288,7 +295,13 @@ impl Client {
             });
         }
 
-        return Ok(Some((series, remote_ids, last_etag, seasons)));
+        return Ok(Some((
+            series,
+            remote_ids,
+            last_modified,
+            last_etag,
+            seasons,
+        )));
 
         #[derive(Deserialize)]
         struct Details {

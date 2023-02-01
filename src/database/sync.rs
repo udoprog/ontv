@@ -11,14 +11,20 @@ use crate::model::{Etag, RemoteSeriesId, SeriesId};
 struct Entry {
     #[serde(skip_serializing_if = "Option::is_none")]
     etag: Option<Etag>,
-    #[serde(default, with = "crate::model::btree_as_vec")]
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        with = "crate::model::btree_as_vec"
+    )]
     last_sync: BTreeMap<RemoteSeriesId, DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    last_modified: Option<(RemoteSeriesId, DateTime<Utc>)>,
 }
 
 impl Entry {
     /// Test if entry is empty.
     fn is_empty(&self) -> bool {
-        self.etag.is_none() && self.last_sync.is_empty()
+        self.etag.is_none() && self.last_sync.is_empty() && self.last_modified.is_none()
     }
 }
 
@@ -62,6 +68,18 @@ impl Database {
         e.last_sync.insert(*remote_id, now) != Some(now)
     }
 
+    /// Update series last modified.
+    #[must_use]
+    pub(crate) fn series_last_modified(
+        &mut self,
+        series_id: &SeriesId,
+        remote_id: &RemoteSeriesId,
+        last_modified: DateTime<Utc>,
+    ) -> bool {
+        let e = self.data.entry(*series_id.id()).or_default();
+        e.last_modified.replace((*remote_id, last_modified)) != Some((*remote_id, last_modified))
+    }
+
     /// Insert last etag.
     #[must_use]
     pub(crate) fn series_last_etag(&mut self, series_id: &SeriesId, etag: Etag) -> bool {
@@ -90,6 +108,22 @@ impl Database {
     ) -> Option<&DateTime<Utc>> {
         let entry = self.data.get(id.id())?;
         entry.last_sync.get(remote_id)
+    }
+
+    /// Last modified timestamp.
+    pub(crate) fn last_modified(
+        &self,
+        id: &SeriesId,
+        remote_id: &RemoteSeriesId,
+    ) -> Option<&DateTime<Utc>> {
+        let entry = self.data.get(id.id())?;
+        let (expected, last_modified) = entry.last_modified.as_ref()?;
+
+        if expected != remote_id {
+            return None;
+        }
+
+        Some(last_modified)
     }
 
     /// Last etag for the given series id.
