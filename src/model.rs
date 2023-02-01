@@ -284,8 +284,8 @@ pub(crate) struct Series {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) first_air_date: Option<NaiveDate>,
     /// Overview of the series.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) overview: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) overview: String,
     /// Poster image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) poster: Option<Image>,
@@ -476,8 +476,8 @@ pub(crate) struct Season {
     pub(crate) air_date: Option<NaiveDate>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) overview: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) overview: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) poster: Option<Image>,
 }
@@ -492,8 +492,8 @@ pub(crate) struct Episode {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) name: Option<String>,
     /// Overview of the episode.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) overview: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) overview: String,
     /// Absolute number in the series.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) absolute_number: Option<u32>,
@@ -931,7 +931,7 @@ pub(crate) struct SearchSeries {
     pub(crate) id: RemoteSeriesId,
     pub(crate) name: String,
     pub(crate) poster: Option<Image>,
-    pub(crate) overview: Option<String>,
+    pub(crate) overview: String,
     pub(crate) first_aired: Option<NaiveDate>,
 }
 
@@ -940,7 +940,7 @@ pub(crate) struct SearchMovie {
     pub(crate) id: RemoteMovieId,
     pub(crate) title: String,
     pub(crate) poster: Option<Image>,
-    pub(crate) overview: Option<String>,
+    pub(crate) overview: String,
     pub(crate) release_date: Option<NaiveDate>,
 }
 

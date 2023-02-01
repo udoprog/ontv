@@ -158,8 +158,8 @@ impl Series {
             .push(self.series.view(s, series).map(Message::SeriesActions))
             .push(info);
 
-        if let Some(overview) = &series.overview {
-            header = header.push(text(overview));
+        if !series.overview.is_empty() {
+            header = header.push(text(&series.overview));
         }
 
         let header = centered(header.spacing(GAP), None).padding(GAP);

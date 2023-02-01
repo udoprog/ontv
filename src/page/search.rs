@@ -232,8 +232,6 @@ impl Search {
                 }
             }
 
-            let overview = s.overview.as_deref().unwrap_or_default();
-
             let mut first_aired = Column::new();
 
             if let Some(date) = s.first_aired {
@@ -264,7 +262,7 @@ impl Search {
                     .push(
                         Column::new()
                             .push(result.spacing(SPACE))
-                            .push(text(overview))
+                            .push(text(&s.overview))
                             .spacing(GAP),
                     )
                     .spacing(GAP),
@@ -336,7 +334,7 @@ impl Search {
                 }
             }
 
-            let overview = m.overview.as_deref().unwrap_or_default();
+            let overview = m.overview.as_str();
 
             let mut release_date = Column::new();
 

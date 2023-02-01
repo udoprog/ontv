@@ -237,7 +237,7 @@ impl Client {
             banner: Option<String>,
             fanart: Option<String>,
             #[serde(default)]
-            overview: Option<String>,
+            overview: String,
             poster: String,
             series_name: String,
             #[serde(default)]
@@ -282,7 +282,7 @@ impl Client {
                 let episode = Episode {
                     id,
                     name: row.episode_name,
-                    overview: row.overview.filter(|o| !o.is_empty()),
+                    overview: row.overview,
                     absolute_number: row.absolute_number,
                     // NB: thetvdb.com uses season 0 as specials season.
                     season: match row.aired_season {
@@ -315,7 +315,7 @@ impl Client {
             #[serde(default)]
             episode_name: Option<String>,
             #[serde(default)]
-            overview: Option<String>,
+            overview: String,
             #[serde(default)]
             filename: Option<String>,
             #[serde(default)]
@@ -453,7 +453,7 @@ impl Client {
             #[serde(default)]
             pub(crate) poster: String,
             #[serde(default)]
-            pub(crate) overview: Option<String>,
+            pub(crate) overview: String,
             #[serde(default)]
             pub(crate) first_aired: Option<NaiveDate>,
         }

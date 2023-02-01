@@ -122,8 +122,8 @@ impl SeriesList {
                     .spacing(SPACE),
             );
 
-            if let Some(overview) = &series.overview {
-                content = content.push(text(overview));
+            if !series.overview.is_empty() {
+                content = content.push(text(&series.overview));
             }
 
             rows = rows.push(

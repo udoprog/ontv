@@ -201,7 +201,7 @@ impl Season {
                 name = name.push(text(string));
             }
 
-            let overview = text(episode.overview.as_deref().unwrap_or_default());
+            let overview = text(&episode.overview);
 
             let watched = s.service.watched(&episode.id);
 

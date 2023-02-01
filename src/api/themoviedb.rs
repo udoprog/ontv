@@ -132,7 +132,7 @@ impl Client {
             id: u32,
             name: String,
             #[serde(default)]
-            overview: Option<String>,
+            overview: String,
             #[serde(default)]
             poster_path: Option<String>,
             #[serde(default)]
@@ -183,7 +183,7 @@ impl Client {
             id: u32,
             original_title: String,
             #[serde(default)]
-            overview: Option<String>,
+            overview: String,
             #[serde(default)]
             poster_path: Option<String>,
             #[serde(default)]
@@ -296,7 +296,7 @@ impl Client {
             #[serde(default)]
             name: Option<String>,
             #[serde(default)]
-            overview: Option<String>,
+            overview: String,
             #[serde(default)]
             poster_path: Option<String>,
             #[serde(default)]
@@ -315,7 +315,7 @@ impl Client {
             #[serde(default)]
             name: Option<String>,
             #[serde(default)]
-            overview: Option<String>,
+            overview: String,
             #[serde(default)]
             poster_path: Option<String>,
         }
@@ -584,7 +584,7 @@ struct EpisodeDetail {
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
-    overview: Option<String>,
+    overview: String,
     #[serde(default)]
     still_path: Option<String>,
 }
