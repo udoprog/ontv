@@ -498,7 +498,7 @@ pub(crate) struct Episode {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) absolute_number: Option<u32>,
     /// Season number.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "SeasonNumber::is_special")]
     pub(crate) season: SeasonNumber,
     /// Episode number inside of its season.
     pub(crate) number: u32,
