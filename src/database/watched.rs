@@ -4,6 +4,7 @@ use std::collections::hash_map::{self, HashMap};
 use slab::Slab;
 use uuid::Uuid;
 
+use crate::database::episodes;
 use crate::model::{EpisodeId, SeriesId, Watched, WatchedKind};
 
 #[derive(Default)]
@@ -44,16 +45,19 @@ impl Database {
     }
 
     /// Insert a new entry into watch history.
-    pub(crate) fn insert(&mut self, w: Watched) {
+    pub(crate) fn insert(&mut self, episodes: &episodes::Database, w: Watched) {
         let id = w.id;
         let kind = w.kind;
         let index = self.data.insert(w);
         self.by_id.insert(id, index);
 
         match kind {
-            WatchedKind::Series { series, episode } => {
+            WatchedKind::Series { episode } => {
                 self.by_episode.entry(episode).or_default().push(index);
-                self.by_series.entry(series).or_default().push(index);
+
+                if let Some(series_id) = episodes.series_by_episode(&episode) {
+                    self.by_series.entry(*series_id).or_default().push(index);
+                }
             }
         }
     }
@@ -80,7 +84,11 @@ impl Database {
     }
 
     /// Remove all watches related to an episode.
-    pub(crate) fn remove_by_episode(&mut self, episode_id: &EpisodeId) -> usize {
+    pub(crate) fn remove_by_episode(
+        &mut self,
+        episodes: &episodes::Database,
+        episode_id: &EpisodeId,
+    ) -> usize {
         let Some(removed) = self.by_episode.remove(episode_id) else {
             return 0;
         };
@@ -95,8 +103,10 @@ impl Database {
             let _ = self.by_id.remove(&w.id);
 
             match w.kind {
-                WatchedKind::Series { series, .. } => {
-                    self.clear_series_by_id(&series, index);
+                WatchedKind::Series { episode } => {
+                    if let Some(series_id) = episodes.series_by_episode(&episode) {
+                        self.clear_series_by_id(series_id, index);
+                    }
                 }
             }
         }
@@ -105,7 +115,11 @@ impl Database {
     }
 
     /// Remove a single watch by id.
-    pub(crate) fn remove_watch(&mut self, id: &Uuid) -> Option<Watched> {
+    pub(crate) fn remove_watch(
+        &mut self,
+        episodes: &episodes::Database,
+        id: &Uuid,
+    ) -> Option<Watched> {
         let Some(index) = self.by_id.remove(id) else {
             return None;
         };
@@ -115,8 +129,11 @@ impl Database {
         };
 
         match w.kind {
-            WatchedKind::Series { series, episode } => {
-                self.clear_series_by_id(&series, index);
+            WatchedKind::Series { episode } => {
+                if let Some(series_id) = episodes.series_by_episode(&episode) {
+                    self.clear_series_by_id(series_id, index);
+                }
+
                 self.clear_episode_by_id(&episode, index);
             }
         }

@@ -396,8 +396,6 @@ pub(crate) mod btree_as_vec {
 pub(crate) enum WatchedKind {
     /// The watch kind is a series.
     Series {
-        /// Identifier of watched series.
-        series: SeriesId,
         /// Identifier of watched episode.
         episode: EpisodeId,
     },
@@ -918,7 +916,6 @@ impl Task {
 /// A pending thing to watch.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub(crate) struct Pending {
-    pub(crate) series: SeriesId,
     pub(crate) episode: EpisodeId,
     pub(crate) timestamp: DateTime<Utc>,
 }

@@ -1,3 +1,4 @@
+mod episodes;
 mod pending;
 mod remotes;
 mod series;
@@ -27,8 +28,8 @@ pub(crate) struct Database {
     pub(crate) remotes: remotes::Database,
     /// Series database.
     pub(crate) series: series::Database,
-    /// Episodes collection.
-    pub(crate) episodes: HashMap<SeriesId, Vec<Episode>>,
+    /// Episodes database.
+    pub(crate) episodes: episodes::Database,
     /// Seasons collection.
     pub(crate) seasons: HashMap<SeriesId, Vec<Season>>,
     /// Episode to watch history.
@@ -104,19 +105,27 @@ impl Database {
             }
         }
 
-        if let Some(watched) = load_array::<Watched>(&paths.watched)? {
-            for w in watched {
-                db.watched.insert(w);
+        if let Some(episodes) = load_directory::<SeriesId, Episode>(&paths.episodes)? {
+            for (id, episodes) in episodes {
+                db.episodes.insert(&id, episodes);
             }
         }
 
-        if let Some(pending) = load_array::<Pending>(&paths.pending)? {
-            db.pending.extend(pending);
+        // Note: this must happen *after* db.episodes has been populated.
+        if let Some(watched) = load_array::<Watched>(&paths.watched)? {
+            for w in watched {
+                db.watched.insert(&db.episodes, w);
+            }
         }
 
-        if let Some(episodes) = load_directory::<SeriesId, Episode>(&paths.episodes)? {
-            for (id, episodes) in episodes {
-                db.episodes.insert(id, episodes);
+        // Note: this must happen *after* db.episodes has been populated.
+        if let Some(pending) = load_array::<Pending>(&paths.pending)? {
+            for p in pending {
+                let Some(series_id) = db.episodes.series_by_episode(&p.episode) else {
+                    continue;
+                };
+
+                db.pending.insert(*series_id, p);
             }
         }
 
@@ -171,15 +180,13 @@ impl Database {
         let mut add_series = Vec::with_capacity(changes.add.len());
 
         for id in changes.add {
-            let Some(episodes) = self.episodes.get(&id) else {
-                continue;
-            };
+            let episodes = self.episodes.get(&id);
 
             let Some(seasons) = self.seasons.get(&id) else {
                 continue;
             };
 
-            add_series.push((id, episodes.clone(), seasons.clone()));
+            add_series.push((id, episodes.to_vec(), seasons.clone()));
         }
 
         let remotes = if changes.set.contains(Change::Remotes) {
