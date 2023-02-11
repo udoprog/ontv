@@ -8,7 +8,7 @@ use crate::model::{Task, TaskFinished, TaskKind};
 /// Number of milliseconds of delay to add by default to scheduled tasks.
 const DELAY_MILLIS: i64 = 250;
 // Soft capacity, that some processes which might add a lot of stuff can check.
-const CAPACITY: usize = 10;
+const CAPACITY: usize = 50;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TaskRunning {
