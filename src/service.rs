@@ -886,21 +886,21 @@ impl Service {
             }
         }
 
-        if let Some(etag) = data.last_etag {
-            if self.db.sync.update_last_etag(&series_id, etag) {
-                self.db.changes.change(Change::Sync);
+        if let Some(remote_id) = &data.series.remote_id {
+            if let Some(etag) = data.last_etag {
+                if self.db.sync.update_last_etag(&series_id, remote_id, etag) {
+                    self.db.changes.change(Change::Sync);
+                }
             }
-        }
 
-        if let (Some(remote_id), Some(last_modified)) =
-            (&data.series.remote_id, &data.last_modified)
-        {
-            if self
-                .db
-                .sync
-                .update_last_modified(&series_id, remote_id, Some(&last_modified))
-            {
-                self.db.changes.change(Change::Sync);
+            if let Some(last_modified) = &data.last_modified {
+                if self
+                    .db
+                    .sync
+                    .update_last_modified(&series_id, remote_id, Some(&last_modified))
+                {
+                    self.db.changes.change(Change::Sync);
+                }
             }
         }
 
@@ -1182,15 +1182,17 @@ impl Service {
     /// Clear last sync.
     pub(crate) fn clear_last_sync(&mut self) {
         for s in self.db.series.iter() {
-            if self.db.sync.clear_last_sync(&s.id) {
-                self.db.changes.change(Change::Sync);
+            if let Some(remote_id) = &s.remote_id {
+                if self.db.sync.clear_last_sync(&s.id, remote_id) {
+                    self.db.changes.change(Change::Sync);
+                }
             }
         }
     }
 
     /// Get last etag for the given series id.
-    pub(crate) fn last_etag(&self, series_id: &SeriesId) -> Option<&Etag> {
-        self.db.sync.last_etag(series_id)
+    pub(crate) fn last_etag(&self, id: &SeriesId, remote_id: &RemoteSeriesId) -> Option<&Etag> {
+        self.db.sync.last_etag(id, remote_id)
     }
 }
 

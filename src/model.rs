@@ -299,11 +299,7 @@ pub(crate) struct Series {
     #[serde(default, skip_serializing_if = "is_false")]
     pub(crate) tracked: bool,
     /// Locally known last modified timestamp.
-    #[serde(
-        rename = "last_modified",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "last_modified", default, skip_serializing)]
     pub(crate) compat_last_modified: Option<DateTime<Utc>>,
     /// Locally known last etag.
     #[serde(rename = "last_etag", default, skip_serializing)]

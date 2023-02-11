@@ -87,20 +87,22 @@ impl Database {
 
         if let Some(series) = load_series(&paths.series)? {
             for mut s in series {
-                if let Some(etag) = s.compat_last_etag.take() {
-                    if db.sync.update_last_etag(&s.id, etag) {
-                        db.changes.change(Change::Sync);
+                if let Some(remote_id) = &s.remote_id {
+                    if let Some(etag) = s.compat_last_etag.take() {
+                        if db.sync.update_last_etag(&s.id, remote_id, etag) {
+                            db.changes.change(Change::Sync);
+                        }
                     }
-                }
 
-                let last_modified = s.compat_last_modified.take();
+                    let last_modified = s.compat_last_modified.take();
 
-                if let (Some(remote_id), Some(last_modified)) = (&s.remote_id, &last_modified) {
-                    if db
-                        .sync
-                        .update_last_modified(&s.id, remote_id, Some(last_modified))
-                    {
-                        db.changes.change(Change::Sync);
+                    if let Some(last_modified) = &last_modified {
+                        if db
+                            .sync
+                            .update_last_modified(&s.id, remote_id, Some(last_modified))
+                        {
+                            db.changes.change(Change::Sync);
+                        }
                     }
                 }
 

@@ -151,11 +151,11 @@ impl State {
     /// Refresh series data.
     pub(crate) fn refresh_series(
         &mut self,
-        series_id: &SeriesId,
+        id: &SeriesId,
     ) -> Option<impl Future<Output = Result<Option<NewSeries>>>> {
-        let s = self.service.series(series_id)?;
+        let s = self.service.series(id)?;
         let remote_id = s.remote_id?;
-        let none_if_match = self.service.last_etag(series_id).cloned();
+        let none_if_match = self.service.last_etag(id, &remote_id).cloned();
         Some(
             self.service
                 .download_series(&remote_id, none_if_match.as_ref()),
