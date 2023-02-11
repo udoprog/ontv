@@ -271,19 +271,22 @@ impl iced::Application for Application {
                     Message::CheckForUpdates,
                 );
             }
-            (Message::TaskUpdateDownloadQueue(result, task), _) => match result {
-                Ok(queue) => {
-                    self.state.service.push_tasks(
-                        queue
-                            .into_iter()
-                            .map(|(kind, finished)| (kind, Some(finished))),
-                    );
+            (Message::TaskUpdateDownloadQueue(result, task), _) => {
+                match result {
+                    Ok(queue) => {
+                        self.state.service.push_tasks(
+                            queue
+                                .into_iter()
+                                .map(|(kind, finished)| (kind, Some(finished))),
+                        );
+                    }
+                    Err(error) => {
+                        self.state.handle_error(error);
+                    }
                 }
-                Err(error) => {
-                    self.state.handle_error(error);
-                    self.state.service.complete_task(task);
-                }
-            },
+
+                self.state.service.complete_task(task);
+            }
             (Message::Navigate(page), _) => {
                 self.state.push_history(page);
             }
