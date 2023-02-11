@@ -32,6 +32,7 @@ pub(crate) struct NewSeries {
     series: Series,
     remote_ids: BTreeSet<RemoteSeriesId>,
     last_etag: Option<Etag>,
+    last_modified: Option<DateTime<Utc>>,
     episodes: Vec<NewEpisode>,
     seasons: Vec<Season>,
 }
@@ -154,13 +155,6 @@ impl Service {
     pub(crate) fn movie(&self, _: &MovieId) -> Option<&Movie> {
         // TODO: implement this
         None
-    }
-
-    /// Get a single series mutably.
-    pub(crate) fn series_mut(&mut self, id: &SeriesId) -> Option<&mut Series> {
-        let series = self.db.series.get_mut(id)?;
-        self.db.changes.change(Change::Series);
-        Some(series)
     }
 
     /// Get list of series.
@@ -341,7 +335,7 @@ impl Service {
             return None;
         }
 
-        let last_modified = s.last_modified;
+        let last_modified = self.db.sync.last_modified(series_id, remote_id).cloned();
         let tvdb = self.tvdb.clone();
 
         let series_id = s.id;
@@ -809,7 +803,7 @@ impl Service {
                 RemoteSeriesId::Tvdb { id } => {
                     let series = tvdb.series(id, lookup_series);
                     let episodes = tvdb.series_episodes(id, lookup_episode);
-                    let ((series, remote_ids, last_etag), episodes) =
+                    let ((series, remote_ids, last_etag, last_modified), episodes) =
                         tokio::try_join!(series, episodes)?;
                     let seasons = episodes_into_seasons(&episodes);
 
@@ -817,12 +811,13 @@ impl Service {
                         series,
                         remote_ids,
                         last_etag,
+                        last_modified,
                         episodes,
                         seasons,
                     }
                 }
                 RemoteSeriesId::Tmdb { id } => {
-                    let Some((series, remote_ids, last_etag, seasons)) = tmdb.series(id, lookup_series, if_none_match.as_ref()).await? else {
+                    let Some((series, remote_ids, last_etag, last_modified, seasons)) = tmdb.series(id, lookup_series, if_none_match.as_ref()).await? else {
                         log::trace!("{remote_id}: not changed");
                         return Ok(None);
                     };
@@ -839,6 +834,7 @@ impl Service {
                         series,
                         remote_ids,
                         last_etag,
+                        last_modified,
                         episodes,
                         seasons,
                     }
@@ -891,7 +887,19 @@ impl Service {
         }
 
         if let Some(etag) = data.last_etag {
-            if self.db.sync.series_last_etag(&series_id, etag) {
+            if self.db.sync.update_last_etag(&series_id, etag) {
+                self.db.changes.change(Change::Sync);
+            }
+        }
+
+        if let (Some(remote_id), Some(last_modified)) =
+            (&data.series.remote_id, &data.last_modified)
+        {
+            if self
+                .db
+                .sync
+                .update_last_modified(&series_id, remote_id, Some(&last_modified))
+            {
                 self.db.changes.change(Change::Sync);
             }
         }
@@ -1146,17 +1154,14 @@ impl Service {
                 remote_id,
                 last_modified,
             }) => {
-                if let Some(s) = self.series_mut(series_id) {
-                    if let Some(last_modified) = last_modified {
-                        s.last_modified = Some(*last_modified);
-                    }
-                }
+                let now = Utc::now();
 
-                if self
-                    .db
-                    .sync
-                    .series_last_sync(series_id, remote_id, Utc::now())
-                {
+                if self.db.sync.series_update_sync(
+                    series_id,
+                    remote_id,
+                    &now,
+                    last_modified.as_ref(),
+                ) {
                     self.db.changes.change(Change::Sync);
                 }
             }

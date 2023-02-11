@@ -13,6 +13,8 @@ struct Entry {
     etag: Option<Etag>,
     #[serde(default, with = "crate::model::btree_as_vec")]
     last_sync: BTreeMap<RemoteSeriesId, DateTime<Utc>>,
+    #[serde(default, with = "crate::model::btree_as_vec")]
+    last_modified: BTreeMap<RemoteSeriesId, DateTime<Utc>>,
 }
 
 impl Entry {
@@ -52,19 +54,57 @@ impl Database {
 
     /// Update series last sync.
     #[must_use]
-    pub(crate) fn series_last_sync(
+    pub(crate) fn import_last_sync(
         &mut self,
         series_id: &SeriesId,
         remote_id: &RemoteSeriesId,
-        now: DateTime<Utc>,
+        now: &DateTime<Utc>,
     ) -> bool {
         let e = self.data.entry(*series_id.id()).or_default();
-        e.last_sync.insert(*remote_id, now) != Some(now)
+        e.last_sync.insert(*remote_id, *now) != Some(*now)
+    }
+
+    /// Update series last modified.
+    #[must_use]
+    pub(crate) fn update_last_modified(
+        &mut self,
+        series_id: &SeriesId,
+        remote_id: &RemoteSeriesId,
+        last_modified: Option<&DateTime<Utc>>,
+    ) -> bool {
+        let e = self.data.entry(*series_id.id()).or_default();
+
+        if let Some(last_modified) = last_modified {
+            e.last_modified.insert(*remote_id, *last_modified) != Some(*last_modified)
+        } else {
+            e.last_modified.remove(remote_id).is_some()
+        }
+    }
+
+    /// Update series.
+    #[must_use]
+    pub(crate) fn series_update_sync(
+        &mut self,
+        series_id: &SeriesId,
+        remote_id: &RemoteSeriesId,
+        now: &DateTime<Utc>,
+        last_modified: Option<&DateTime<Utc>>,
+    ) -> bool {
+        let e = self.data.entry(*series_id.id()).or_default();
+        let mut updated = e.last_sync.insert(*remote_id, *now) != Some(*now);
+
+        if let Some(last_modified) = last_modified {
+            updated |= e.last_modified.insert(*remote_id, *last_modified) != Some(*last_modified);
+        } else {
+            updated |= e.last_modified.remove(remote_id).is_some();
+        }
+
+        updated
     }
 
     /// Insert last etag.
     #[must_use]
-    pub(crate) fn series_last_etag(&mut self, series_id: &SeriesId, etag: Etag) -> bool {
+    pub(crate) fn update_last_etag(&mut self, series_id: &SeriesId, etag: Etag) -> bool {
         match self.data.entry(*series_id.id()) {
             btree_map::Entry::Vacant(e) => {
                 let e = e.insert(Entry::default());
@@ -88,8 +128,16 @@ impl Database {
         id: &SeriesId,
         remote_id: &RemoteSeriesId,
     ) -> Option<&DateTime<Utc>> {
-        let entry = self.data.get(id.id())?;
-        entry.last_sync.get(remote_id)
+        self.data.get(id.id())?.last_sync.get(remote_id)
+    }
+
+    /// Get last modified for the given time series.
+    pub(crate) fn last_modified(
+        &self,
+        id: &SeriesId,
+        remote_id: &RemoteSeriesId,
+    ) -> Option<&DateTime<Utc>> {
+        self.data.get(id.id())?.last_modified.get(remote_id)
     }
 
     /// Last etag for the given series id.

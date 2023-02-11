@@ -88,14 +88,24 @@ impl Database {
         if let Some(series) = load_series(&paths.series)? {
             for mut s in series {
                 if let Some(etag) = s.compat_last_etag.take() {
-                    if db.sync.series_last_etag(&s.id, etag) {
+                    if db.sync.update_last_etag(&s.id, etag) {
+                        db.changes.change(Change::Sync);
+                    }
+                }
+
+                let last_modified = s.compat_last_modified.take();
+
+                if let (Some(remote_id), Some(last_modified)) = (&s.remote_id, &last_modified) {
+                    if db
+                        .sync
+                        .update_last_modified(&s.id, remote_id, Some(last_modified))
+                    {
                         db.changes.change(Change::Sync);
                     }
                 }
 
                 for (remote_id, last_sync) in std::mem::take(&mut s.compat_last_sync) {
-                    if db.sync.series_last_sync(&s.id, &remote_id, last_sync) {
-                        println!("save last sync");
+                    if db.sync.import_last_sync(&s.id, &remote_id, &last_sync) {
                         db.changes.change(Change::Sync);
                     }
                 }

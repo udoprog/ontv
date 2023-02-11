@@ -161,7 +161,12 @@ impl Client {
         &self,
         id: u32,
         lookup: impl common::LookupSeriesId,
-    ) -> Result<(Series, BTreeSet<RemoteSeriesId>, Option<Etag>)> {
+    ) -> Result<(
+        Series,
+        BTreeSet<RemoteSeriesId>,
+        Option<Etag>,
+        Option<DateTime<Utc>>,
+    )> {
         let res = self
             .request_with_auth(Method::GET, &["series", &id.to_string()])
             .await?
@@ -220,12 +225,12 @@ impl Client {
             fanart,
             remote_id: Some(remote_id),
             tracked: true,
-            last_modified,
+            compat_last_modified: None,
             compat_last_etag: None,
             compat_last_sync: BTreeMap::new(),
         };
 
-        return Ok((series, remote_ids, last_etag));
+        return Ok((series, remote_ids, last_etag, last_modified));
 
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
