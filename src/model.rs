@@ -900,7 +900,8 @@ pub(crate) struct Task {
     #[serde(flatten)]
     pub(crate) kind: TaskKind,
     /// When the task is scheduled for.
-    pub(crate) scheduled: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) scheduled: Option<DateTime<Utc>>,
     /// Task finished actions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) finished: Option<TaskFinished>,

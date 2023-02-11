@@ -110,13 +110,17 @@ impl Search {
                 self.search(s, commands);
             }
             Message::AddSeriesByRemote(remote_id) => {
-                s.service
-                    .push_task(TaskKind::DownloadSeriesByRemoteId { remote_id }, None);
+                s.service.push_task_without_delay(
+                    TaskKind::DownloadSeriesByRemoteId { remote_id },
+                    None,
+                );
             }
             Message::SwitchSeries(series_id, remote_id) => {
                 s.remove_series(&series_id);
-                s.service
-                    .push_task(TaskKind::DownloadSeriesByRemoteId { remote_id }, None);
+                s.service.push_task_without_delay(
+                    TaskKind::DownloadSeriesByRemoteId { remote_id },
+                    None,
+                );
             }
             Message::RemoveSeries(series_id) => {
                 s.remove_series(&series_id);

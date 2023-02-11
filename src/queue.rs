@@ -109,7 +109,9 @@ impl Queue {
     ) -> Option<Task> {
         let task = self.data.front()?;
 
-        if !matches!(timed_out, Some(id) if id == task.id) && task.scheduled > *now {
+        if !matches!(timed_out, Some(id) if id == task.id)
+            && task.scheduled.map(|s| s > *now).unwrap_or_default()
+        {
             return None;
         }
 
@@ -127,15 +129,39 @@ impl Queue {
     /// Next sleep.
     pub(crate) fn next_sleep(&self, now: &DateTime<Utc>) -> Option<(u64, Uuid)> {
         let task = self.data.front()?;
-        let seconds = u64::try_from(
-            task.scheduled
-                .signed_duration_since(*now)
-                .num_seconds()
-                .max(0),
-        )
-        .ok()?;
         let id = task.id;
+
+        let Some(scheduled) = &task.scheduled else {
+            return Some((0, id));
+        };
+
+        let seconds =
+            u64::try_from(scheduled.signed_duration_since(*now).num_seconds().max(0)).ok()?;
+
         Some((seconds, id))
+    }
+
+    /// Push without delay.
+    pub(crate) fn push_without_delay(
+        &mut self,
+        kind: TaskKind,
+        finished: Option<TaskFinished>,
+    ) -> bool {
+        if self.status.contains_key(&kind) {
+            return false;
+        }
+
+        self.status.insert(kind, TaskStatus::Pending);
+
+        self.data.push_back(Task {
+            id: Uuid::new_v4(),
+            scheduled: None,
+            kind,
+            finished,
+        });
+
+        self.modified = true;
+        true
     }
 
     /// Push a task onto the queue.
@@ -146,8 +172,9 @@ impl Queue {
 
         let scheduled = self
             .data
-            .back()
-            .map(|t| t.scheduled)
+            .iter()
+            .flat_map(|t| t.scheduled)
+            .next_back()
             .unwrap_or_else(Utc::now)
             + Duration::milliseconds(DELAY_MILLIS);
 
@@ -155,7 +182,7 @@ impl Queue {
 
         self.data.push_back(Task {
             id: Uuid::new_v4(),
-            scheduled,
+            scheduled: Some(scheduled),
             kind,
             finished,
         });

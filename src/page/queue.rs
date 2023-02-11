@@ -138,9 +138,12 @@ impl Queue {
         while let Some(task) = tasks.next() {
             let mut row = build_task_row(s, &task.kind);
 
-            let duration = now.signed_duration_since(task.scheduled);
-            let when = duration_display(duration);
+            let duration = match &task.scheduled {
+                Some(scheduled) => now.signed_duration_since(*scheduled),
+                None => chrono::Duration::zero(),
+            };
 
+            let when = duration_display(duration);
             row = row.push(when.size(SMALL));
 
             list = list.push(row.width(Length::Fill).spacing(GAP));

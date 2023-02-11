@@ -379,8 +379,12 @@ impl Service {
     }
 
     /// Push a single task to the queue.
-    pub(crate) fn push_task(&mut self, kind: TaskKind, finished: Option<TaskFinished>) -> bool {
-        if self.db.tasks.push(kind, finished) {
+    pub(crate) fn push_task_without_delay(
+        &mut self,
+        kind: TaskKind,
+        finished: Option<TaskFinished>,
+    ) -> bool {
+        if self.db.tasks.push_without_delay(kind, finished) {
             self.db.changes.change(Change::Queue);
             true
         } else {

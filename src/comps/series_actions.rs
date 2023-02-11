@@ -49,7 +49,7 @@ impl SeriesActions {
                 s.service.track(&self.series_id);
             }
             Message::RefreshSeries => {
-                s.service.push_task(
+                s.service.push_task_without_delay(
                     TaskKind::DownloadSeriesById {
                         series_id: self.series_id,
                     },
