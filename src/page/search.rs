@@ -7,7 +7,7 @@ use crate::commands::Commands;
 use crate::error::{ErrorId, ErrorInfo};
 use crate::model::{
     MovieId, RemoteMovieId, RemoteSeriesId, SearchKind, SearchMovie, SearchSeries, SeriesId,
-    TaskData, TaskKind,
+    TaskId, TaskKind,
 };
 use crate::params::{
     default_container, GAP, GAP2, IMAGE_HEIGHT, POSTER_HINT, SMALL, SPACE, SUBTITLE_SIZE,
@@ -110,17 +110,19 @@ impl Search {
                 self.search(s, commands);
             }
             Message::AddSeriesByRemote(remote_id) => {
-                s.service.push_task_without_delay(
-                    TaskKind::DownloadSeriesByRemoteId { remote_id },
-                    TaskData::populate_pending(),
-                );
+                s.service
+                    .push_task_without_delay(TaskKind::DownloadSeriesByRemoteId {
+                        remote_id,
+                        populate_pending: true,
+                    });
             }
             Message::SwitchSeries(series_id, remote_id) => {
                 s.remove_series(&series_id);
-                s.service.push_task_without_delay(
-                    TaskKind::DownloadSeriesByRemoteId { remote_id },
-                    TaskData::default(),
-                );
+                s.service
+                    .push_task_without_delay(TaskKind::DownloadSeriesByRemoteId {
+                        remote_id,
+                        populate_pending: false,
+                    });
             }
             Message::RemoveSeries(series_id) => {
                 s.remove_series(&series_id);
@@ -199,7 +201,7 @@ impl Search {
 
             let status = st
                 .service
-                .task_status(&TaskKind::DownloadSeriesByRemoteId { remote_id: s.id });
+                .task_status(&TaskId::DownloadSeriesByRemoteId { remote_id: s.id });
 
             match status {
                 Some(TaskStatus::Pending) => {
@@ -301,7 +303,7 @@ impl Search {
 
             let status = st
                 .service
-                .task_status(&TaskKind::DownloadMovieByRemoteId { remote_id: m.id });
+                .task_status(&TaskId::DownloadMovieByRemoteId { remote_id: m.id });
 
             match status {
                 Some(TaskStatus::Pending) => {

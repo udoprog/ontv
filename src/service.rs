@@ -21,7 +21,7 @@ use crate::database::Database;
 use crate::model::{
     Config, Episode, EpisodeId, Etag, Image, Movie, MovieId, Pending, RemoteEpisodeId,
     RemoteMovieId, RemoteSeriesId, ScheduledDay, ScheduledSeries, SearchMovie, SearchSeries,
-    Season, SeasonNumber, Series, SeriesId, Task, TaskData, TaskKind, ThemeType, Watched,
+    Season, SeasonNumber, Series, SeriesId, Task, TaskId, TaskKind, ThemeType, Watched,
     WatchedKind,
 };
 use crate::queue::{TaskRunning, TaskStatus};
@@ -71,7 +71,6 @@ pub(crate) struct Paths {
     pub(crate) config: Box<Path>,
     pub(crate) sync: Box<Path>,
     pub(crate) remotes: Box<Path>,
-    pub(crate) queue: Box<Path>,
     pub(crate) images: Box<Path>,
     pub(crate) series: Box<Path>,
     pub(crate) watched: Box<Path>,
@@ -100,7 +99,6 @@ impl Service {
             config: config.join("config.json").into(),
             sync: config.join("sync.json").into(),
             remotes: config.join("remotes.json").into(),
-            queue: config.join("queue.json").into(),
             series: config.join("series.json").into(),
             watched: config.join("watched.json").into(),
             pending: config.join("pending.json").into(),
@@ -298,14 +296,18 @@ impl Service {
                 RemoteSeriesId::Tvdb { .. } => TaskKind::CheckForUpdates {
                     series_id: s.id,
                     remote_id,
+                    populate_pending: true,
                 },
-                RemoteSeriesId::Tmdb { .. } => TaskKind::DownloadSeriesById { series_id: s.id },
+                RemoteSeriesId::Tmdb { .. } => TaskKind::DownloadSeriesById {
+                    series_id: s.id,
+                    remote_id,
+                    last_modified: None,
+                    populate_pending: true,
+                },
                 RemoteSeriesId::Imdb { .. } => continue,
             };
 
-            let data = TaskData::series_synced(s.id, remote_id, None, true);
-
-            if self.db.tasks.push(kind, data) {
+            if self.db.tasks.push(kind) {
                 self.db.changes.change(Change::Series);
                 self.db.changes.change(Change::Queue);
             }
@@ -317,15 +319,21 @@ impl Service {
         &mut self,
         series_id: &SeriesId,
         remote_id: &RemoteSeriesId,
-    ) -> Option<impl Future<Output = Result<Option<(TaskKind, TaskData)>>>> {
+        populate_pending: bool,
+    ) -> Option<impl Future<Output = Result<Option<TaskKind>>>> {
         let Some(s) = self.db.series.get(series_id) else {
             return None;
         };
 
         if let Some(RemoteSeriesId::Tmdb { .. }) = &s.remote_id {
-            let kind = TaskKind::DownloadSeriesById { series_id: s.id };
+            let kind = TaskKind::DownloadSeriesById {
+                series_id: s.id,
+                remote_id: *remote_id,
+                last_modified: None,
+                populate_pending,
+            };
 
-            if self.db.tasks.push(kind, TaskData::default()) {
+            if self.db.tasks.push(kind) {
                 self.db.changes.change(Change::Queue);
             }
 
@@ -339,7 +347,7 @@ impl Service {
         let remote_id = *remote_id;
 
         Some(async move {
-            let finished = match remote_id {
+            let last_modified = match remote_id {
                 RemoteSeriesId::Tvdb { id } => {
                     let Some(update) = tvdb.series_last_modified(id).await? else {
                         bail!("{series_id}/{remote_id}: missing last-modified in api");
@@ -353,20 +361,26 @@ impl Service {
                         return Ok(None);
                     }
 
-                    TaskData::series_synced(series_id, remote_id, None, true)
+                    Some(update)
                 }
                 // Nothing to do with the IMDB remote.
                 remote_id => bail!("{remote_id}: not supported for checking for updates"),
             };
 
-            let kind = TaskKind::DownloadSeriesById { series_id };
-            Ok(Some((kind, finished)))
+            let kind = TaskKind::DownloadSeriesById {
+                series_id,
+                remote_id,
+                last_modified,
+                populate_pending: true,
+            };
+
+            Ok(Some(kind))
         })
     }
 
     /// Push a single task to the queue.
-    pub(crate) fn push_task_without_delay(&mut self, kind: TaskKind, data: TaskData) -> bool {
-        if self.db.tasks.push_without_delay(kind, data) {
+    pub(crate) fn push_task_without_delay(&mut self, kind: TaskKind) -> bool {
+        if self.db.tasks.push_without_delay(kind) {
             self.db.changes.change(Change::Queue);
             true
         } else {
@@ -377,12 +391,12 @@ impl Service {
     /// Add updates to download to the queue.
     pub(crate) fn push_tasks<I>(&mut self, it: I)
     where
-        I: IntoIterator<Item = (TaskKind, TaskData)>,
+        I: IntoIterator<Item = TaskKind>,
     {
         let mut any = false;
 
-        for (kind, data) in it {
-            any |= self.db.tasks.push(kind, data);
+        for kind in it {
+            any |= self.db.tasks.push(kind);
         }
 
         if any {
@@ -1126,29 +1140,32 @@ impl Service {
 
     /// Check if the given task is pending.
     #[inline]
-    pub(crate) fn task_status(&self, kind: &TaskKind) -> Option<TaskStatus> {
-        self.db.tasks.status(kind)
+    pub(crate) fn task_status(&self, id: &TaskId) -> Option<TaskStatus> {
+        self.db.tasks.status(id)
     }
 
     /// Mark task as completed.
     #[inline]
     pub(crate) fn complete_task(&mut self, task: Task) -> Option<TaskStatus> {
-        if let TaskData {
-            series_id: Some(series_id),
-            remote_id: Some(remote_id),
-            last_modified,
-            ..
-        } = &task.data
-        {
-            let now = Utc::now();
+        match &task.kind {
+            TaskKind::DownloadSeriesById {
+                series_id,
+                remote_id,
+                last_modified,
+                ..
+            } => {
+                let now = Utc::now();
 
-            if self
-                .db
-                .sync
-                .series_update_sync(series_id, remote_id, &now, last_modified.as_ref())
-            {
-                self.db.changes.change(Change::Sync);
+                if self.db.sync.series_update_sync(
+                    series_id,
+                    remote_id,
+                    &now,
+                    last_modified.as_ref(),
+                ) {
+                    self.db.changes.change(Change::Sync);
+                }
             }
+            _ => {}
         }
 
         self.db.tasks.complete(&task)

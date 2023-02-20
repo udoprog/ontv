@@ -6,7 +6,7 @@ use iced::widget::{button, horizontal_rule, text, vertical_space, Column, Row};
 use iced::{theme, Element, Length};
 
 use crate::commands::Commands;
-use crate::model::{RemoteMovieId, RemoteSeriesId, SeriesId, TaskKind};
+use crate::model::{RemoteMovieId, RemoteSeriesId, SeriesId, TaskId};
 use crate::params::{default_container, duration_display, GAP, GAP2, SMALL, SPACE};
 use crate::state::{Page, State};
 use crate::utils::{TimedOut, Timeout};
@@ -136,7 +136,7 @@ impl Queue {
         let mut list = Column::new();
 
         while let Some(task) = tasks.next() {
-            let mut row = build_task_row(s, &task.kind);
+            let mut row = build_task_row(s, &task.kind.id());
 
             let duration = match &task.scheduled {
                 Some(scheduled) => now.signed_duration_since(*scheduled),
@@ -170,22 +170,23 @@ impl Queue {
     }
 }
 
-fn build_task_row<'a>(s: &State, kind: &TaskKind) -> Row<'a, Message> {
+fn build_task_row<'a>(s: &State, kind: &TaskId) -> Row<'a, Message> {
     let mut update = Row::new();
 
     match kind {
-        TaskKind::CheckForUpdates {
+        TaskId::CheckForUpdates {
             series_id,
             remote_id,
+            ..
         } => {
             update = update.push(text("Updates").size(SMALL));
             update = decorate_series(s, series_id, Some(remote_id), update);
         }
-        TaskKind::DownloadSeriesById { series_id, .. } => {
+        TaskId::DownloadSeriesById { series_id, .. } => {
             update = update.push(text("Downloading").size(SMALL));
             update = decorate_series(s, series_id, None, update);
         }
-        TaskKind::DownloadSeriesByRemoteId { remote_id, .. } => {
+        TaskId::DownloadSeriesByRemoteId { remote_id, .. } => {
             update = update.push(text("Downloading").size(SMALL).width(Length::Fill));
 
             update = update.push(
@@ -196,7 +197,7 @@ fn build_task_row<'a>(s: &State, kind: &TaskKind) -> Row<'a, Message> {
                     .on_press(Message::OpenRemoteSeries(*remote_id)),
             );
         }
-        TaskKind::DownloadMovieByRemoteId { remote_id } => {
+        TaskId::DownloadMovieByRemoteId { remote_id } => {
             update = update.push(text("Downloading").size(SMALL).width(Length::Fill));
 
             update = update.push(

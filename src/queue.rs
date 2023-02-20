@@ -3,17 +3,17 @@ use std::collections::{HashMap, VecDeque};
 use chrono::{DateTime, Duration, Utc};
 use uuid::Uuid;
 
-use crate::model::{Task, TaskData, TaskKind};
+use crate::model::{Task, TaskId, TaskKind};
 
 /// Number of milliseconds of delay to add by default to scheduled tasks.
 const DELAY_MILLIS: i64 = 250;
 // Soft capacity, that some processes which might add a lot of stuff can check.
 const CAPACITY: usize = 50;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct TaskRunning {
     pub(crate) id: Uuid,
-    pub(crate) kind: TaskKind,
+    pub(crate) kind: TaskId,
 }
 
 /// The current task status.
@@ -29,7 +29,7 @@ pub(crate) enum TaskStatus {
 #[derive(Default)]
 pub(crate) struct Queue {
     /// Pending tasks.
-    status: HashMap<TaskKind, TaskStatus>,
+    status: HashMap<TaskId, TaskStatus>,
     /// Items in the download queue.
     data: VecDeque<Task>,
     /// Collection of running tasks.
@@ -41,8 +41,8 @@ pub(crate) struct Queue {
 impl Queue {
     /// Test if queue contains a task of the given kind.
     #[inline]
-    pub(crate) fn status(&self, kind: &TaskKind) -> Option<TaskStatus> {
-        self.status.get(kind).copied()
+    pub(crate) fn status(&self, id: &TaskId) -> Option<TaskStatus> {
+        self.status.get(id).copied()
     }
 
     /// Mark the given task kind as completed, returns `true` if the task was
@@ -50,7 +50,7 @@ impl Queue {
     #[inline]
     pub(crate) fn complete(&mut self, task: &Task) -> Option<TaskStatus> {
         self.running.retain(|t| t.id != task.id);
-        self.status.remove(&task.kind)
+        self.status.remove(&task.kind.id())
     }
 
     /// Running tasks.
@@ -74,7 +74,7 @@ impl Queue {
 
         for data in &self.data {
             if predicate(data) {
-                let _ = self.status.remove(&data.kind);
+                let _ = self.status.remove(&data.kind.id());
                 removed += 1;
             }
         }
@@ -82,17 +82,6 @@ impl Queue {
         self.data.retain(move |task| !predicate(task));
         self.modified |= removed > 0;
         removed
-    }
-
-    /// Sort an item.
-    pub(crate) fn sort(&mut self) {
-        self.data.rotate_right(self.data.as_slices().1.len());
-        debug_assert!(self.data.as_slices().1.is_empty());
-        self.data
-            .as_mut_slices()
-            .0
-            .sort_by(|a, b| a.scheduled.cmp(&b.scheduled));
-        self.modified = true;
     }
 
     /// Take if the queue has been modified.
@@ -116,11 +105,11 @@ impl Queue {
         }
 
         let task = self.data.pop_front()?;
-        self.status.insert(task.kind, TaskStatus::Running);
+        self.status.insert(task.kind.id(), TaskStatus::Running);
 
         self.running.push(TaskRunning {
             id: task.id,
-            kind: task.kind,
+            kind: task.kind.id(),
         });
 
         Some(task)
@@ -142,18 +131,19 @@ impl Queue {
     }
 
     /// Push without delay.
-    pub(crate) fn push_without_delay(&mut self, kind: TaskKind, data: TaskData) -> bool {
-        if self.status.contains_key(&kind) {
+    pub(crate) fn push_without_delay(&mut self, kind: TaskKind) -> bool {
+        let id = kind.id();
+
+        if self.status.contains_key(&id) {
             return false;
         }
 
-        self.status.insert(kind, TaskStatus::Pending);
+        self.status.insert(id, TaskStatus::Pending);
 
         self.data.push_back(Task {
             id: Uuid::new_v4(),
-            scheduled: None,
             kind,
-            data,
+            scheduled: None,
         });
 
         self.modified = true;
@@ -161,8 +151,10 @@ impl Queue {
     }
 
     /// Push a task onto the queue.
-    pub(crate) fn push(&mut self, kind: TaskKind, data: TaskData) -> bool {
-        if self.status.contains_key(&kind) {
+    pub(crate) fn push(&mut self, kind: TaskKind) -> bool {
+        let id = kind.id();
+
+        if self.status.contains_key(&id) {
             return false;
         }
 
@@ -174,28 +166,16 @@ impl Queue {
             .unwrap_or_else(Utc::now)
             + Duration::milliseconds(DELAY_MILLIS);
 
-        self.status.insert(kind, TaskStatus::Pending);
+        self.status.insert(id, TaskStatus::Pending);
 
         self.data.push_back(Task {
             id: Uuid::new_v4(),
-            scheduled: Some(scheduled),
             kind,
-            data,
+            scheduled: Some(scheduled),
         });
 
         self.modified = true;
         true
-    }
-
-    /// Push a task without performing scheduling.
-    pub(crate) fn import_push(&mut self, task: Task) {
-        if self.status.contains_key(&task.kind) {
-            return;
-        }
-
-        self.status.insert(task.kind, TaskStatus::Pending);
-        self.data.push_back(task);
-        self.modified = true;
     }
 
     /// Check if queue is at its soft capacity.

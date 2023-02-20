@@ -15,7 +15,7 @@ use anyhow::{anyhow, Context, Error, Result};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::model::{Config, Episode, Pending, RemoteId, Season, Series, SeriesId, Task, Watched};
+use crate::model::{Config, Episode, Pending, RemoteId, Season, Series, SeriesId, Watched};
 use crate::queue::Queue;
 use crate::service::Paths;
 
@@ -75,14 +75,6 @@ impl Database {
             for sync in syncs {
                 db.sync.import_push(sync);
             }
-        }
-
-        if let Some(tasks) = load_array::<Task>(&paths.queue)? {
-            for task in tasks {
-                db.tasks.import_push(task);
-            }
-
-            db.tasks.sort();
         }
 
         if let Some(series) = load_series(&paths.series)? {
@@ -174,11 +166,6 @@ impl Database {
             .contains(Change::Series)
             .then(|| self.series.export());
 
-        let queue = changes
-            .set
-            .contains(Change::Queue)
-            .then(|| self.tasks.pending().cloned().collect::<Vec<_>>());
-
         let remove_series = changes.remove;
         let mut add_series = Vec::with_capacity(changes.add.len());
 
@@ -231,10 +218,6 @@ impl Database {
 
             if let Some(remotes) = remotes {
                 save_array("remotes", &paths.remotes, remotes).await?;
-            }
-
-            if let Some(queue) = queue {
-                save_array("queue", &paths.queue, queue).await?;
             }
 
             for series_id in remove_series {

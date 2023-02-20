@@ -7,7 +7,7 @@ use iced::widget::scrollable::RelativeOffset;
 
 use crate::assets::Assets;
 use crate::error::{ErrorId, ErrorInfo};
-use crate::model::{MovieId, SeasonNumber, SeriesId};
+use crate::model::{MovieId, RemoteSeriesId, SeasonNumber, SeriesId};
 use crate::service::{NewSeries, Service};
 
 /// The current page.
@@ -152,14 +152,12 @@ impl State {
     pub(crate) fn refresh_series(
         &mut self,
         id: &SeriesId,
-    ) -> Option<impl Future<Output = Result<Option<NewSeries>>>> {
-        let s = self.service.series(id)?;
-        let remote_id = s.remote_id?;
-        let none_if_match = self.service.last_etag(id, &remote_id).cloned();
-        Some(
-            self.service
-                .download_series(&remote_id, none_if_match.as_ref(), false),
-        )
+        remote_id: &RemoteSeriesId,
+        populate_pending: bool,
+    ) -> impl Future<Output = Result<Option<NewSeries>>> {
+        let none_if_match = self.service.last_etag(id, remote_id).cloned();
+        self.service
+            .download_series(&remote_id, none_if_match.as_ref(), populate_pending)
     }
 
     #[inline]

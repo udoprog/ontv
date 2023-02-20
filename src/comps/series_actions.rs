@@ -2,7 +2,7 @@ use iced::widget::{button, text, Row};
 use iced::{theme, Element};
 
 use crate::component::Component;
-use crate::model::{Series, SeriesId, TaskData, TaskKind};
+use crate::model::{RemoteSeriesId, Series, SeriesId, TaskId, TaskKind};
 use crate::params::{SMALL, SPACE};
 use crate::queue::TaskStatus;
 use crate::state::State;
@@ -11,7 +11,7 @@ use crate::state::State;
 pub(crate) enum Message {
     Untrack,
     Track,
-    RefreshSeries,
+    RefreshSeries(RemoteSeriesId),
     RemoveSeries,
 }
 
@@ -48,13 +48,14 @@ impl SeriesActions {
             Message::Track => {
                 s.service.track(&self.series_id);
             }
-            Message::RefreshSeries => {
-                s.service.push_task_without_delay(
-                    TaskKind::DownloadSeriesById {
+            Message::RefreshSeries(remote_id) => {
+                s.service
+                    .push_task_without_delay(TaskKind::DownloadSeriesById {
                         series_id: self.series_id,
-                    },
-                    TaskData::default(),
-                );
+                        remote_id,
+                        last_modified: None,
+                        populate_pending: false,
+                    });
             }
             Message::RemoveSeries => {
                 s.remove_series(&self.series_id);
@@ -79,7 +80,7 @@ impl SeriesActions {
             );
         }
 
-        let status = s.service.task_status(&TaskKind::DownloadSeriesById {
+        let status = s.service.task_status(&TaskId::DownloadSeriesById {
             series_id: series.id,
         });
 
@@ -94,11 +95,13 @@ impl SeriesActions {
                     .push(button(text("Downloading...").size(SMALL)).style(theme::Button::Primary));
             }
             None => {
-                row = row.push(
-                    button(text("Refresh").size(SMALL))
-                        .style(theme::Button::Positive)
-                        .on_press(Message::RefreshSeries),
-                );
+                if let Some(remote_id) = series.remote_id {
+                    row = row.push(
+                        button(text("Refresh").size(SMALL))
+                            .style(theme::Button::Positive)
+                            .on_press(Message::RefreshSeries(remote_id)),
+                    );
+                }
             }
         }
 

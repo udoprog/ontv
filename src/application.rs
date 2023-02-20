@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::assets::{Assets, ImageKey};
 use crate::commands::{Commands, CommandsBuf};
 use crate::error::ErrorInfo;
-use crate::model::{Task, TaskData, TaskKind};
+use crate::model::{Task, TaskKind};
 use crate::page;
 use crate::params::{GAP, SMALL, SPACE, SUB_MENU_SIZE};
 use crate::service::{NewSeries, Service};
@@ -52,7 +52,7 @@ pub(crate) enum Message {
     /// Images have been loaded in the background.
     ImagesLoaded(Result<Vec<(ImageKey, Handle)>, ErrorInfo>),
     /// Update download queue with the given items.
-    TaskUpdateDownloadQueue(Result<Option<(TaskKind, TaskData)>, ErrorInfo>, Task),
+    TaskUpdateDownloadQueue(Result<Option<TaskKind>, ErrorInfo>, Task),
     /// Task output of add series by remote.
     TaskSeriesDownloaded(Result<Option<NewSeries>, ErrorInfo>, Task),
     /// Queue processing.
@@ -612,9 +612,13 @@ impl Application {
                 TaskKind::CheckForUpdates {
                     series_id,
                     remote_id,
+                    populate_pending,
                 } => {
-                    if let Some(future) = self.state.service.check_for_updates(series_id, remote_id)
-                    {
+                    if let Some(future) = self.state.service.check_for_updates(
+                        series_id,
+                        remote_id,
+                        *populate_pending,
+                    ) {
                         self.commands.perform(future, move |result| {
                             Message::TaskUpdateDownloadQueue(
                                 result.map_err(Into::into),
@@ -625,25 +629,31 @@ impl Application {
                         self.state.service.complete_task(task);
                     }
                 }
-                TaskKind::DownloadSeriesById { series_id } => {
-                    if let Some(future) = self.state.refresh_series(series_id) {
-                        self.commands.perform(future, move |result| {
+                TaskKind::DownloadSeriesById {
+                    series_id,
+                    remote_id,
+                    populate_pending,
+                    ..
+                } => {
+                    self.commands.perform(
+                        self.state
+                            .refresh_series(series_id, remote_id, *populate_pending),
+                        move |result| {
                             Message::TaskSeriesDownloaded(result.map_err(Into::into), task.clone())
-                        });
-                    } else {
-                        self.state.service.complete_task(task);
-                    }
+                        },
+                    );
                 }
-                TaskKind::DownloadSeriesByRemoteId { remote_id } => {
+                TaskKind::DownloadSeriesByRemoteId {
+                    remote_id,
+                    populate_pending,
+                } => {
                     if self.state.service.set_series_tracked_by_remote(remote_id) {
                         self.state.service.complete_task(task);
                     } else {
                         self.commands.perform(
-                            self.state.service.download_series(
-                                remote_id,
-                                None,
-                                task.is_populate_pending(),
-                            ),
+                            self.state
+                                .service
+                                .download_series(remote_id, None, *populate_pending),
                             move |result| {
                                 Message::TaskSeriesDownloaded(
                                     result.map_err(Into::into),
