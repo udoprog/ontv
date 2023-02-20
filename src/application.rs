@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::assets::{Assets, ImageKey};
 use crate::commands::{Commands, CommandsBuf};
 use crate::error::ErrorInfo;
-use crate::model::{Task, TaskFinished, TaskKind};
+use crate::model::{Task, TaskData, TaskKind};
 use crate::page;
 use crate::params::{GAP, SMALL, SPACE, SUB_MENU_SIZE};
 use crate::service::{NewSeries, Service};
@@ -52,7 +52,7 @@ pub(crate) enum Message {
     /// Images have been loaded in the background.
     ImagesLoaded(Result<Vec<(ImageKey, Handle)>, ErrorInfo>),
     /// Update download queue with the given items.
-    TaskUpdateDownloadQueue(Result<Option<(TaskKind, TaskFinished)>, ErrorInfo>, Task),
+    TaskUpdateDownloadQueue(Result<Option<(TaskKind, TaskData)>, ErrorInfo>, Task),
     /// Task output of add series by remote.
     TaskSeriesDownloaded(Result<Option<NewSeries>, ErrorInfo>, Task),
     /// Queue processing.
@@ -274,11 +274,7 @@ impl iced::Application for Application {
             (Message::TaskUpdateDownloadQueue(result, task), _) => {
                 match result {
                     Ok(queue) => {
-                        self.state.service.push_tasks(
-                            queue
-                                .into_iter()
-                                .map(|(kind, finished)| (kind, Some(finished))),
-                        );
+                        self.state.service.push_tasks(queue);
                     }
                     Err(error) => {
                         self.state.handle_error(error);
@@ -619,13 +615,11 @@ impl Application {
                 } => {
                     if let Some(future) = self.state.service.check_for_updates(series_id, remote_id)
                     {
-                        self.commands.perform(future, move |output| match output {
-                            Ok(update) => {
-                                Message::TaskUpdateDownloadQueue(Ok(update), task.clone())
-                            }
-                            Err(error) => {
-                                Message::TaskUpdateDownloadQueue(Err(error.into()), task.clone())
-                            }
+                        self.commands.perform(future, move |result| {
+                            Message::TaskUpdateDownloadQueue(
+                                result.map_err(Into::into),
+                                task.clone(),
+                            )
                         });
                     } else {
                         self.state.service.complete_task(task);
@@ -633,13 +627,8 @@ impl Application {
                 }
                 TaskKind::DownloadSeriesById { series_id } => {
                     if let Some(future) = self.state.refresh_series(series_id) {
-                        self.commands.perform(future, move |result| match result {
-                            Ok(new_series) => {
-                                Message::TaskSeriesDownloaded(Ok(new_series), task.clone())
-                            }
-                            Err(error) => {
-                                Message::TaskSeriesDownloaded(Err(error.into()), task.clone())
-                            }
+                        self.commands.perform(future, move |result| {
+                            Message::TaskSeriesDownloaded(result.map_err(Into::into), task.clone())
                         });
                     } else {
                         self.state.service.complete_task(task);
@@ -650,9 +639,11 @@ impl Application {
                         self.state.service.complete_task(task);
                     } else {
                         self.commands.perform(
-                            self.state
-                                .service
-                                .download_series_by_remote(remote_id, None),
+                            self.state.service.download_series(
+                                remote_id,
+                                None,
+                                task.is_populate_pending(),
+                            ),
                             move |result| {
                                 Message::TaskSeriesDownloaded(
                                     result.map_err(Into::into),

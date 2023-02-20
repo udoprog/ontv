@@ -2,7 +2,7 @@ use iced::widget::{button, text, Row};
 use iced::{theme, Element};
 
 use crate::component::Component;
-use crate::model::{Series, SeriesId, TaskKind};
+use crate::model::{Series, SeriesId, TaskData, TaskKind};
 use crate::params::{SMALL, SPACE};
 use crate::queue::TaskStatus;
 use crate::state::State;
@@ -53,7 +53,7 @@ impl SeriesActions {
                     TaskKind::DownloadSeriesById {
                         series_id: self.series_id,
                     },
-                    None,
+                    TaskData::default(),
                 );
             }
             Message::RemoveSeries => {

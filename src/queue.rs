@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use chrono::{DateTime, Duration, Utc};
 use uuid::Uuid;
 
-use crate::model::{Task, TaskFinished, TaskKind};
+use crate::model::{Task, TaskData, TaskKind};
 
 /// Number of milliseconds of delay to add by default to scheduled tasks.
 const DELAY_MILLIS: i64 = 250;
@@ -142,11 +142,7 @@ impl Queue {
     }
 
     /// Push without delay.
-    pub(crate) fn push_without_delay(
-        &mut self,
-        kind: TaskKind,
-        finished: Option<TaskFinished>,
-    ) -> bool {
+    pub(crate) fn push_without_delay(&mut self, kind: TaskKind, data: TaskData) -> bool {
         if self.status.contains_key(&kind) {
             return false;
         }
@@ -157,7 +153,7 @@ impl Queue {
             id: Uuid::new_v4(),
             scheduled: None,
             kind,
-            finished,
+            data,
         });
 
         self.modified = true;
@@ -165,7 +161,7 @@ impl Queue {
     }
 
     /// Push a task onto the queue.
-    pub(crate) fn push(&mut self, kind: TaskKind, finished: Option<TaskFinished>) -> bool {
+    pub(crate) fn push(&mut self, kind: TaskKind, data: TaskData) -> bool {
         if self.status.contains_key(&kind) {
             return false;
         }
@@ -184,7 +180,7 @@ impl Queue {
             id: Uuid::new_v4(),
             scheduled: Some(scheduled),
             kind,
-            finished,
+            data,
         });
 
         self.modified = true;

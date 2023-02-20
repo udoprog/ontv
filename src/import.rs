@@ -123,7 +123,7 @@ async fn download_series(
 ) -> Result<Option<SeriesId>> {
     log::info!("downloading `{}`", entry.show.title);
 
-    let new_series = match service.download_series_by_remote(remote_id, None).await {
+    let new_series = match service.download_series(remote_id, None, true).await {
         Ok(Some(new_series)) => new_series,
         Ok(None) => {
             anyhow::bail!("empty response")

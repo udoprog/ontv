@@ -875,19 +875,53 @@ pub(crate) enum TaskKind {
 }
 
 /// Actions that can be performed after a task has completed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case")]
-pub(crate) enum TaskFinished {
-    /// Update series.
-    SeriesSynced {
-        /// Series to update.
+pub(crate) struct TaskData {
+    /// Series to update.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) series_id: Option<SeriesId>,
+    /// Remote series id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) remote_id: Option<RemoteSeriesId>,
+    /// Update last modified date.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) last_modified: Option<DateTime<Utc>>,
+    /// Populate pending.
+    #[serde(default)]
+    pub(crate) populate_pending: bool,
+}
+
+impl TaskData {
+    fn is_empty(&self) -> bool {
+        self.series_id.is_none()
+            && self.remote_id.is_none()
+            && self.last_modified.is_none()
+            && !self.populate_pending
+    }
+
+    /// Indicates that pending should be populated.
+    pub(crate) fn populate_pending() -> TaskData {
+        Self {
+            populate_pending: true,
+            ..Self::default()
+        }
+    }
+
+    /// Construct task data for series synced.
+    pub(crate) fn series_synced(
         series_id: SeriesId,
-        /// Remote series id.
         remote_id: RemoteSeriesId,
-        /// Update last modified date.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         last_modified: Option<DateTime<Utc>>,
-    },
+        populate_pending: bool,
+    ) -> TaskData {
+        Self {
+            series_id: Some(series_id),
+            remote_id: Some(remote_id),
+            last_modified,
+            populate_pending,
+        }
+    }
 }
 
 /// A task in a queue.
@@ -903,8 +937,8 @@ pub(crate) struct Task {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) scheduled: Option<DateTime<Utc>>,
     /// Task finished actions.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) finished: Option<TaskFinished>,
+    #[serde(default, skip_serializing_if = "TaskData::is_empty")]
+    pub(crate) data: TaskData,
 }
 
 impl Task {
@@ -916,6 +950,11 @@ impl Task {
             TaskKind::DownloadSeriesByRemoteId { .. } => false,
             TaskKind::DownloadMovieByRemoteId { .. } => false,
         }
+    }
+
+    /// Test if task should populate pending.
+    pub(crate) fn is_populate_pending(&self) -> bool {
+        self.data.populate_pending
     }
 }
 

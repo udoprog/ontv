@@ -158,7 +158,7 @@ impl State {
         let none_if_match = self.service.last_etag(id, &remote_id).cloned();
         Some(
             self.service
-                .download_series(&remote_id, none_if_match.as_ref()),
+                .download_series(&remote_id, none_if_match.as_ref(), false),
         )
     }
 
