@@ -99,9 +99,9 @@ impl Client {
 
         let bytes: Bytes = handle_res(res).await?;
 
-        if log::log_enabled!(log::Level::Trace) {
+        if tracing::enabled!(tracing::Level::TRACE) {
             let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
-            log::trace!("search_by_name: {raw}");
+            tracing::trace!("search_by_name: {raw}");
         }
 
         let mut output = Vec::new();
@@ -150,9 +150,9 @@ impl Client {
 
         let bytes: Bytes = handle_res(res).await?;
 
-        if log::log_enabled!(log::Level::Trace) {
+        if tracing::enabled!(tracing::Level::TRACE) {
             let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
-            log::trace!("search/movie: {raw}");
+            tracing::trace!("search/movie: {raw}");
         }
 
         let mut output = Vec::new();
@@ -237,11 +237,11 @@ impl Client {
         let (external_ids, details) =
             tokio::try_join!(handle_res(external_ids), handle_res(details))?;
 
-        if log::log_enabled!(log::Level::Trace) {
+        if tracing::enabled!(tracing::Level::TRACE) {
             let details = serde_json::from_slice::<serde_json::Value>(&details)?;
-            log::trace!("details: {details}");
+            tracing::trace!("details: {details}");
             let external_ids = serde_json::from_slice::<serde_json::Value>(&external_ids)?;
-            log::trace!("external_ids: {external_ids}");
+            tracing::trace!("external_ids: {external_ids}");
         }
 
         let details: Details = serde_json::from_slice(&details).context("details response")?;
@@ -362,9 +362,9 @@ impl Client {
 
         let details = handle_res(details).await?;
 
-        if log::log_enabled!(log::Level::Trace) {
+        if tracing::enabled!(tracing::Level::TRACE) {
             let details = serde_json::from_slice::<serde_json::Value>(&details)?;
-            log::trace!("details: {details}");
+            tracing::trace!("details: {details}");
         }
 
         let details: Details = serde_json::from_slice(&details).context("details response")?;
@@ -451,7 +451,7 @@ impl Client {
         EpisodeId,
         EpisodeDetail,
     )> {
-        log::trace!(
+        tracing::trace!(
             "downloading remote ids for: series: {series_id}, season: {season_number}, episode: {}",
             episode.episode_number
         );
@@ -465,7 +465,7 @@ impl Client {
         let external_ids = match external_ids {
             Some(external_ids) => external_ids,
             None => {
-                log::warn!(
+                tracing::warn!(
                     "missing external ids for: series: {series_id}, season: {season_number}, episode: {}",
                     episode.episode_number
                 );

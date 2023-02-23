@@ -35,11 +35,10 @@ pub(crate) struct NewSeries {
     last_modified: Option<DateTime<Utc>>,
     episodes: Vec<NewEpisode>,
     seasons: Vec<Season>,
-    populate_pending: bool,
 }
 
 /// New episode.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct NewEpisode {
     pub(crate) episode: Episode,
     pub(crate) remote_ids: BTreeSet<RemoteEpisodeId>,
@@ -108,7 +107,7 @@ impl Service {
         };
 
         if !paths.images.is_dir() {
-            log::debug!("creating images directory: {}", paths.images.display());
+            tracing::debug!("creating images directory: {}", paths.images.display());
             std::fs::create_dir_all(&paths.images)?;
         }
 
@@ -296,13 +295,11 @@ impl Service {
                 RemoteSeriesId::Tvdb { .. } => TaskKind::CheckForUpdates {
                     series_id: s.id,
                     remote_id,
-                    populate_pending: true,
                 },
                 RemoteSeriesId::Tmdb { .. } => TaskKind::DownloadSeriesById {
                     series_id: s.id,
                     remote_id,
                     last_modified: None,
-                    populate_pending: true,
                 },
                 RemoteSeriesId::Imdb { .. } => continue,
             };
@@ -319,7 +316,6 @@ impl Service {
         &mut self,
         series_id: &SeriesId,
         remote_id: &RemoteSeriesId,
-        populate_pending: bool,
     ) -> Option<impl Future<Output = Result<Option<TaskKind>>>> {
         let Some(s) = self.db.series.get(series_id) else {
             return None;
@@ -330,7 +326,6 @@ impl Service {
                 series_id: s.id,
                 remote_id: *remote_id,
                 last_modified: None,
-                populate_pending,
             };
 
             if self.db.tasks.push(kind) {
@@ -353,7 +348,7 @@ impl Service {
                         bail!("{series_id}/{remote_id}: missing last-modified in api");
                     };
 
-                    log::trace!(
+                    tracing::trace!(
                         "{series_id}/{remote_id}: last modified {update:?} (existing {last_modified:?})"
                     );
 
@@ -371,7 +366,6 @@ impl Service {
                 series_id,
                 remote_id,
                 last_modified,
-                populate_pending: true,
             };
 
             Ok(Some(kind))
@@ -445,7 +439,7 @@ impl Service {
         }
 
         if let Some(last) = last {
-            self.populate_pending_from(series_id, &last);
+            self.populate_pending_from(now, series_id, &last);
         } else {
             self.remove_pending(series_id);
         }
@@ -468,7 +462,7 @@ impl Service {
         });
 
         self.db.changes.change(Change::Watched);
-        self.populate_pending_from(series_id, episode_id);
+        self.populate_pending_from(now, series_id, episode_id);
     }
 
     /// Skip an episode.
@@ -552,7 +546,7 @@ impl Service {
         episode_id: &EpisodeId,
         watch_id: &Uuid,
     ) {
-        log::trace!(
+        tracing::trace!(
             "remove series_id: {series_id}, episode_id: {episode_id}, watch_id: {watch_id}"
         );
 
@@ -644,70 +638,69 @@ impl Service {
 
     /// Populate pending from a series where we don't know which episode to
     /// populate from.
-    pub(crate) fn populate_pending(&mut self, series_id: &SeriesId) {
-        let pending = self.db.pending.position_for_series(series_id);
-
-        if pending.is_some() {
+    #[tracing::instrument(skip(self))]
+    pub(crate) fn populate_pending(&mut self, now: &DateTime<Utc>, id: &SeriesId) {
+        if self.db.pending.position_for_series(id).is_some() {
             // Do nothing since we already have a pending episode.
             return;
         }
 
-        let mut episode = None;
+        let eps = self.db.episodes.get(id).into_iter().flatten();
 
-        for e in self.db.episodes.get(series_id).into_iter().flatten() {
-            if self.db.watched.get(&e.id).len() > 0 {
-                episode = None;
-                continue;
-            }
+        let next_episode = if let Some(
+            watched @ Watched {
+                kind: WatchedKind::Series { episode, .. },
+                ..
+            },
+        ) = self.db.watched.series(id).next_back()
+        {
+            tracing::trace!(?watched, "episode after watched");
+            eps.skip_while(|e| e.id != *episode).nth(1)
+        } else {
+            tracing::trace!("finding next unwatched episode");
+            eps.skip_while(|e| self.db.watched.get(&e.id).len() > 0 || e.season.is_special())
+                .next()
+        };
 
-            if episode.is_none() && !e.season.is_special() {
-                episode = Some(e);
-            }
-        }
+        let Some(e) = next_episode else {
+            return;
+        };
 
-        let timestamp = self.db.watched.series(series_id).map(|w| w.timestamp).max();
+        let timestamp = self
+            .db
+            .watched
+            .series(id)
+            .map(|w| &w.timestamp)
+            .max()
+            .unwrap_or(now);
 
-        if let Some(index) = pending {
-            self.db.changes.change(Change::Pending);
-            self.db.pending.remove_by_index(index);
-        }
-
-        // Mark the first episode (that has aired).
-        if let (Some(timestamp), Some(e)) = (timestamp, episode) {
-            self.db.changes.change(Change::Pending);
-            // Mark the next episode in the show as pending.
-            self.db.pending.extend([Pending {
-                series: *series_id,
-                episode: e.id,
-                timestamp,
-            }]);
-        }
+        self.db.changes.change(Change::Pending);
+        // Mark the next episode in the show as pending.
+        self.db.pending.extend([Pending {
+            series: *id,
+            episode: e.id,
+            timestamp: *timestamp,
+        }]);
     }
 
     /// Populate pending from a known episode ID.
-    fn populate_pending_from(&mut self, series_id: &SeriesId, id: &EpisodeId) {
-        let pending = self.db.pending.position_for_series(series_id);
-
-        let timestamp = self.db.watched.get(&id).map(|w| w.timestamp).max();
-
-        if let Some(index) = pending {
+    fn populate_pending_from(&mut self, now: &DateTime<Utc>, series_id: &SeriesId, id: &EpisodeId) {
+        if let Some(index) = self.db.pending.position_for_series(series_id) {
             self.db.changes.change(Change::Pending);
             self.db.pending.remove_by_index(index);
         }
 
-        let eps = self.db.episodes.get(series_id).into_iter().flatten();
-        let episode = eps.skip_while(|e| e.id != *id).nth(1);
+        let Some(e) = self.db.episodes.get(series_id).into_iter().flatten().skip_while(|e| e.id != *id).nth(1) else {
+            return;
+        };
 
-        // Mark the first episode (that has aired).
-        if let (Some(timestamp), Some(e)) = (timestamp, episode) {
-            self.db.changes.change(Change::Pending);
-            // Mark the next episode in the show as pending.
-            self.db.pending.extend([Pending {
-                series: *series_id,
-                episode: e.id,
-                timestamp,
-            }]);
-        }
+        // Mark the next episode in the show as pending.
+        self.db.changes.change(Change::Pending);
+        self.db.pending.extend([Pending {
+            series: *series_id,
+            episode: e.id,
+            timestamp: *now,
+        }]);
     }
 
     /// Get current configuration.
@@ -773,11 +766,11 @@ impl Service {
     }
 
     /// Download series using a remote identifier.
+    #[tracing::instrument(skip(self))]
     pub(crate) fn download_series(
         &mut self,
         remote_id: &RemoteSeriesId,
         if_none_match: Option<&Etag>,
-        populate_pending: bool,
     ) -> impl Future<Output = Result<Option<NewSeries>>> {
         let tvdb = self.tvdb.clone();
         let tmdb = self.tmdb.clone();
@@ -808,12 +801,11 @@ impl Service {
                         last_modified,
                         episodes,
                         seasons,
-                        populate_pending,
                     }
                 }
                 RemoteSeriesId::Tmdb { id } => {
                     let Some((series, remote_ids, last_etag, last_modified, seasons)) = tmdb.series(id, lookup_series, if_none_match.as_ref()).await? else {
-                        log::trace!("{remote_id}: not changed");
+                        tracing::trace!("{remote_id}: not changed");
                         return Ok(None);
                     };
 
@@ -832,7 +824,6 @@ impl Service {
                         last_modified,
                         episodes,
                         seasons,
-                        populate_pending,
                     }
                 }
                 RemoteSeriesId::Imdb { .. } => {
@@ -873,7 +864,8 @@ impl Service {
     }
 
     /// Insert a new tracked song.
-    pub(crate) fn insert_new_series(&mut self, data: NewSeries) {
+    #[tracing::instrument(skip(self))]
+    pub(crate) fn insert_new_series(&mut self, now: &DateTime<Utc>, data: NewSeries) {
         let series_id = data.series.id;
 
         for &remote_id in &data.remote_ids {
@@ -925,11 +917,8 @@ impl Service {
             self.db.series.insert(data.series);
         }
 
-        if data.populate_pending {
-            // Remove any pending episodes for the given series.
-            self.populate_pending(&series_id);
-        }
-
+        // Remove any pending episodes for the given series.
+        self.populate_pending(now, &series_id);
         self.db.changes.add_series(&series_id);
     }
 

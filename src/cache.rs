@@ -117,7 +117,7 @@ where
 
     match fs::read(&path).await {
         Ok(data) => {
-            log::trace!("reading from cache: {}", path.display());
+            tracing::trace!("reading from cache: {}", path.display());
             let image = image_rs::load_from_memory_with_format(&data, format)?;
             let (width, height) = image.dimensions();
             let pixels = image.to_rgba8();
@@ -127,7 +127,7 @@ where
         Err(e) => return Err(e.into()),
     }
 
-    log::debug!("downloading: {id}: {}", path.display());
+    tracing::debug!("downloading: {id}: {}", path.display());
     let data = client.download_image(&id).await?;
     let image = image_rs::load_from_memory_with_format(&data, format)?;
 
@@ -142,7 +142,7 @@ where
         None => image,
     };
 
-    log::trace!("writing: {}", path.display());
+    tracing::trace!("writing: {}", path.display());
 
     let mut buf = Cursor::new(Vec::with_capacity(1024));
     image.write_to(&mut buf, format)?;

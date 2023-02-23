@@ -36,7 +36,7 @@ pub fn import_trakt_watched(
             }
         }
 
-        log::trace!("{index}: {row}");
+        tracing::trace!("{index}: {row}");
 
         let mut ids = Vec::new();
 
@@ -52,11 +52,13 @@ pub fn import_trakt_watched(
             id: Raw::new(&entry.show.ids.imdb).context("imdb id")?,
         });
 
+        let now = Utc::now();
+
         // TODO: use more databases.
         let series_id = match service.existing_by_remote_ids(ids) {
             Some(series_id) => {
                 if service.series(&series_id).is_none() && import_missing {
-                    let Some(..) = runtime.block_on(download_series(service, &entry, &tmdb_remote_id))? else {
+                    let Some(..) = runtime.block_on(download_series(service, &now, &entry, &tmdb_remote_id))? else {
                         continue;
                     };
                 }
@@ -65,14 +67,14 @@ pub fn import_trakt_watched(
             }
             None => {
                 if !import_missing {
-                    log::warn!(
+                    tracing::warn!(
                         "show `{}` is not a local series and not configured to import missing",
                         entry.show.title
                     );
                     continue;
                 };
 
-                let Some(id) = runtime.block_on(download_series(service, &entry, &tmdb_remote_id))? else {
+                let Some(id) = runtime.block_on(download_series(service, &now, &entry, &tmdb_remote_id))? else {
                     continue;
                 };
 
@@ -80,7 +82,7 @@ pub fn import_trakt_watched(
             }
         };
 
-        log::trace!("{index}: {series_id}: {entry:?}");
+        tracing::trace!("{index}: {series_id}: {entry:?}");
 
         if remove {
             service.clear_watches(&series_id);
@@ -99,16 +101,16 @@ pub fn import_trakt_watched(
                 }
 
                 any = true;
-                log::trace!("{index}: watch: {}", episode.id);
+                tracing::trace!("{index}: watch: {}", episode.id);
                 service.insert_new_watch(series_id, episode.id, import.last_watched_at);
             }
         }
 
         if any {
-            log::info!("imported watch history for `{}`", entry.show.title);
+            tracing::info!("imported watch history for `{}`", entry.show.title);
         }
 
-        service.populate_pending(&series_id);
+        service.populate_pending(&now, &series_id);
         runtime.block_on(service.save_changes())?;
     }
 
@@ -118,24 +120,25 @@ pub fn import_trakt_watched(
 
 async fn download_series(
     service: &mut Service,
+    now: &DateTime<Utc>,
     entry: &Entry,
     remote_id: &RemoteSeriesId,
 ) -> Result<Option<SeriesId>> {
-    log::info!("downloading `{}`", entry.show.title);
+    tracing::info!("downloading `{}`", entry.show.title);
 
-    let new_series = match service.download_series(remote_id, None, true).await {
+    let new_series = match service.download_series(remote_id, None).await {
         Ok(Some(new_series)) => new_series,
         Ok(None) => {
             anyhow::bail!("empty response")
         }
         Err(error) => {
-            log::error!("failed to download `{}`: {error}", entry.show.title);
+            tracing::error!("failed to download `{}`: {error}", entry.show.title);
             return Ok(None);
         }
     };
 
     let series_id = *new_series.series_id();
-    service.insert_new_series(new_series);
+    service.insert_new_series(&now, new_series);
     service.save_changes().await?;
     Ok(Some(series_id))
 }

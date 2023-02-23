@@ -111,18 +111,12 @@ impl Search {
             }
             Message::AddSeriesByRemote(remote_id) => {
                 s.service
-                    .push_task_without_delay(TaskKind::DownloadSeriesByRemoteId {
-                        remote_id,
-                        populate_pending: true,
-                    });
+                    .push_task_without_delay(TaskKind::DownloadSeriesByRemoteId { remote_id });
             }
             Message::SwitchSeries(series_id, remote_id) => {
                 s.remove_series(&series_id);
                 s.service
-                    .push_task_without_delay(TaskKind::DownloadSeriesByRemoteId {
-                        remote_id,
-                        populate_pending: false,
-                    });
+                    .push_task_without_delay(TaskKind::DownloadSeriesByRemoteId { remote_id });
             }
             Message::RemoveSeries(series_id) => {
                 s.remove_series(&series_id);

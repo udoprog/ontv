@@ -121,7 +121,7 @@ impl State {
 
     /// Handle an error.
     pub(crate) fn handle_error(&mut self, error: ErrorInfo) {
-        log::error!("error: {error}");
+        tracing::error!("error: {error}");
 
         self.saving = false;
         self.error_ids.extend(error.id);
@@ -153,11 +153,10 @@ impl State {
         &mut self,
         id: &SeriesId,
         remote_id: &RemoteSeriesId,
-        populate_pending: bool,
     ) -> impl Future<Output = Result<Option<NewSeries>>> {
         let none_if_match = self.service.last_etag(id, remote_id).cloned();
         self.service
-            .download_series(&remote_id, none_if_match.as_ref(), populate_pending)
+            .download_series(&remote_id, none_if_match.as_ref())
     }
 
     #[inline]

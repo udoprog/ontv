@@ -78,7 +78,7 @@ impl Assets {
         I: IntoIterator<Item = Image>,
     {
         for id in ids {
-            log::trace!("mark: {id}");
+            tracing::trace!("mark: {id}");
             self.marked.push(ImageKey { id, hint: None });
         }
     }
@@ -89,7 +89,7 @@ impl Assets {
         I: IntoIterator<Item = Image>,
     {
         for id in ids {
-            log::trace!("mark: {id} {hint:?}");
+            tracing::trace!("mark: {id} {hint:?}");
 
             self.marked.push(ImageKey {
                 id,
@@ -111,7 +111,7 @@ impl Assets {
 
             // Remove assets which are no longer used.
             for image in &self.to_remove {
-                log::trace!("unloading: {image:?}");
+                tracing::trace!("unloading: {image:?}");
                 let _ = self.images.remove(image);
             }
 

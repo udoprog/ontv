@@ -1,5 +1,7 @@
 use std::fmt;
 
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use bstr::BStr;
 use serde::de;
 use serde::ser;
@@ -25,7 +27,7 @@ impl Etag {
 
     #[inline]
     pub(crate) fn as_base64(&self) -> String {
-        base64::encode(self.0.as_ref())
+        STANDARD.encode(self.0.as_ref())
     }
 }
 
@@ -78,7 +80,7 @@ impl<'de> de::Visitor<'de> for Visitor {
     where
         E: de::Error,
     {
-        let bytes = base64::decode(v).map_err(de::Error::custom)?;
+        let bytes = STANDARD.decode(v).map_err(de::Error::custom)?;
         Ok(Etag(bytes.into()))
     }
 
@@ -87,7 +89,7 @@ impl<'de> de::Visitor<'de> for Visitor {
     where
         E: de::Error,
     {
-        let bytes = base64::decode(v).map_err(de::Error::custom)?;
+        let bytes = STANDARD.decode(v).map_err(de::Error::custom)?;
         Ok(Etag(bytes.into()))
     }
 }

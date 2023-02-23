@@ -27,6 +27,7 @@ macro_rules! id {
         impl $name {
             /// Generate a new random series identifier.
             #[inline]
+            #[allow(unused)]
             pub(crate) fn random() -> Self {
                 Self(Uuid::new_v4())
             }
@@ -880,20 +881,15 @@ pub(crate) enum TaskKind {
     CheckForUpdates {
         series_id: SeriesId,
         remote_id: RemoteSeriesId,
-        populate_pending: bool,
     },
     /// Task to download series data.
     DownloadSeriesById {
         series_id: SeriesId,
         remote_id: RemoteSeriesId,
         last_modified: Option<DateTime<Utc>>,
-        populate_pending: bool,
     },
     /// Task to add a series by a remote identifier.
-    DownloadSeriesByRemoteId {
-        remote_id: RemoteSeriesId,
-        populate_pending: bool,
-    },
+    DownloadSeriesByRemoteId { remote_id: RemoteSeriesId },
     /// Task to add download a movie by a remote identifier.
     DownloadMovieByRemoteId { remote_id: RemoteMovieId },
 }

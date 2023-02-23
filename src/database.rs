@@ -329,7 +329,7 @@ fn load_series(path: &Path) -> Result<Option<Vec<Series>>> {
 
 /// Remove the given file.
 async fn remove_file(what: &'static str, path: &Path) -> Result<()> {
-    log::trace!("{what}: removing: {}", path.display());
+    tracing::trace!("{what}: removing: {}", path.display());
     let _ = tokio::fs::remove_file(path).await;
     Ok(())
 }
@@ -342,7 +342,7 @@ where
     use std::fs;
     use std::io::Write;
 
-    log::debug!("saving {what}: {}", path.display());
+    tracing::debug!("saving {what}: {}", path.display());
 
     let path = path.to_owned();
 
@@ -357,7 +357,7 @@ where
 
         let mut f = tempfile::NamedTempFile::new_in(dir)?;
 
-        log::trace!("writing {what}: {}", f.path().display());
+        tracing::trace!("writing {what}: {}", f.path().display());
 
         serde_json::to_writer_pretty(&mut f, &data)?;
         f.write_all(&[b'\n'])?;
@@ -365,7 +365,7 @@ where
         f.flush()?;
         let (_, temp_path) = f.keep()?;
 
-        log::trace!(
+        tracing::trace!(
             "rename {what}: {} -> {}",
             temp_path.display(),
             path.display()
@@ -390,7 +390,7 @@ where
     use std::fs;
     use std::io::Write;
 
-    log::trace!("saving {what}: {}", path.display());
+    tracing::trace!("saving {what}: {}", path.display());
 
     let path = path.to_owned();
 
@@ -405,7 +405,7 @@ where
 
         let mut f = tempfile::NamedTempFile::new_in(dir)?;
 
-        log::trace!("writing {what}: {}", f.path().display());
+        tracing::trace!("writing {what}: {}", f.path().display());
 
         for line in data {
             serde_json::to_writer(&mut f, &line)?;
@@ -415,7 +415,7 @@ where
         f.flush()?;
         let (_, temp_path) = f.keep()?;
 
-        log::trace!(
+        tracing::trace!(
             "rename {what}: {} -> {}",
             temp_path.display(),
             path.display()

@@ -97,7 +97,7 @@ impl Client {
 
         if let Some(c) = &*cached {
             if !c.is_expired() {
-                log::debug!("using cached credentials");
+                tracing::debug!("using cached credentials");
                 return Ok(c.token.clone());
             }
         }
@@ -177,9 +177,9 @@ impl Client {
         let last_modified = common::parse_last_modified(&res).context("last-modified header")?;
         let bytes: Bytes = handle_res(res).await?;
 
-        if log::log_enabled!(log::Level::Trace) {
+        if tracing::enabled!(tracing::Level::TRACE) {
             let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
-            log::trace!("series: {raw}");
+            tracing::trace!("series: {raw}");
         }
 
         let value: Value = serde_json::from_slice::<Data<_>>(&bytes)?.data;
@@ -287,7 +287,7 @@ impl Client {
                 let episode = Episode {
                     id,
                     name: row.episode_name,
-                    overview: row.overview,
+                    overview: row.overview.unwrap_or_default(),
                     absolute_number: row.absolute_number,
                     // NB: thetvdb.com uses season 0 as specials season.
                     season: match row.aired_season {
@@ -320,7 +320,7 @@ impl Client {
             #[serde(default)]
             episode_name: Option<String>,
             #[serde(default)]
-            overview: String,
+            overview: Option<String>,
             #[serde(default)]
             filename: Option<String>,
             #[serde(default)]
@@ -351,9 +351,9 @@ impl Client {
 
         let bytes: Bytes = handle_res(res).await?;
 
-        if log::log_enabled!(log::Level::Trace) {
+        if tracing::enabled!(tracing::Level::TRACE) {
             let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
-            log::trace!("paged: {raw}");
+            tracing::trace!("paged: {raw}");
         }
 
         let mut data: DataLinks<Vec<serde_json::Value>> = serde_json::from_slice(&bytes)?;
@@ -364,17 +364,17 @@ impl Client {
             output.reserve(data.data.len());
 
             for value in data.data {
-                log::trace!("{}: {thing}: {value}", output.len());
+                tracing::trace!("{}: {thing}: {value}", output.len());
 
                 let row = match serde_json::from_value::<T>(value) {
                     Ok(row) => row,
                     Err(error) => {
-                        log::warn!("{}: {thing}: {error}", output.len());
+                        tracing::warn!("{}: {thing}: {error}", output.len());
                         continue;
                     }
                 };
 
-                log::trace!("{}: {thing}: {row:?}", output.len());
+                tracing::trace!("{}: {thing}: {row:?}", output.len());
                 output.push(map(row)?);
             }
 
@@ -391,9 +391,9 @@ impl Client {
 
             let bytes: Bytes = handle_res(res).await?;
 
-            if log::log_enabled!(log::Level::Trace) {
+            if tracing::enabled!(tracing::Level::TRACE) {
                 let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
-                log::trace!("{raw}");
+                tracing::trace!("{raw}");
             }
 
             data = serde_json::from_slice(&bytes)?;
@@ -413,9 +413,9 @@ impl Client {
 
         let bytes: Bytes = handle_res(res).await?;
 
-        if log::log_enabled!(log::Level::Trace) {
+        if tracing::enabled!(tracing::Level::TRACE) {
             let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
-            log::trace!("search_by_name: {raw}");
+            tracing::trace!("search_by_name: {raw}");
         }
 
         let data: Data<Vec<serde_json::Value>> = serde_json::from_slice(&bytes)?;
@@ -426,7 +426,7 @@ impl Client {
             let row: Row = match serde_json::from_value(row) {
                 Ok(row) => row,
                 Err(error) => {
-                    log::error!("#{index}: {error}");
+                    tracing::error!("#{index}: {error}");
                     continue;
                 }
             };
@@ -434,7 +434,7 @@ impl Client {
             let poster = match Image::parse_tvdb(&row.poster) {
                 Ok(poster) => Some(poster),
                 Err(error) => {
-                    log::error!("#{index}: {error}");
+                    tracing::error!("#{index}: {error}");
                     None
                 }
             };

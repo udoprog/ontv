@@ -181,7 +181,7 @@ impl iced::Application for Application {
     }
 
     fn update(&mut self, message: Message) -> Command<Message> {
-        log::trace!("{message:?}");
+        tracing::trace!("{message:?}");
 
         match (message, &mut self.current) {
             (Message::Settings(message), Current::Settings(page)) => {
@@ -217,7 +217,7 @@ impl iced::Application for Application {
                 page.update(&mut self.state, message);
             }
             (Message::CloseRequested, _) => {
-                log::debug!("Close requested");
+                tracing::debug!("Close requested");
 
                 self.exit_after_save = true;
 
@@ -298,7 +298,7 @@ impl iced::Application for Application {
                         self.state.assets.insert_images(loaded);
                     }
                     Err(error) => {
-                        log::error!("error loading images: {error}");
+                        tracing::error!("error loading images: {error}");
                     }
                 }
 
@@ -310,7 +310,8 @@ impl iced::Application for Application {
                 match result {
                     Ok(new_series) => {
                         if let Some(new_series) = new_series {
-                            self.state.service.insert_new_series(new_series);
+                            let now = Utc::now();
+                            self.state.service.insert_new_series(&now, new_series);
                         }
                     }
                     Err(error) => {
@@ -398,7 +399,7 @@ impl iced::Application for Application {
 
         // Build queue element.
         {
-            let count = self.state.service.tasks().len();
+            let count = self.state.service.tasks().len() + self.state.service.running_tasks().len();
 
             let text = match count {
                 0 => text("Queue"),
@@ -606,19 +607,15 @@ impl Application {
         let now = Utc::now();
 
         while let Some(task) = self.state.service.next_task(&now, timed_out) {
-            log::trace!("running task {}", task.id);
+            tracing::trace!("running task {}", task.id);
 
             match &task.kind {
                 TaskKind::CheckForUpdates {
                     series_id,
                     remote_id,
-                    populate_pending,
                 } => {
-                    if let Some(future) = self.state.service.check_for_updates(
-                        series_id,
-                        remote_id,
-                        *populate_pending,
-                    ) {
+                    if let Some(future) = self.state.service.check_for_updates(series_id, remote_id)
+                    {
                         self.commands.perform(future, move |result| {
                             Message::TaskUpdateDownloadQueue(
                                 result.map_err(Into::into),
@@ -632,28 +629,21 @@ impl Application {
                 TaskKind::DownloadSeriesById {
                     series_id,
                     remote_id,
-                    populate_pending,
                     ..
                 } => {
                     self.commands.perform(
-                        self.state
-                            .refresh_series(series_id, remote_id, *populate_pending),
+                        self.state.refresh_series(series_id, remote_id),
                         move |result| {
                             Message::TaskSeriesDownloaded(result.map_err(Into::into), task.clone())
                         },
                     );
                 }
-                TaskKind::DownloadSeriesByRemoteId {
-                    remote_id,
-                    populate_pending,
-                } => {
+                TaskKind::DownloadSeriesByRemoteId { remote_id } => {
                     if self.state.service.set_series_tracked_by_remote(remote_id) {
                         self.state.service.complete_task(task);
                     } else {
                         self.commands.perform(
-                            self.state
-                                .service
-                                .download_series(remote_id, None, *populate_pending),
+                            self.state.service.download_series(remote_id, None),
                             move |result| {
                                 Message::TaskSeriesDownloaded(
                                     result.map_err(Into::into),
@@ -673,7 +663,7 @@ impl Application {
         let now = Utc::now();
 
         if let Some((seconds, id)) = self.state.service.next_task_sleep(&now) {
-            log::trace!("next queue sleep: {seconds}s");
+            tracing::trace!("next queue sleep: {seconds}s");
 
             self.commands.perform(
                 self.queue_timeout.set(Duration::from_secs(seconds)),
