@@ -666,20 +666,25 @@ impl Service {
             return;
         };
 
-        let timestamp = self
-            .db
-            .watched
-            .series(id)
-            .map(|w| &w.timestamp)
-            .max()
-            .unwrap_or(now);
+        let candidate = self.db.watched.series(id).map(|w| &w.timestamp).max();
+
+        let timestamp = match (
+            candidate,
+            e.aired
+                .as_ref()
+                .and_then(|&d| Some(DateTime::from_utc(d.and_hms_opt(12, 0, 0)?, Utc))),
+        ) {
+            (Some(&a), Some(b)) => a.max(b),
+            (Some(&candidate), _) => candidate,
+            _ => *now,
+        };
 
         self.db.changes.change(Change::Pending);
         // Mark the next episode in the show as pending.
         self.db.pending.extend([Pending {
             series: *id,
             episode: e.id,
-            timestamp: *timestamp,
+            timestamp,
         }]);
     }
 
