@@ -3,7 +3,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use iced::Theme;
 use iced_native::image::Handle;
 
-use crate::{cache::ImageHint, model::Image};
+use crate::cache::ImageHint;
+use crate::model::{ImageHash, ImageV2};
 
 static MISSING_POSTER_DARK: &[u8] = include_bytes!("../assets/missing_poster_dark.png");
 static MISSING_POSTER_LIGHT: &[u8] = include_bytes!("../assets/missing_poster_light.png");
@@ -13,7 +14,7 @@ static MISSING_SCRENCAP: &[u8] = include_bytes!("../assets/missing_screencap.png
 /// They key identifying an image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct ImageKey {
-    pub(crate) id: Image,
+    pub(crate) id: ImageHash,
     pub(crate) hint: Option<ImageHint>,
 }
 
@@ -30,9 +31,9 @@ pub(crate) struct Assets {
     /// Set to clear image cache on next commit.
     clear: bool,
     /// Image queue to load.
-    image_queue: VecDeque<ImageKey>,
+    image_queue: VecDeque<(ImageKey, ImageV2)>,
     /// Images marked for loading.
-    marked: Vec<ImageKey>,
+    marked: Vec<(ImageKey, ImageV2)>,
     /// Images stored in-memory.
     images: HashMap<ImageKey, Handle>,
     /// Assets to remove.
@@ -73,28 +74,36 @@ impl Assets {
 
     /// Setup images to load task.
     #[allow(unused)]
-    pub(crate) fn mark<I>(&mut self, ids: I)
+    pub(crate) fn mark<'a, I>(&mut self, ids: I)
     where
-        I: IntoIterator<Item = Image>,
+        I: IntoIterator<Item = &'a ImageV2>,
     {
         for id in ids {
-            tracing::trace!("mark: {id}");
-            self.marked.push(ImageKey { id, hint: None });
+            tracing::trace!("mark: {id:?}");
+
+            let key = ImageKey {
+                id: id.hash(),
+                hint: None,
+            };
+
+            self.marked.push((key, id.clone()));
         }
     }
 
     /// Setup images to load task.
-    pub(crate) fn mark_with_hint<I>(&mut self, ids: I, hint: ImageHint)
+    pub(crate) fn mark_with_hint<'a, I>(&mut self, ids: I, hint: ImageHint)
     where
-        I: IntoIterator<Item = Image>,
+        I: IntoIterator<Item = &'a ImageV2>,
     {
         for id in ids {
-            tracing::trace!("mark: {id} {hint:?}");
+            tracing::trace!("mark: {id:?} {hint:?}");
 
-            self.marked.push(ImageKey {
-                id,
+            let key = ImageKey {
+                id: id.hash(),
                 hint: Some(hint),
-            });
+            };
+
+            self.marked.push((key, id.clone()));
         }
     }
 
@@ -105,8 +114,8 @@ impl Assets {
             self.to_remove
                 .extend(self.images.keys().copied().collect::<HashSet<_>>());
 
-            for image in &self.marked {
-                self.to_remove.remove(image);
+            for (key, _) in &self.marked {
+                self.to_remove.remove(key);
             }
 
             // Remove assets which are no longer used.
@@ -122,9 +131,9 @@ impl Assets {
             self.clear = false;
         }
 
-        for image in &self.marked {
-            if !self.images.contains_key(image) {
-                self.image_queue.push_back(*image);
+        for (key, image) in self.marked.drain(..) {
+            if !self.images.contains_key(&key) {
+                self.image_queue.push_back((key, image));
             }
         }
 
@@ -148,9 +157,9 @@ impl Assets {
 
     /// Get an image without a hint.
     #[allow(unused)]
-    pub(crate) fn image(&self, id: &Image) -> Option<Handle> {
+    pub(crate) fn image(&self, id: &ImageV2) -> Option<Handle> {
         let key = ImageKey {
-            id: *id,
+            id: id.hash(),
             hint: None,
         };
 
@@ -158,9 +167,9 @@ impl Assets {
     }
 
     /// Get an image with the specified hint.
-    pub(crate) fn image_with_hint(&self, id: &Image, hint: ImageHint) -> Option<Handle> {
+    pub(crate) fn image_with_hint(&self, id: &ImageV2, hint: ImageHint) -> Option<Handle> {
         let key = ImageKey {
-            id: *id,
+            id: id.hash(),
             hint: Some(hint),
         };
 
@@ -178,15 +187,15 @@ impl Assets {
     }
 
     /// Get the next image to load.
-    pub(crate) fn next_image(&mut self) -> Option<ImageKey> {
+    pub(crate) fn next_image(&mut self) -> Option<(ImageKey, ImageV2)> {
         loop {
-            let key = self.image_queue.pop_front()?;
+            let (key, image) = self.image_queue.pop_front()?;
 
             if self.images.contains_key(&key) {
                 continue;
             }
 
-            return Some(key);
+            return Some((key, image));
         }
     }
 }

@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 pub(crate) enum Format {
-    Toml,
+    Yaml,
     Json,
 }
 
@@ -22,7 +22,7 @@ impl Format {
     {
         match path.as_ref().extension().and_then(|e| e.to_str()) {
             Some("json") => Some(Self::Json),
-            Some("toml") => Some(Self::Toml),
+            Some("yaml") => Some(Self::Yaml),
             _ => None,
         }
     }
@@ -58,7 +58,7 @@ impl Format {
         }
 
         match self {
-            Format::Toml => {
+            Format::Yaml => {
                 let mut array = Vec::new();
 
                 for doc in serde_yaml::Deserializer::from_reader(f) {
@@ -86,7 +86,7 @@ impl Format {
         T: Serialize,
     {
         match self {
-            Format::Toml => {
+            Format::Yaml => {
                 serde_yaml::to_writer(&mut *f, data)?;
                 f.write_all(&[b'\n'])?;
             }
@@ -115,7 +115,7 @@ where
         T: Serialize,
     {
         match self.mode {
-            Format::Toml => {
+            Format::Yaml => {
                 if self.count > 0 {
                     self.output.write_all(b"---\n")?;
                 }

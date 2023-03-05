@@ -17,7 +17,7 @@ impl SeriesBanner {
     /// Prepare assets needed for banner.
     pub(crate) fn prepare(&mut self, s: &mut State, series_id: &SeriesId) {
         if let Some(series) = s.service.series(series_id) {
-            s.assets.mark_with_hint(series.banner, BANNER);
+            s.assets.mark_with_hint(series.banner(), BANNER);
         }
     }
 
@@ -33,7 +33,7 @@ impl SeriesBanner {
     /// Generate buttons which perform actions on the given series.
     pub(crate) fn view(&self, s: &State, series: &Series) -> Element<'static, Message> {
         let handle = match series
-            .banner
+            .banner()
             .and_then(|i| s.assets.image_with_hint(&i, BANNER))
         {
             Some(handle) => handle,

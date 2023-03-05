@@ -2,16 +2,14 @@ use std::fmt;
 use std::io;
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use iced_native::image::Handle;
 use image_rs::GenericImageView;
+use relative_path::RelativePath;
 
 use crate::api::themoviedb;
 use crate::api::thetvdb;
-use crate::model::{ImageExt, TmdbImage, TvdbImage};
-
-const TVDB: u64 = 0x907b86069129a824u64;
-const TMDB: u64 = 0xd614d57a2eadc500u64;
+use crate::model::{ImageExt, ImageHash};
 
 /// Whether or not to provide a scaled version of the image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -32,85 +30,72 @@ impl fmt::Display for ImageHint {
     }
 }
 
-pub(crate) trait CacheClient<T> {
+pub(crate) trait CacheClient<T: ?Sized> {
     async fn download_image(&self, id: &T) -> Result<Vec<u8>>;
 }
 
-impl CacheClient<TmdbImage> for themoviedb::Client {
+impl CacheClient<RelativePath> for themoviedb::Client {
     #[inline]
-    async fn download_image(&self, id: &TmdbImage) -> Result<Vec<u8>> {
-        themoviedb::Client::download_image(self, id).await
+    async fn download_image(&self, path: &RelativePath) -> Result<Vec<u8>> {
+        themoviedb::Client::download_image_path(self, path).await
     }
 }
 
-impl CacheClient<TvdbImage> for thetvdb::Client {
+impl CacheClient<RelativePath> for thetvdb::Client {
     #[inline]
-    async fn download_image(&self, id: &TvdbImage) -> Result<Vec<u8>> {
-        thetvdb::Client::downloage_image(self, id).await
+    async fn download_image(&self, path: &RelativePath) -> Result<Vec<u8>> {
+        thetvdb::Client::download_image_path(self, path).await
     }
 }
 
 pub(crate) trait CacheId {
-    /// Return 128-bit hash.
-    fn hash128(&self) -> u128;
-
     /// Get image extension.
     fn ext(&self) -> ImageExt;
 }
 
-impl CacheId for TmdbImage {
-    #[inline]
-    fn hash128(&self) -> u128 {
-        hash128(&(TMDB, self.kind))
-    }
-
+impl CacheId for RelativePath {
     #[inline]
     fn ext(&self) -> ImageExt {
-        self.ext
-    }
-}
-
-impl CacheId for TvdbImage {
-    #[inline]
-    fn hash128(&self) -> u128 {
-        hash128(&(TVDB, self.kind))
-    }
-
-    #[inline]
-    fn ext(&self) -> ImageExt {
-        self.ext
+        match self.extension() {
+            Some("jpg") => ImageExt::Jpg,
+            _ => ImageExt::Unsupported,
+        }
     }
 }
 
 /// Helper to load a cached image, or download it using the provided client if
 /// needed.
-pub(crate) async fn image<I, C>(
+pub(crate) async fn image<C, I>(
     path: &Path,
     client: &C,
-    id: I,
+    id: &I,
+    hash: ImageHash,
     hint: Option<ImageHint>,
 ) -> Result<Handle>
 where
-    C: CacheClient<I>,
-    I: fmt::Display + CacheId,
+    C: ?Sized + CacheClient<I>,
+    I: ?Sized + fmt::Display + CacheId,
 {
     use image_rs::imageops::FilterType;
     use std::io::Cursor;
     use tokio::fs;
 
-    let hash = id.hash128();
-
     let format = match id.ext() {
         ImageExt::Jpg => image_rs::ImageFormat::Jpeg,
+        ext => bail!("unsupported image format: {ext:?}"),
     };
 
     let (path, hint) = match hint {
         Some(hint) => {
-            let resized_path = path.join(format!("{:032x}-{hint}.{ext}", hash, ext = id.ext()));
+            let resized_path = path.join(format!(
+                "{:032x}-{hint}.{ext}",
+                hash.as_u128(),
+                ext = id.ext()
+            ));
             (resized_path, Some(hint))
         }
         None => {
-            let original_path = path.join(format!("{:032x}.{ext}", hash, ext = id.ext()));
+            let original_path = path.join(format!("{:032x}.{ext}", hash.as_u128(), ext = id.ext()));
             (original_path, None)
         }
     };

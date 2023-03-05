@@ -30,13 +30,15 @@ impl SeriesList {
             let series = filtered.iter().flat_map(|id| s.service.series(id));
             self.actions.init_from_iter(series.clone().map(|s| s.id));
             s.assets
-                .mark_with_hint(series.flat_map(|s| s.poster), POSTER_HINT);
+                .mark_with_hint(series.flat_map(|s| s.graphics.poster.as_ref()), POSTER_HINT);
         } else {
             self.actions
                 .init_from_iter(s.service.series_by_name().map(|s| s.id));
 
             s.assets.mark_with_hint(
-                s.service.series_by_name().flat_map(|s| s.poster),
+                s.service
+                    .series_by_name()
+                    .flat_map(|s| s.graphics.poster.as_ref()),
                 POSTER_HINT,
             );
         }
@@ -89,8 +91,8 @@ impl SeriesList {
 
         for (index, (series, actions)) in iter.zip(&self.actions).enumerate() {
             let poster = match series
-                .poster
-                .and_then(|i| s.assets.image_with_hint(&i, POSTER_HINT))
+                .poster()
+                .and_then(|i| s.assets.image_with_hint(i, POSTER_HINT))
             {
                 Some(handle) => handle,
                 None => s.missing_poster(),

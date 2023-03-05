@@ -6,7 +6,7 @@ use iced::widget::{
 use iced::{theme, Element};
 use iced::{Alignment, Length};
 
-use crate::model::{Episode, EpisodeId, Image, SeasonNumber, SeriesId};
+use crate::model::{Episode, EpisodeId, ImageV2, SeasonNumber, SeriesId};
 use crate::params::{centered, GAP, GAP2, POSTER_HINT, SMALL, SPACE, SUBTITLE_SIZE};
 use crate::service::PendingRef;
 use crate::state::{Page, State};
@@ -15,6 +15,7 @@ use crate::{comps, style};
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
+    #[allow(unused)]
     Calendar(comps::calendar::Message),
     /// Hover a scheduled series.
     HoverScheduled(SeriesId),
@@ -35,7 +36,7 @@ pub(crate) enum Message {
 /// The state for the settings page.
 pub(crate) struct Dashboard {
     calendar: comps::Calendar,
-    schedule_focus: Option<(SeriesId, Option<Image>)>,
+    schedule_focus: Option<(SeriesId, Option<ImageV2>)>,
 }
 
 impl Dashboard {
@@ -49,7 +50,7 @@ impl Dashboard {
             .and_then(|d| d.schedule.first())
         {
             if let Some(series) = s.service.series(&scheduled.series_id) {
-                schedule_focus = Some((series.id, series.poster));
+                schedule_focus = Some((series.id, series.graphics.poster.clone()));
             }
         }
 
@@ -60,7 +61,7 @@ impl Dashboard {
     }
 
     pub(crate) fn prepare(&mut self, s: &mut State) {
-        if let Some(id) = self.schedule_focus.and_then(|d| d.1) {
+        if let Some(id) = self.schedule_focus.as_ref().and_then(|d| d.1.as_ref()) {
             s.assets.mark_with_hint([id], POSTER_HINT);
         }
 
@@ -71,7 +72,7 @@ impl Dashboard {
                 .pending(*s.today())
                 .rev()
                 .take(limit)
-                .flat_map(|p| p.season.and_then(|s| s.poster).or(p.series.poster)),
+                .flat_map(|p| p.season.and_then(|s| s.poster()).or(p.series.poster())),
             POSTER_HINT,
         );
     }
@@ -83,7 +84,7 @@ impl Dashboard {
             }
             Message::HoverScheduled(series_id) => {
                 if let Some(series) = s.service.series(&series_id) {
-                    self.schedule_focus = Some((series_id, series.poster));
+                    self.schedule_focus = Some((series_id, series.poster().cloned()));
                 }
             }
             Message::Skip(series_id, episode_id) => {
@@ -226,8 +227,8 @@ impl Dashboard {
             }
 
             let poster = match season
-                .and_then(|s| s.poster)
-                .or(series.poster)
+                .and_then(|s| s.poster())
+                .or(series.poster())
                 .and_then(|i| s.assets.image_with_hint(&i, POSTER_HINT))
             {
                 Some(handle) => handle,
@@ -342,8 +343,11 @@ impl Dashboard {
                 })
                 .peekable();
 
-            if let Some((series_id, id)) = self.schedule_focus.filter(|_| first) {
-                let poster = match id.and_then(|id| s.assets.image_with_hint(&id, POSTER_HINT)) {
+            if let Some((series_id, id)) = self.schedule_focus.as_ref().filter(|_| first) {
+                let poster = match id
+                    .as_ref()
+                    .and_then(|id| s.assets.image_with_hint(&id, POSTER_HINT))
+                {
                     Some(image) => image,
                     None => s.missing_poster(),
                 };
@@ -352,7 +356,7 @@ impl Dashboard {
                     button(image(poster))
                         .padding(0)
                         .style(theme::Button::Text)
-                        .on_press(Message::Navigate(Page::Series(series_id)))
+                        .on_press(Message::Navigate(Page::Series(*series_id)))
                         .width(Length::FillPortion(1)),
                 );
 

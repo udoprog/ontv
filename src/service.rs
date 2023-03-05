@@ -5,7 +5,7 @@ use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{bail, Error, Result};
+use anyhow::{anyhow, bail, Context, Error, Result};
 use chrono::{DateTime, Days, Local, NaiveDate, Utc};
 use futures::stream::FuturesUnordered;
 use iced::Theme;
@@ -19,7 +19,7 @@ use crate::cache::{self};
 use crate::database::Change;
 use crate::database::Database;
 use crate::model::{
-    Config, Episode, EpisodeId, Etag, Image, Movie, MovieId, Pending, RemoteEpisodeId,
+    Config, Episode, EpisodeId, Etag, ImageV2, Movie, MovieId, Pending, RemoteEpisodeId,
     RemoteMovieId, RemoteSeriesId, ScheduledDay, ScheduledSeries, SearchMovie, SearchSeries,
     Season, SeasonNumber, Series, SeriesId, Task, TaskId, TaskKind, ThemeType, Watched,
     WatchedKind,
@@ -72,7 +72,7 @@ pub(crate) struct Paths {
     pub(crate) remotes: Box<Path>,
     pub(crate) images: Box<Path>,
     pub(crate) series_json: Box<Path>,
-    pub(crate) series_toml: Box<Path>,
+    pub(crate) series_yaml: Box<Path>,
     pub(crate) watched: Box<Path>,
     pub(crate) pending: Box<Path>,
     pub(crate) episodes: Box<Path>,
@@ -100,7 +100,7 @@ impl Service {
             sync: config.join("sync.json").into(),
             remotes: config.join("remotes.json").into(),
             series_json: config.join("series.json").into(),
-            series_toml: config.join("series.toml").into(),
+            series_yaml: config.join("series.yaml").into(),
             watched: config.join("watched.json").into(),
             pending: config.join("pending.json").into(),
             episodes: config.join("episodes").into(),
@@ -932,30 +932,36 @@ impl Service {
     /// Ensure that a collection of the given image ids are loaded.
     pub(crate) fn load_images(
         &self,
-        ids: &[ImageKey],
+        images: Vec<(ImageKey, ImageV2)>,
     ) -> impl Future<Output = Result<Vec<(ImageKey, Handle)>>> {
         use futures::StreamExt;
 
         let paths = self.paths.clone();
         let tvdb = self.tvdb.clone();
         let tmdb = self.tmdb.clone();
-        let ids = ids.to_vec();
 
         async move {
-            let mut output = Vec::with_capacity(ids.len());
+            let mut output = Vec::with_capacity(images.len());
             let mut futures = FuturesUnordered::new();
 
-            for key in ids {
+            for (key, image) in images {
                 let paths = paths.clone();
                 let tvdb = tvdb.clone();
                 let tmdb = tmdb.clone();
 
                 futures.push(async move {
-                    let handle = match key.id {
-                        Image::Tvdb(id) => cache::image(&paths.images, &tvdb, id, key.hint).await?,
-                        Image::Tmdb(id) => cache::image(&paths.images, &tmdb, id, key.hint).await?,
+                    let hash = image.hash();
+
+                    let handle = match &image {
+                        ImageV2::Tvdb { uri } => {
+                            cache::image(&paths.images, &tvdb, uri.as_ref(), hash, key.hint).await
+                        }
+                        ImageV2::Tmdb { uri } => {
+                            cache::image(&paths.images, &tmdb, uri.as_ref(), hash, key.hint).await
+                        }
                     };
 
+                    let handle = handle.with_context(|| anyhow!("downloading: {image:?}"))?;
                     Ok::<_, Error>((key, handle))
                 });
             }

@@ -50,7 +50,7 @@ impl Series {
                 s.service
                     .seasons(&self.series_id)
                     .iter()
-                    .flat_map(|season| season.poster.or(series.poster)),
+                    .flat_map(|season| season.poster().or(series.poster())),
                 POSTER_HINT,
             );
         }
@@ -112,8 +112,10 @@ impl Series {
             .enumerate()
         {
             let poster = match season
+                .graphics
                 .poster
-                .or(series.poster)
+                .as_ref()
+                .or(series.graphics.poster.as_ref())
                 .and_then(|i| s.assets.image_with_hint(&i, POSTER_HINT))
             {
                 Some(poster) => poster,

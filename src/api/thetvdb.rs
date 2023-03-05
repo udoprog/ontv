@@ -6,14 +6,15 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use bytes::Bytes;
 use chrono::{DateTime, NaiveDate, Utc};
+use relative_path::RelativePath;
 use reqwest::{Method, RequestBuilder, Response, Url};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::api::common;
 use crate::model::{
-    Episode, EpisodeId, Etag, Image, ImageV2, Raw, RemoteEpisodeId, RemoteSeriesId, SearchSeries,
-    SeasonNumber, Series, SeriesGraphics, SeriesId, TvdbImage,
+    Episode, EpisodeGraphics, EpisodeId, Etag, ImageV2, Raw, RemoteEpisodeId, RemoteSeriesId,
+    SearchSeries, SeasonNumber, Series, SeriesGraphics, SeriesId,
 };
 use crate::service::NewEpisode;
 
@@ -185,24 +186,9 @@ impl Client {
         let value: Value = serde_json::from_slice::<Data<_>>(&bytes)?.data;
 
         let mut graphics = SeriesGraphics::default();
-
-        let banner = if !value.banner.is_empty() {
-            Some(Image::parse_tvdb_banner(&value.banner).context("banner image")?)
-        } else {
-            None
-        };
-        graphics.banner = ImageV2::tvdb(&value.banner);
-
-        let fanart = if !value.fanart.is_empty() {
-            Some(Image::parse_tvdb_banner(&value.fanart).context("fanart image")?)
-        } else {
-            None
-        };
-
-        graphics.fanart = ImageV2::tvdb(&value.fanart);
-
-        let poster = Image::parse_tvdb_banner(&value.poster).context("poster image")?;
-        graphics.poster = ImageV2::tvdb(&value.poster);
+        graphics.banner = value.banner.as_deref().and_then(ImageV2::tvdb);
+        graphics.fanart = value.fanart.as_deref().and_then(ImageV2::tvdb);
+        graphics.poster = value.poster.as_deref().and_then(ImageV2::tvdb);
 
         let remote_id = RemoteSeriesId::Tvdb { id };
 
@@ -223,10 +209,10 @@ impl Client {
             id,
             title: value.series_name.to_owned(),
             first_air_date: None,
-            overview: value.overview,
-            banner,
-            poster: Some(poster),
-            fanart,
+            overview: value.overview.unwrap_or_default(),
+            compat_banner: None,
+            compat_poster: None,
+            compat_fanart: None,
             graphics,
             remote_id: Some(remote_id),
             tracked: true,
@@ -242,16 +228,15 @@ impl Client {
         #[allow(unused)]
         struct Value {
             id: u32,
-            // "2021-03-05 07:53:14"
-            added: String,
             #[serde(default)]
-            banner: String,
+            banner: Option<String>,
             #[serde(default)]
-            fanart: String,
+            fanart: Option<String>,
             #[serde(default)]
-            overview: String,
+            overview: Option<String>,
             #[serde(default)]
-            poster: String,
+            poster: Option<String>,
+            #[serde(default)]
             series_name: String,
             #[serde(default)]
             airs_day_of_week: Option<String>,
@@ -272,12 +257,8 @@ impl Client {
 
         return self
             .paged_request("episode", &path, move |row: Row| {
-                let filename = match row.filename {
-                    Some(filename) if !filename.is_empty() => {
-                        Some(Image::parse_tvdb_banner(&filename).context("filename")?)
-                    }
-                    _ => None,
-                };
+                let mut graphics = EpisodeGraphics::default();
+                graphics.filename = row.filename.as_deref().and_then(ImageV2::tvdb);
 
                 let remote_id = RemoteEpisodeId::Tvdb { id: row.id };
                 let mut remote_ids = BTreeSet::from([remote_id]);
@@ -304,7 +285,8 @@ impl Client {
                     },
                     number: row.aired_episode_number,
                     aired: row.first_aired,
-                    filename,
+                    compat_filename: None,
+                    graphics,
                     remote_id: Some(remote_id),
                 };
 
@@ -439,19 +421,13 @@ impl Client {
                 }
             };
 
-            let poster = match Image::parse_tvdb(&row.poster) {
-                Ok(poster) => Some(poster),
-                Err(error) => {
-                    tracing::error!("#{index}: {error}");
-                    None
-                }
-            };
+            let poster = row.poster.as_deref().and_then(ImageV2::tvdb);
 
             output.push(SearchSeries {
                 id: RemoteSeriesId::Tvdb { id: row.id },
                 name: row.series_name,
                 poster,
-                overview: row.overview,
+                overview: row.overview.unwrap_or_default(),
                 first_aired: row.first_aired,
             });
         }
@@ -462,21 +438,27 @@ impl Client {
         #[serde(rename_all = "camelCase")]
         pub(crate) struct Row {
             pub(crate) id: u32,
+            #[serde(default)]
             pub(crate) series_name: String,
             #[serde(default)]
-            pub(crate) poster: String,
+            pub(crate) poster: Option<String>,
             #[serde(default)]
-            pub(crate) overview: String,
+            pub(crate) overview: Option<String>,
             #[serde(default)]
             pub(crate) first_aired: Option<NaiveDate>,
         }
     }
 
-    /// Load image data.
-    pub(crate) async fn downloage_image(&self, id: &TvdbImage) -> Result<Vec<u8>> {
+    /// Load image data from image path.
+    pub(crate) async fn download_image_path(&self, path: &RelativePath) -> Result<Vec<u8>> {
         let mut url = self.state.artworks_url.clone();
-        url.set_path(&id.to_string());
+        url.set_path(path.as_str());
         let res = self.client.get(url).send().await?;
+
+        if !res.status().is_success() {
+            bail!("{path}: failed to download image: {}", res.status());
+        }
+
         Ok(res.bytes().await?.to_vec())
     }
 }

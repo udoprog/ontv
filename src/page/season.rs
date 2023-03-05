@@ -119,7 +119,7 @@ impl Season {
             .iter()
             .filter(|e| e.season == self.season)
         {
-            s.assets.mark_with_hint(e.filename, SCREENCAP_HINT);
+            s.assets.mark_with_hint(e.filename(), SCREENCAP_HINT);
         }
     }
 
@@ -186,7 +186,7 @@ impl Season {
             .enumerate()
         {
             let screencap = match episode
-                .filename
+                .filename()
                 .and_then(|image| s.assets.image_with_hint(&image, SCREENCAP_HINT))
             {
                 Some(handle) => handle,

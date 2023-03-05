@@ -58,7 +58,7 @@ impl Search {
                 .iter()
                 .skip(self.series_page * PER_PAGE)
                 .take(PER_PAGE)
-                .flat_map(|s| s.poster),
+                .flat_map(|s| s.poster()),
             POSTER_HINT,
         );
 
@@ -67,7 +67,7 @@ impl Search {
                 .iter()
                 .skip(self.movies_page * PER_PAGE)
                 .take(PER_PAGE)
-                .flat_map(|s| s.poster),
+                .flat_map(|s| s.poster()),
             POSTER_HINT,
         );
     }
@@ -184,7 +184,7 @@ impl Search {
             let local_series = st.service.get_series_by_remote(&s.id);
 
             let handle = match s
-                .poster
+                .poster()
                 .and_then(|p| st.assets.image_with_hint(&p, POSTER_HINT))
             {
                 Some(handle) => handle,
@@ -286,7 +286,7 @@ impl Search {
             let local_movie = st.service.get_movie_by_remote(&m.id);
 
             let handle = match m
-                .poster
+                .poster()
                 .and_then(|p| st.assets.image_with_hint(&p, POSTER_HINT))
             {
                 Some(handle) => handle,

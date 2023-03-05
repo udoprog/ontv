@@ -8,6 +8,7 @@ use bytes::Bytes;
 use chrono::{DateTime, NaiveDate, Utc};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use relative_path::RelativePath;
 use reqwest::header;
 use reqwest::StatusCode;
 use reqwest::{Method, RequestBuilder, Response, Url};
@@ -15,8 +16,9 @@ use serde::Deserialize;
 
 use crate::api::common;
 use crate::model::{
-    Episode, EpisodeId, Etag, Image, ImageV2, Raw, RemoteEpisodeId, RemoteMovieId, RemoteSeriesId,
-    SearchMovie, SearchSeries, Season, SeasonNumber, Series, SeriesGraphics, SeriesId, TmdbImage,
+    Episode, EpisodeGraphics, EpisodeId, Etag, ImageV2, Raw, RemoteEpisodeId, RemoteMovieId,
+    RemoteSeriesId, SearchMovie, SearchSeries, Season, SeasonGraphics, SeasonNumber, Series,
+    SeriesGraphics, SeriesId,
 };
 use crate::service::NewEpisode;
 
@@ -109,18 +111,18 @@ impl Client {
         let data: Data<Vec<Row>> = serde_json::from_slice(&bytes)?;
 
         for row in data.results {
-            let poster = process_image(&row.poster_path).context("bad poster image")?;
-
             let first_aired = match row.first_air_date {
                 Some(first_aired) if !first_aired.is_empty() => Some(str::parse(&first_aired)?),
                 _ => None,
             };
 
+            let poster = row.poster_path.as_deref().and_then(ImageV2::tmdb);
+
             output.push(SearchSeries {
                 id: RemoteSeriesId::Tmdb { id: row.id },
-                name: row.name,
+                name: row.name.unwrap_or_default(),
                 poster,
-                overview: row.overview,
+                overview: row.overview.unwrap_or_default(),
                 first_aired,
             });
         }
@@ -130,11 +132,12 @@ impl Client {
         #[derive(Deserialize)]
         struct Row {
             id: u32,
-            name: String,
             #[serde(default)]
-            overview: String,
+            name: Option<String>,
             #[serde(default)]
-            poster_path: String,
+            overview: Option<String>,
+            #[serde(default)]
+            poster_path: Option<String>,
             #[serde(default)]
             first_air_date: Option<String>,
         }
@@ -160,7 +163,7 @@ impl Client {
         let data: Data<Vec<Row>> = serde_json::from_slice(&bytes)?;
 
         for row in data.results {
-            let poster = process_image(&row.poster_path).context("bad poster image")?;
+            let poster = row.poster_path.as_deref().and_then(ImageV2::tmdb);
 
             let release_date = match row.release_date {
                 Some(release_date) if !release_date.is_empty() => Some(str::parse(&release_date)?),
@@ -169,9 +172,9 @@ impl Client {
 
             output.push(SearchMovie {
                 id: RemoteMovieId::Tmdb { id: row.id },
-                title: row.original_title,
+                title: row.original_title.unwrap_or_default(),
                 poster,
-                overview: row.overview,
+                overview: row.overview.unwrap_or_default(),
                 release_date,
             });
         }
@@ -181,22 +184,15 @@ impl Client {
         #[derive(Deserialize)]
         struct Row {
             id: u32,
-            original_title: String,
             #[serde(default)]
-            overview: String,
+            original_title: Option<String>,
             #[serde(default)]
-            poster_path: String,
+            overview: Option<String>,
+            #[serde(default)]
+            poster_path: Option<String>,
             #[serde(default)]
             release_date: Option<String>,
         }
-    }
-
-    /// Load image data.
-    pub(crate) async fn download_image(&self, id: &TmdbImage) -> Result<Vec<u8>> {
-        let mut url = self.state.image_url.clone();
-        url.set_path(&id.to_string());
-        let res = self.client.get(url).send().await?;
-        Ok(res.bytes().await?.to_vec())
     }
 
     /// Download series information.
@@ -262,19 +258,17 @@ impl Client {
             .unwrap_or_else(SeriesId::random);
 
         let mut graphics = SeriesGraphics::default();
-        let poster = process_image(&details.poster_path).context("poster image")?;
-        graphics.poster = ImageV2::tmdb(&details.poster_path);
-        let banner = process_image(&details.backdrop_path).context("backdrop image")?;
-        graphics.banner = ImageV2::tmdb(&details.backdrop_path);
+        graphics.poster = details.poster_path.as_deref().and_then(ImageV2::tmdb);
+        graphics.banner = details.backdrop_path.as_deref().and_then(ImageV2::tmdb);
 
         let series = Series {
             id,
             title: details.name.unwrap_or_default(),
             first_air_date: details.first_air_date,
-            overview: details.overview,
-            poster,
-            banner,
-            fanart: None,
+            overview: details.overview.unwrap_or_default(),
+            compat_poster: None,
+            compat_banner: None,
+            compat_fanart: None,
             graphics,
             tracked: true,
             compat_last_modified: None,
@@ -286,7 +280,8 @@ impl Client {
         let mut seasons = Vec::with_capacity(details.seasons.len());
 
         for s in details.seasons {
-            let poster = process_image(&s.poster_path).context("season poster image")?;
+            let mut graphics = SeasonGraphics::default();
+            graphics.poster = s.poster_path.as_deref().and_then(ImageV2::tmdb);
 
             seasons.push(Season {
                 number: match s.season_number {
@@ -295,8 +290,9 @@ impl Client {
                 },
                 air_date: s.air_date,
                 name: s.name,
-                overview: s.overview,
-                poster,
+                overview: s.overview.unwrap_or_default(),
+                compat_poster: None,
+                graphics,
             });
         }
 
@@ -314,11 +310,11 @@ impl Client {
             #[serde(default)]
             name: Option<String>,
             #[serde(default)]
-            overview: String,
+            overview: Option<String>,
             #[serde(default)]
-            poster_path: String,
+            poster_path: Option<String>,
             #[serde(default)]
-            backdrop_path: String,
+            backdrop_path: Option<String>,
             #[serde(default)]
             first_air_date: Option<NaiveDate>,
             #[serde(default)]
@@ -333,9 +329,9 @@ impl Client {
             #[serde(default)]
             name: Option<String>,
             #[serde(default)]
-            overview: String,
+            overview: Option<String>,
             #[serde(default)]
-            poster_path: String,
+            poster_path: Option<String>,
         }
     }
 
@@ -411,17 +407,19 @@ impl Client {
         output.sort_by(|a, b| a.0.cmp(&b.0));
 
         for (_, remote_ids, remote_id, id, e) in output {
-            let filename = process_image(&e.still_path).context("bad still image")?;
+            let mut graphics = EpisodeGraphics::default();
+            graphics.filename = e.still_path.as_deref().and_then(ImageV2::tmdb);
 
             let episode = Episode {
                 id,
                 name: e.name,
-                overview: e.overview,
+                overview: e.overview.unwrap_or_default(),
                 absolute_number: None,
                 season,
                 number: e.episode_number,
                 aired: e.air_date,
-                filename,
+                compat_filename: None,
+                graphics,
                 remote_id: Some(remote_id),
             };
 
@@ -521,6 +519,27 @@ impl Client {
         let external_ids: ExternalIds = serde_json::from_slice(&external_ids)?;
         Ok(Some(external_ids))
     }
+
+    /// Load image data from path.
+    pub(crate) async fn download_image_path(&self, path: &RelativePath) -> Result<Vec<u8>> {
+        let mut url = self.state.image_url.clone();
+
+        if let Ok(mut segments) = url.path_segments_mut() {
+            segments.extend(["t", "p", "original"]);
+
+            for c in path.components() {
+                segments.push(c.as_str());
+            }
+        }
+
+        let res = self.client.get(url).send().await?;
+
+        if !res.status().is_success() {
+            bail!("{path}: failed to download image: {}", res.status());
+        }
+
+        Ok(res.bytes().await?.to_vec())
+    }
 }
 
 /// Handle converting response to JSON.
@@ -530,15 +549,6 @@ async fn handle_res(res: Response) -> Result<Bytes> {
     }
 
     Ok(res.bytes().await?)
-}
-
-/// Process an optional `Image`.
-fn process_image(image: &str) -> Result<Option<Image>> {
-    if !image.is_empty() {
-        Ok(Some(Image::parse_tmdb(image)?))
-    } else {
-        Ok(None)
-    }
 }
 
 #[derive(Default, Deserialize)]
@@ -603,7 +613,7 @@ struct EpisodeDetail {
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
-    overview: String,
+    overview: Option<String>,
     #[serde(default)]
-    still_path: String,
+    still_path: Option<String>,
 }

@@ -19,6 +19,7 @@ impl Movie {
 
     pub(crate) fn prepare(&mut self, _: &mut State) {}
 
+    #[allow(unused)]
     pub(crate) fn update(&mut self, _: &mut State, message: Message) {
         match message {}
     }

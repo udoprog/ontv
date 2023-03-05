@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::assets::{Assets, ImageKey};
 use crate::commands::{Commands, CommandsBuf};
 use crate::error::ErrorInfo;
-use crate::model::{Task, TaskKind};
+use crate::model::{ImageV2, Task, TaskKind};
 use crate::page;
 use crate::params::{GAP, SMALL, SPACE, SUB_MENU_SIZE};
 use crate::service::{NewSeries, Service};
@@ -91,7 +91,7 @@ pub(crate) struct Application {
     // Exit after save has been completed.
     exit_after_save: bool,
     // Images to load.
-    images: Vec<ImageKey>,
+    images: Vec<(ImageKey, ImageV2)>,
     /// The identifier used for the main scrollable.
     scrollable_id: scrollable::Id,
 }
@@ -578,20 +578,22 @@ impl Application {
         self.images.clear();
 
         while self.images.len() < IMAGE_BATCH {
-            let Some(key) = self.state.assets.next_image() else {
+            let Some((key, image)) = self.state.assets.next_image() else {
                 break;
             };
 
-            self.images.push(key);
+            self.images.push((key, image));
         }
 
         if self.images.is_empty() {
             return;
         }
 
-        let future = self
-            .image_loader
-            .set(self.state.service.load_images(&self.images));
+        let future = self.image_loader.set(
+            self.state
+                .service
+                .load_images(self.images.drain(..).collect::<Vec<_>>()),
+        );
         self.commands.perform(future, translate);
     }
 
