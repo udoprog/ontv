@@ -15,8 +15,8 @@ use serde::Deserialize;
 
 use crate::api::common;
 use crate::model::{
-    Episode, EpisodeId, Etag, Image, Raw, RemoteEpisodeId, RemoteMovieId, RemoteSeriesId,
-    SearchMovie, SearchSeries, Season, SeasonNumber, Series, SeriesId, TmdbImage,
+    Episode, EpisodeId, Etag, Image, ImageV2, Raw, RemoteEpisodeId, RemoteMovieId, RemoteSeriesId,
+    SearchMovie, SearchSeries, Season, SeasonNumber, Series, SeriesGraphics, SeriesId, TmdbImage,
 };
 use crate::service::NewEpisode;
 
@@ -109,7 +109,7 @@ impl Client {
         let data: Data<Vec<Row>> = serde_json::from_slice(&bytes)?;
 
         for row in data.results {
-            let poster = process_image(row.poster_path.as_deref()).context("bad poster image")?;
+            let poster = process_image(&row.poster_path).context("bad poster image")?;
 
             let first_aired = match row.first_air_date {
                 Some(first_aired) if !first_aired.is_empty() => Some(str::parse(&first_aired)?),
@@ -134,7 +134,7 @@ impl Client {
             #[serde(default)]
             overview: String,
             #[serde(default)]
-            poster_path: Option<String>,
+            poster_path: String,
             #[serde(default)]
             first_air_date: Option<String>,
         }
@@ -160,7 +160,7 @@ impl Client {
         let data: Data<Vec<Row>> = serde_json::from_slice(&bytes)?;
 
         for row in data.results {
-            let poster = process_image(row.poster_path.as_deref()).context("bad poster image")?;
+            let poster = process_image(&row.poster_path).context("bad poster image")?;
 
             let release_date = match row.release_date {
                 Some(release_date) if !release_date.is_empty() => Some(str::parse(&release_date)?),
@@ -185,7 +185,7 @@ impl Client {
             #[serde(default)]
             overview: String,
             #[serde(default)]
-            poster_path: Option<String>,
+            poster_path: String,
             #[serde(default)]
             release_date: Option<String>,
         }
@@ -261,8 +261,11 @@ impl Client {
             .lookup(remote_ids.iter().copied())
             .unwrap_or_else(SeriesId::random);
 
-        let poster = process_image(details.poster_path.as_deref()).context("poster image")?;
-        let banner = process_image(details.backdrop_path.as_deref()).context("backdrop image")?;
+        let mut graphics = SeriesGraphics::default();
+        let poster = process_image(&details.poster_path).context("poster image")?;
+        graphics.poster = ImageV2::tmdb(&details.poster_path);
+        let banner = process_image(&details.backdrop_path).context("backdrop image")?;
+        graphics.banner = ImageV2::tmdb(&details.backdrop_path);
 
         let series = Series {
             id,
@@ -272,6 +275,7 @@ impl Client {
             poster,
             banner,
             fanart: None,
+            graphics,
             tracked: true,
             compat_last_modified: None,
             compat_last_etag: None,
@@ -282,7 +286,7 @@ impl Client {
         let mut seasons = Vec::with_capacity(details.seasons.len());
 
         for s in details.seasons {
-            let poster = process_image(s.poster_path.as_deref()).context("season poster image")?;
+            let poster = process_image(&s.poster_path).context("season poster image")?;
 
             seasons.push(Season {
                 number: match s.season_number {
@@ -312,9 +316,9 @@ impl Client {
             #[serde(default)]
             overview: String,
             #[serde(default)]
-            poster_path: Option<String>,
+            poster_path: String,
             #[serde(default)]
-            backdrop_path: Option<String>,
+            backdrop_path: String,
             #[serde(default)]
             first_air_date: Option<NaiveDate>,
             #[serde(default)]
@@ -331,7 +335,7 @@ impl Client {
             #[serde(default)]
             overview: String,
             #[serde(default)]
-            poster_path: Option<String>,
+            poster_path: String,
         }
     }
 
@@ -407,7 +411,7 @@ impl Client {
         output.sort_by(|a, b| a.0.cmp(&b.0));
 
         for (_, remote_ids, remote_id, id, e) in output {
-            let filename = process_image(e.still_path.as_deref()).context("bad still image")?;
+            let filename = process_image(&e.still_path).context("bad still image")?;
 
             let episode = Episode {
                 id,
@@ -528,11 +532,12 @@ async fn handle_res(res: Response) -> Result<Bytes> {
     Ok(res.bytes().await?)
 }
 
-/// Process an optional image.
-fn process_image(image: Option<&str>) -> Result<Option<Image>> {
-    match image {
-        Some(image) if !image.is_empty() => Ok(Some(Image::parse_tmdb(image)?)),
-        _ => Ok(None),
+/// Process an optional `Image`.
+fn process_image(image: &str) -> Result<Option<Image>> {
+    if !image.is_empty() {
+        Ok(Some(Image::parse_tmdb(image)?))
+    } else {
+        Ok(None)
     }
 }
 
@@ -600,5 +605,5 @@ struct EpisodeDetail {
     #[serde(default)]
     overview: String,
     #[serde(default)]
-    still_path: Option<String>,
+    still_path: String,
 }

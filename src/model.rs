@@ -8,6 +8,7 @@ use std::str::FromStr;
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use chrono::{DateTime, NaiveDate, Utc};
+use relative_path::RelativePath;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -273,6 +274,27 @@ impl fmt::Display for RemoteMovieId {
     }
 }
 
+/// Associated series graphics.
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) struct SeriesGraphics {
+    /// Poster image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) poster: Option<ImageV2>,
+    /// Banner image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) banner: Option<ImageV2>,
+    /// Fanart image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) fanart: Option<ImageV2>,
+}
+
+impl SeriesGraphics {
+    fn is_empty(&self) -> bool {
+        self.poster.is_none() && self.banner.is_none() && self.fanart.is_none()
+    }
+}
+
 /// A series.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -288,14 +310,17 @@ pub(crate) struct Series {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub(crate) overview: String,
     /// Poster image.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) poster: Option<Image>,
+    #[serde(default, rename = "poster", skip_serializing)]
+    pub(crate) compat_poster: Option<Image>,
     /// Banner image.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) banner: Option<Image>,
+    #[serde(default, rename = "banner", skip_serializing)]
+    pub(crate) compat_banner: Option<Image>,
     /// Fanart image.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) fanart: Option<Image>,
+    #[serde(default, rename = "fanart", skip_serializing)]
+    pub(crate) compat_fanart: Option<Image>,
+    /// Series graphics.
+    #[serde(default, skip_serializing_if = "SeriesGraphics::is_empty")]
+    pub(crate) graphics: SeriesGraphics,
     /// Indicates if the series is tracked or not, in that it will receive updates.
     #[serde(default, skip_serializing_if = "is_false")]
     pub(crate) tracked: bool,
@@ -857,6 +882,47 @@ impl From<TmdbImage> for Image {
     #[inline]
     fn from(image: TmdbImage) -> Self {
         Image::Tmdb(image)
+    }
+}
+
+/// The identifier of an image.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", tag = "from")]
+pub(crate) enum ImageV2 {
+    /// An image from thetvdb.com
+    Tvdb(Box<RelativePath>),
+    /// An image from themoviedb.org
+    Tmdb(Box<RelativePath>),
+}
+
+impl ImageV2 {
+    /// Construct a new tvbd image.
+    pub(crate) fn tvdb<S>(string: &S) -> Option<Self>
+    where
+        S: ?Sized + AsRef<str>,
+    {
+        Some(string.as_ref().trim_start_matches('/'))
+            .filter(|s| !s.is_empty())
+            .map(|s| Self::Tvdb(s.into()))
+    }
+
+    /// Construct a new tmdb image.
+    pub(crate) fn tmdb<S>(string: &S) -> Option<Self>
+    where
+        S: ?Sized + AsRef<str>,
+    {
+        Some(string.as_ref().trim_start_matches('/'))
+            .filter(|s| !s.is_empty())
+            .map(|s| Self::Tmdb(s.into()))
+    }
+}
+
+impl fmt::Display for ImageV2 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ImageV2::Tvdb(image) => write!(f, "tvdb:{image}"),
+            ImageV2::Tmdb(image) => write!(f, "tmdb:{image}"),
+        }
     }
 }
 

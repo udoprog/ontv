@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::common;
 use crate::model::{
-    Episode, EpisodeId, Etag, Image, Raw, RemoteEpisodeId, RemoteSeriesId, SearchSeries,
-    SeasonNumber, Series, SeriesId, TvdbImage,
+    Episode, EpisodeId, Etag, Image, ImageV2, Raw, RemoteEpisodeId, RemoteSeriesId, SearchSeries,
+    SeasonNumber, Series, SeriesGraphics, SeriesId, TvdbImage,
 };
 use crate::service::NewEpisode;
 
@@ -184,21 +184,25 @@ impl Client {
 
         let value: Value = serde_json::from_slice::<Data<_>>(&bytes)?.data;
 
-        let banner = match &value.banner {
-            Some(banner) if !banner.is_empty() => {
-                Some(Image::parse_tvdb_banner(banner).context("banner image")?)
-            }
-            _ => None,
+        let mut graphics = SeriesGraphics::default();
+
+        let banner = if !value.banner.is_empty() {
+            Some(Image::parse_tvdb_banner(&value.banner).context("banner image")?)
+        } else {
+            None
+        };
+        graphics.banner = ImageV2::tvdb(&value.banner);
+
+        let fanart = if !value.fanart.is_empty() {
+            Some(Image::parse_tvdb_banner(&value.fanart).context("fanart image")?)
+        } else {
+            None
         };
 
-        let fanart = match &value.fanart {
-            Some(fanart) if !fanart.is_empty() => {
-                Some(Image::parse_tvdb_banner(fanart).context("fanart image")?)
-            }
-            _ => None,
-        };
+        graphics.fanart = ImageV2::tvdb(&value.fanart);
 
         let poster = Image::parse_tvdb_banner(&value.poster).context("poster image")?;
+        graphics.poster = ImageV2::tvdb(&value.poster);
 
         let remote_id = RemoteSeriesId::Tvdb { id };
 
@@ -223,6 +227,7 @@ impl Client {
             banner,
             poster: Some(poster),
             fanart,
+            graphics,
             remote_id: Some(remote_id),
             tracked: true,
             compat_last_modified: None,
@@ -239,10 +244,13 @@ impl Client {
             id: u32,
             // "2021-03-05 07:53:14"
             added: String,
-            banner: Option<String>,
-            fanart: Option<String>,
+            #[serde(default)]
+            banner: String,
+            #[serde(default)]
+            fanart: String,
             #[serde(default)]
             overview: String,
+            #[serde(default)]
             poster: String,
             series_name: String,
             #[serde(default)]
