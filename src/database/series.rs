@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{btree_map, BTreeMap, HashMap};
 
 use slab::Slab;
 
@@ -60,12 +60,52 @@ impl Database {
     }
 
     /// Export series data.
-    pub(crate) fn export(&self) -> impl IntoIterator<Item = Series> + 'static {
-        let mut data = self.data.clone();
+    pub(crate) fn export(&self) -> impl IntoIterator<Item = Series> + 'static + Clone {
+        Export {
+            data: self.data.clone(),
+            by_name: self.by_name.clone(),
+        }
+    }
+}
 
-        self.by_name
-            .clone()
-            .into_values()
-            .flat_map(move |index| data.try_remove(index))
+#[derive(Clone)]
+struct Export {
+    data: Slab<Series>,
+    by_name: BTreeMap<(String, SeriesId), usize>,
+}
+
+impl IntoIterator for Export {
+    type Item = Series;
+    type IntoIter = ExportFlatten<btree_map::IntoValues<(String, SeriesId), usize>>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        ExportFlatten {
+            data: self.data,
+            iter: self.by_name.clone().into_values(),
+        }
+    }
+}
+
+struct ExportFlatten<I> {
+    data: Slab<Series>,
+    iter: I,
+}
+
+impl<I> Iterator for ExportFlatten<I>
+where
+    I: Iterator<Item = usize>,
+{
+    type Item = Series;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let Some(series) = self.data.try_remove(self.iter.next()?) else {
+                continue;
+            };
+
+            return Some(series);
+        }
     }
 }

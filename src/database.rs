@@ -1,3 +1,4 @@
+mod format;
 mod pending;
 mod remotes;
 mod series;
@@ -5,15 +6,11 @@ mod sync;
 mod watched;
 
 use std::collections::{HashMap, HashSet};
-use std::fmt;
 use std::future::Future;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Error, Result};
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use anyhow::{anyhow, Context, Result};
 
 use crate::model::{Config, Episode, Pending, RemoteId, Season, Series, SeriesId, Watched};
 use crate::queue::Queue;
@@ -54,7 +51,7 @@ impl Database {
             db.config = config;
         }
 
-        if let Some(remotes) = load_array::<RemoteId>(&paths.remotes)? {
+        if let Some((_format, remotes)) = format::load_array::<_, RemoteId>(&paths.remotes)? {
             for remote_id in remotes {
                 match remote_id {
                     RemoteId::Series { uuid, remotes } => {
@@ -71,13 +68,15 @@ impl Database {
             }
         }
 
-        if let Some(syncs) = load_array::<sync::Export>(&paths.sync)? {
+        if let Some((_format, syncs)) = format::load_array::<_, sync::Export>(&paths.sync)? {
             for sync in syncs {
                 db.sync.import_push(sync);
             }
         }
 
-        if let Some(series) = load_series(&paths.series)? {
+        if let Some((index, _format, series)) =
+            format::load_array_fallback::<_, Series, 2>([&paths.series_json, &paths.series_toml])?
+        {
             for mut s in series {
                 if let Some(remote_id) = &s.remote_id {
                     if let Some(etag) = s.compat_last_etag.take() {
@@ -106,26 +105,30 @@ impl Database {
 
                 db.series.insert(s);
             }
+
+            if index == 0 {
+                db.changes.change(Change::Series);
+            }
         }
 
-        if let Some(watched) = load_array::<Watched>(&paths.watched)? {
+        if let Some((_format, watched)) = format::load_array::<_, Watched>(&paths.watched)? {
             for w in watched {
                 db.watched.insert(w);
             }
         }
 
-        if let Some(pending) = load_array::<Pending>(&paths.pending)? {
+        if let Some((_format, pending)) = format::load_array::<_, Pending>(&paths.pending)? {
             db.pending.extend(pending);
         }
 
-        if let Some(episodes) = load_directory::<SeriesId, Episode>(&paths.episodes)? {
-            for (id, episodes) in episodes {
+        if let Some(episodes) = format::load_directory::<_, SeriesId, Episode>(&paths.episodes)? {
+            for (id, _format, episodes) in episodes {
                 db.episodes.insert(id, episodes);
             }
         }
 
-        if let Some(seasons) = load_directory(&paths.seasons)? {
-            for (id, seasons) in seasons {
+        if let Some(seasons) = format::load_directory(&paths.seasons)? {
+            for (id, _format, seasons) in seasons {
                 db.seasons.insert(id, seasons);
             }
         }
@@ -197,27 +200,32 @@ impl Database {
             let guard = paths.lock.lock().await;
 
             if let Some(config) = config {
-                save_pretty("config", &paths.config, config).await?;
+                format::save_pretty("config", &paths.config, config).await?;
             }
 
             if let Some(sync) = sync {
-                save_array("sync", &paths.sync, sync).await?;
+                format::save_array("sync", &paths.sync, sync).await?;
             }
 
             if let Some(series) = series {
-                save_array("series", &paths.series, series).await?;
+                format::save_array_fallback(
+                    "series",
+                    [&paths.series_json, &paths.series_toml],
+                    series,
+                )
+                .await?;
             }
 
             if let Some(watched) = watched {
-                save_array("watched", &paths.watched, watched).await?;
+                format::save_array("watched", &paths.watched, watched).await?;
             }
 
             if let Some(pending) = pending {
-                save_array("pending", &paths.pending, pending).await?;
+                format::save_array("pending", &paths.pending, pending).await?;
             }
 
             if let Some(remotes) = remotes {
-                save_array("remotes", &paths.remotes, remotes).await?;
+                format::save_array("remotes", &paths.remotes, remotes).await?;
             }
 
             for series_id in remove_series {
@@ -231,8 +239,8 @@ impl Database {
             for (series_id, episodes, seasons) in add_series {
                 let episodes_path = paths.episodes.join(format!("{series_id}.json"));
                 let seasons_path = paths.seasons.join(format!("{series_id}.json"));
-                let a = save_array("episodes", &episodes_path, episodes);
-                let b = save_array("seasons", &seasons_path, seasons);
+                let a = format::save_array("episodes", &episodes_path, episodes);
+                let b = format::save_array("seasons", &seasons_path, seasons);
                 let _ = tokio::try_join!(a, b)?;
             }
 
@@ -314,207 +322,9 @@ pub(crate) fn load_config(path: &Path) -> Result<Option<Config>> {
     Ok(serde_json::from_slice(&bytes)?)
 }
 
-/// Load series from the given path.
-fn load_series(path: &Path) -> Result<Option<Vec<Series>>> {
-    let f = match std::fs::File::open(path) {
-        Ok(f) => f,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e.into()),
-    };
-
-    Ok(Some(
-        load_array_from_reader(f).with_context(|| anyhow!("{}", path.display()))?,
-    ))
-}
-
 /// Remove the given file.
 async fn remove_file(what: &'static str, path: &Path) -> Result<()> {
     tracing::trace!("{what}: removing: {}", path.display());
     let _ = tokio::fs::remove_file(path).await;
     Ok(())
-}
-
-/// Save series to the given path.
-fn save_pretty<I>(what: &'static str, path: &Path, data: I) -> impl Future<Output = Result<()>>
-where
-    I: 'static + Send + Serialize,
-{
-    use std::fs;
-    use std::io::Write;
-
-    tracing::debug!("saving {what}: {}", path.display());
-
-    let path = path.to_owned();
-
-    let task = tokio::spawn(async move {
-        let Some(dir) = path.parent() else {
-            anyhow::bail!("{what}: missing parent directory: {}", path.display());
-        };
-
-        if !matches!(fs::metadata(dir), Ok(m) if m.is_dir()) {
-            fs::create_dir_all(dir)?;
-        }
-
-        let mut f = tempfile::NamedTempFile::new_in(dir)?;
-
-        tracing::trace!("writing {what}: {}", f.path().display());
-
-        serde_json::to_writer_pretty(&mut f, &data)?;
-        f.write_all(&[b'\n'])?;
-
-        f.flush()?;
-        let (_, temp_path) = f.keep()?;
-
-        tracing::trace!(
-            "rename {what}: {} -> {}",
-            temp_path.display(),
-            path.display()
-        );
-
-        fs::rename(temp_path, path)?;
-        Ok(())
-    });
-
-    async move {
-        let output: Result<()> = task.await?;
-        output
-    }
-}
-
-/// Save series to the given path.
-fn save_array<I>(what: &'static str, path: &Path, data: I) -> impl Future<Output = Result<()>>
-where
-    I: 'static + Send + IntoIterator,
-    I::Item: Serialize,
-{
-    use std::fs;
-    use std::io::Write;
-
-    tracing::trace!("saving {what}: {}", path.display());
-
-    let path = path.to_owned();
-
-    let task = tokio::spawn(async move {
-        let Some(dir) = path.parent() else {
-            anyhow::bail!("{what}: missing parent directory: {}", path.display());
-        };
-
-        if !matches!(fs::metadata(dir), Ok(m) if m.is_dir()) {
-            fs::create_dir_all(dir)?;
-        }
-
-        let mut f = tempfile::NamedTempFile::new_in(dir)?;
-
-        tracing::trace!("writing {what}: {}", f.path().display());
-
-        for line in data {
-            serde_json::to_writer(&mut f, &line)?;
-            f.write_all(&[b'\n'])?;
-        }
-
-        f.flush()?;
-        let (_, temp_path) = f.keep()?;
-
-        tracing::trace!(
-            "rename {what}: {} -> {}",
-            temp_path.display(),
-            path.display()
-        );
-
-        fs::rename(temp_path, path)?;
-        Ok(())
-    });
-
-    async move {
-        let output: Result<()> = task.await?;
-        output
-    }
-}
-
-/// Load all episodes found on the given paths.
-fn load_directory<I, T>(path: &Path) -> Result<Option<Vec<(I, Vec<T>)>>>
-where
-    I: FromStr,
-    I::Err: fmt::Display,
-    T: DeserializeOwned,
-{
-    use std::fs;
-
-    let d = match fs::read_dir(path) {
-        Ok(f) => f,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e.into()),
-    };
-
-    let mut output = Vec::new();
-
-    for e in d {
-        let e = e?;
-
-        let m = e.metadata()?;
-
-        if !m.is_file() {
-            continue;
-        }
-
-        let path = e.path();
-
-        if !matches!(path.extension().and_then(|e| e.to_str()), Some("json")) {
-            continue;
-        }
-
-        let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
-            continue;
-        };
-
-        let Ok(id) = stem.parse() else {
-            continue;
-        };
-
-        let f = std::fs::File::open(&path)?;
-        let array = load_array_from_reader(f).with_context(|| anyhow!("{}", path.display()))?;
-        output.push((id, array));
-    }
-
-    Ok(Some(output))
-}
-
-/// Load a simple array from a file.
-fn load_array<T>(path: &Path) -> Result<Option<Vec<T>>>
-where
-    T: DeserializeOwned,
-{
-    let f = match std::fs::File::open(path) {
-        Ok(f) => f,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(Error::from(e)).with_context(|| anyhow!("{}", path.display())),
-    };
-
-    Ok(Some(
-        load_array_from_reader(f).with_context(|| anyhow!("{}", path.display()))?,
-    ))
-}
-
-/// Load an array from the given reader line-by-line.
-fn load_array_from_reader<I, T>(input: I) -> Result<Vec<T>>
-where
-    I: std::io::Read,
-    T: DeserializeOwned,
-{
-    use std::io::{BufRead, BufReader};
-
-    let mut output = Vec::new();
-
-    for line in BufReader::new(input).lines() {
-        let line = line?;
-        let line = line.trim();
-
-        if line.starts_with('#') || line.is_empty() {
-            continue;
-        }
-
-        output.push(serde_json::from_str(line)?);
-    }
-
-    Ok(output)
 }
