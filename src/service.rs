@@ -632,18 +632,21 @@ impl Service {
             },
         ) = self.db.watched.series(id).next_back()
         {
-            tracing::trace!(?watched, "episode after watched");
-            eps.skip_while(|e| e.id != *episode).nth(1)
+            tracing::trace!(?watched, ?episode, "episode after watched");
+            eps.skip_while(|e| e.season.is_special() || e.id != *episode)
+                .skip(1)
+                .find(|e| !e.season.is_special())
         } else {
             tracing::trace!("finding next unwatched episode");
             eps.skip_while(|e| self.db.watched.get(&e.id).len() > 0 || e.season.is_special())
-                .next()
+                .find(|e| !e.season.is_special())
         };
 
         let Some(e) = next_episode else {
             return;
         };
 
+        tracing::trace!(episode = ?e.id, "set as pending");
         let candidate = self.db.watched.series(id).map(|w| &w.timestamp).max();
 
         let timestamp = match (
