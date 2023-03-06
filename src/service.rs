@@ -610,48 +610,38 @@ impl Service {
             return;
         }
 
-        let eps = self.db.episodes.by_series(id);
+        let last = self.db.watched.series(id).next_back();
 
-        let next_episode = if let Some(
-            watched @ Watched {
-                kind: WatchedKind::Series { episode, .. },
-                ..
-            },
-        ) = self.db.watched.series(id).next_back()
-        {
-            tracing::trace!(?watched, ?episode, "episode after watched");
-            let mut current = self.db.episodes.get(episode);
-
-            while let Some(e) = current {
-                if !e.season.is_special() {
-                    break;
-                }
-
-                current = e.next();
-            }
-
-            current
+        let mut cur = if let Some(WatchedKind::Series { episode, .. }) = last.map(|w| &w.kind) {
+            tracing::trace!(?episode, "episode after watched");
+            self.db.episodes.get(episode).and_then(EpisodeRef::next)
         } else {
             tracing::trace!("finding next unwatched episode");
-            eps.skip_while(|e| self.db.watched.get(&e.id).len() > 0 || e.season.is_special())
-                .find(|e| !e.season.is_special())
+            self.db.episodes.by_series(id).next()
         };
 
-        let Some(e) = next_episode else {
+        while let Some(e) = cur {
+            if !e.season.is_special() && self.db.watched.get(&e.id).len() == 0 {
+                break;
+            }
+
+            cur = e.next();
+        }
+
+        let Some(e) = cur else {
             return;
         };
 
         tracing::trace!(episode = ?e.id, "set as pending");
-        let candidate = self.db.watched.series(id).map(|w| &w.timestamp).max();
 
         let timestamp = match (
-            candidate,
+            last.map(|w| w.timestamp),
             e.aired
                 .as_ref()
                 .and_then(|&d| Some(DateTime::from_utc(d.and_hms_opt(12, 0, 0)?, Utc))),
         ) {
-            (Some(&a), Some(b)) => a.max(b),
-            (Some(&candidate), _) => candidate,
+            (Some(a), Some(b)) => a.max(b),
+            (Some(candidate), _) => candidate,
             _ => *now,
         };
 

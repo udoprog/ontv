@@ -202,7 +202,7 @@ impl Database {
         let watched = changes
             .set
             .contains(Change::Watched)
-            .then(|| self.watched.export());
+            .then(|| self.watched.export(&self.episodes));
 
         let pending = changes
             .set

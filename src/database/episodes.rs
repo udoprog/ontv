@@ -43,13 +43,7 @@ impl fmt::Debug for EpisodeRef<'_> {
 
 impl<'a> EpisodeRef<'a> {
     #[inline]
-    pub(crate) fn prev(&self) -> Option<EpisodeRef<'a>> {
-        let data = self.data.get(&self.prev?)?;
-        Some(data.into_ref(self.data))
-    }
-
-    #[inline]
-    pub(crate) fn next(&self) -> Option<EpisodeRef<'a>> {
+    pub(crate) fn next(self) -> Option<EpisodeRef<'a>> {
         let data = self.data.get(&self.next?)?;
         Some(data.into_ref(self.data))
     }

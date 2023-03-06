@@ -663,7 +663,9 @@ pub(crate) struct Watched {
 }
 
 /// Season number.
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 #[serde(untagged)]
 pub(crate) enum SeasonNumber {
     /// Season used for non-numbered episodes.

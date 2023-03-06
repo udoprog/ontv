@@ -1,10 +1,39 @@
 use std::collections::btree_map::BTreeMap;
 use std::collections::hash_map::{self, HashMap};
 
+use serde::Serialize;
 use slab::Slab;
 use uuid::Uuid;
 
-use crate::model::{EpisodeId, SeriesId, Watched, WatchedKind};
+use crate::database::episodes;
+use crate::model::{EpisodeId, SeasonNumber, SeriesId, Watched, WatchedKind};
+
+#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
+pub(crate) enum Place {
+    Episode(SeasonNumber, u32),
+}
+
+impl Serialize for Place {
+    #[inline]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Place::Episode(season, number) => {
+                serializer.collect_str(&format_args!("{season}x{number}", season = season.short()))
+            }
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) struct Export {
+    place: Place,
+    #[serde(flatten)]
+    watched: Watched,
+}
 
 #[derive(Default)]
 pub(crate) struct Database {
@@ -125,11 +154,24 @@ impl Database {
     }
 
     /// Construct an export of the watched database.
-    pub(crate) fn export(&self) -> impl IntoIterator<Item = Watched> + 'static {
+    pub(crate) fn export(
+        &self,
+        episodes: &episodes::Database,
+    ) -> impl IntoIterator<Item = Export> + 'static {
         let mut export = BTreeMap::new();
 
         for (_, w) in &self.data {
-            export.insert((w.timestamp, w.id), *w);
+            let place = match &w.kind {
+                WatchedKind::Series { episode, .. } => {
+                    let (season, number) = episodes
+                        .get(episode)
+                        .map(|e| (e.season, e.number))
+                        .unwrap_or_default();
+                    Place::Episode(season, number)
+                }
+            };
+
+            export.insert((w.timestamp, place, w.id), Export { watched: *w, place });
         }
 
         export.into_values()
