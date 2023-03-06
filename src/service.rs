@@ -18,8 +18,7 @@ use crate::api::themoviedb;
 use crate::api::thetvdb;
 use crate::assets::ImageKey;
 use crate::cache::{self};
-use crate::database::Change;
-use crate::database::Database;
+use crate::database::{Change, Database, EpisodeRef};
 use crate::model::{
     Config, Episode, EpisodeId, Etag, ImageV2, Movie, MovieId, Pending, RemoteEpisodeId,
     RemoteMovieId, RemoteSeriesId, ScheduledDay, ScheduledSeries, SearchMovie, SearchSeries,
@@ -64,7 +63,7 @@ impl fmt::Debug for NewSeries {
 pub(crate) struct PendingRef<'a> {
     pub(crate) series: &'a Series,
     pub(crate) season: Option<&'a Season>,
-    pub(crate) episode: &'a Episode,
+    pub(crate) episode: EpisodeRef<'a>,
 }
 
 /// Background service taking care of all state handling.
@@ -140,12 +139,17 @@ impl Service {
 
     /// Iterator over available episodes.
     #[inline]
-    pub(crate) fn episodes(&self, id: &SeriesId) -> &[Episode] {
-        let Some(values) = self.db.episodes.get(id) else {
-            return &[];
-        };
+    pub(crate) fn episodes(
+        &self,
+        id: &SeriesId,
+    ) -> impl DoubleEndedIterator<Item = EpisodeRef<'_>> + ExactSizeIterator {
+        self.db.episodes.by_series(id)
+    }
 
-        values
+    /// Get reference to an episode.
+    #[inline]
+    pub(crate) fn episode(&self, id: &EpisodeId) -> Option<EpisodeRef<'_>> {
+        self.db.episodes.get(id)
     }
 
     /// Iterator over available seasons.
@@ -186,11 +190,7 @@ impl Service {
         let mut total = 0;
         let mut watched = 0;
 
-        for episode in self
-            .episodes(series_id)
-            .iter()
-            .filter(|e| e.season == *season)
-        {
+        for episode in self.episodes(series_id).filter(|e| e.season == *season) {
             total += 1;
             watched += usize::from(self.watched(&episode.id).len() != 0);
         }
@@ -215,10 +215,7 @@ impl Service {
                 return None;
             }
 
-            let episode = self
-                .episodes(&p.series)
-                .iter()
-                .find(|e| e.id == p.episode)?;
+            let episode = self.db.episodes.get(&p.episode)?;
 
             if !episode.has_aired(&today) {
                 return None;
@@ -232,7 +229,7 @@ impl Service {
             Some(PendingRef {
                 series,
                 season,
-                episode,
+                episode: episode,
             })
         })
     }
@@ -389,9 +386,7 @@ impl Service {
         for episode in self
             .db
             .episodes
-            .get(series_id)
-            .into_iter()
-            .flatten()
+            .by_series(series_id)
             .filter(|e| e.season == *season)
         {
             if self.watched(&episode.id).len() > 0 {
@@ -450,11 +445,7 @@ impl Service {
         series_id: &SeriesId,
         episode_id: &EpisodeId,
     ) {
-        let Some(episodes) = self.db.episodes.get(series_id) else {
-            return;
-        };
-
-        let mut it = episodes.iter();
+        let mut it = self.db.episodes.by_series(series_id);
 
         for episode in it.by_ref() {
             if episode.id == *episode_id {
@@ -537,7 +528,6 @@ impl Service {
 
             let last_timestamp = self
                 .episodes(series_id)
-                .iter()
                 .take_while(|e| e.id != *episode_id)
                 .flat_map(|e| self.db.watched.get(&e.id))
                 .map(|w| w.timestamp)
@@ -558,14 +548,10 @@ impl Service {
         series_id: &SeriesId,
         season: &SeasonNumber,
     ) {
-        let Some(episodes) = self.db.episodes.get(series_id) else {
-            return;
-        };
-
         let mut last_timestamp = None;
         let mut removed = 0;
 
-        for e in episodes {
+        for e in self.db.episodes.by_series(series_id) {
             if e.season == *season {
                 removed += self.db.watched.remove_by_episode(&e.id);
             } else {
@@ -583,12 +569,13 @@ impl Service {
         self.db.pending.remove_by(|p| p.series == *series_id);
         self.db.changes.change(Change::Pending);
 
-        let Some(episodes) = self.db.episodes.get(series_id) else {
-            return;
-        };
-
         // Find the first episode matching the cleared season.
-        if let Some(episode) = episodes.iter().find(|e| e.season == *season) {
+        if let Some(episode) = self
+            .db
+            .episodes
+            .by_series(series_id)
+            .find(|e| e.season == *season)
+        {
             self.db.pending.extend([Pending {
                 series: *series_id,
                 episode: episode.id,
@@ -623,7 +610,7 @@ impl Service {
             return;
         }
 
-        let eps = self.db.episodes.get(id).into_iter().flatten();
+        let eps = self.db.episodes.by_series(id);
 
         let next_episode = if let Some(
             watched @ Watched {
@@ -633,9 +620,17 @@ impl Service {
         ) = self.db.watched.series(id).next_back()
         {
             tracing::trace!(?watched, ?episode, "episode after watched");
-            eps.skip_while(|e| e.season.is_special() || e.id != *episode)
-                .skip(1)
-                .find(|e| !e.season.is_special())
+            let mut current = self.db.episodes.get(episode);
+
+            while let Some(e) = current {
+                if !e.season.is_special() {
+                    break;
+                }
+
+                current = e.next();
+            }
+
+            current
         } else {
             tracing::trace!("finding next unwatched episode");
             eps.skip_while(|e| self.db.watched.get(&e.id).len() > 0 || e.season.is_special())
@@ -676,7 +671,7 @@ impl Service {
             self.db.pending.remove_by_index(index);
         }
 
-        let Some(e) = self.db.episodes.get(series_id).into_iter().flatten().skip_while(|e| e.id != *id).nth(1) else {
+        let Some(e) = self.db.episodes.get(id).and_then(|e| e.next()) else {
             return;
         };
 
@@ -1002,11 +997,11 @@ impl Service {
         &self,
         series_id: &SeriesId,
         mut predicate: P,
-    ) -> Option<&Episode>
+    ) -> Option<EpisodeRef<'_>>
     where
         P: FnMut(&Episode) -> bool,
     {
-        self.episodes(series_id).iter().find(move |&e| predicate(e))
+        self.episodes(series_id).find(move |e| predicate(e))
     }
 
     /// Search tvdb.

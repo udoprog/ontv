@@ -106,7 +106,6 @@ impl Season {
         self.episodes.init_from_iter(
             s.service
                 .episodes(&self.series_id)
-                .iter()
                 .filter(|e| e.season == self.season)
                 .map(|e| (self.series_id, e.id, s.service.watched(&e.id))),
         );
@@ -116,7 +115,6 @@ impl Season {
         for e in s
             .service
             .episodes(&self.series_id)
-            .iter()
             .filter(|e| e.season == self.season)
         {
             s.assets.mark_with_hint(e.filename(), SCREENCAP_HINT);
@@ -180,7 +178,6 @@ impl Season {
         for (index, (episode, data)) in s
             .service
             .episodes(&series.id)
-            .iter()
             .filter(|e| e.season == season.number)
             .zip(&self.episodes)
             .enumerate()

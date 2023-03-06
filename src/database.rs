@@ -1,3 +1,4 @@
+mod episodes;
 mod format;
 mod pending;
 mod remotes;
@@ -12,6 +13,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 
+pub(crate) use self::episodes::EpisodeRef;
 use crate::model::{Config, Episode, Pending, RemoteId, Season, Series, SeriesId, Watched};
 use crate::queue::Queue;
 use crate::service::paths;
@@ -24,8 +26,8 @@ pub(crate) struct Database {
     pub(crate) remotes: remotes::Database,
     /// Series database.
     pub(crate) series: series::Database,
-    /// Episodes collection.
-    pub(crate) episodes: HashMap<SeriesId, Vec<Episode>>,
+    /// Episodes database.
+    pub(crate) episodes: episodes::Database,
     /// Seasons collection.
     pub(crate) seasons: HashMap<SeriesId, Vec<Season>>,
     /// Episode to watch history.
@@ -216,11 +218,11 @@ impl Database {
         let mut add_series = Vec::with_capacity(changes.add.len());
 
         for id in changes.add {
-            let (Some(episodes), Some(seasons)) = (self.episodes.get(&id), self.seasons.get(&id)) else {
+            let (episodes, Some(seasons)) = (self.episodes.by_series(&id), self.seasons.get(&id)) else {
                 continue;
             };
 
-            add_series.push((id, episodes.clone(), seasons.clone()));
+            add_series.push((id, episodes.export(), seasons.clone()));
         }
 
         let remotes = if changes.set.contains(Change::Remotes) {

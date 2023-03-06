@@ -270,7 +270,7 @@ impl Dashboard {
 
             panel = panel.push(actions.spacing(SPACE));
 
-            let episode_title = episode_title(episode);
+            let episode_title = episode_title(&episode);
 
             if let Some(air_date) = &episode.aired {
                 panel = panel.push(text(format!("Aired: {air_date}")).size(SMALL));
@@ -369,7 +369,7 @@ impl Dashboard {
                 let mut episodes = Column::new();
 
                 for episode_id in &schedule.episodes {
-                    let Some(episode) = s.service.episodes(&schedule.series_id).iter().find(|e| e.id == *episode_id) else {
+                    let Some(episode) = s.service.episode(&episode_id) else {
                         continue;
                     };
 
