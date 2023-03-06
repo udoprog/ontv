@@ -452,7 +452,15 @@ impl Client {
     /// Load image data from image path.
     pub(crate) async fn download_image_path(&self, path: &RelativePath) -> Result<Vec<u8>> {
         let mut url = self.state.artworks_url.clone();
-        url.set_path(path.as_str());
+
+        if let Ok(mut segments) = url.path_segments_mut() {
+            segments.extend(["banners"]);
+
+            for c in path.components() {
+                segments.push(c.as_str());
+            }
+        }
+
         let res = self.client.get(url).send().await?;
 
         if !res.status().is_success() {

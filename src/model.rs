@@ -901,43 +901,43 @@ impl fmt::Display for TvdbImage {
 
         match &self.kind {
             TvdbImageKind::Legacy(series_id, kind, id) => {
-                write!(f, "banners/series/{series_id}/{kind}/{id}.{ext}")
+                write!(f, "series/{series_id}/{kind}/{id}.{ext}")
             }
             TvdbImageKind::V4(series_id, kind, id) => {
-                write!(f, "banners/v4/series/{series_id}/{kind}/{id}.{ext}")
+                write!(f, "v4/series/{series_id}/{kind}/{id}.{ext}")
             }
             TvdbImageKind::Banner(id) => {
-                write!(f, "banners/posters/{id}.{ext}")
+                write!(f, "posters/{id}.{ext}")
             }
             TvdbImageKind::BannerSuffixed(series_id, suffix) => {
-                write!(f, "banners/posters/{series_id}-{suffix}.{ext}")
+                write!(f, "posters/{series_id}-{suffix}.{ext}")
             }
             TvdbImageKind::Graphical(id) => {
-                write!(f, "banners/graphical/{id}.{ext}")
+                write!(f, "graphical/{id}.{ext}")
             }
             TvdbImageKind::GraphicalSuffixed(series_id, suffix) => {
-                write!(f, "banners/graphical/{series_id}-{suffix}.{ext}")
+                write!(f, "graphical/{series_id}-{suffix}.{ext}")
             }
             TvdbImageKind::Fanart(id) => {
-                write!(f, "banners/fanart/original/{id}.{ext}")
+                write!(f, "fanart/original/{id}.{ext}")
             }
             TvdbImageKind::FanartSuffixed(series_id, suffix) => {
-                write!(f, "banners/fanart/original/{series_id}-{suffix}.{ext}")
+                write!(f, "fanart/original/{series_id}-{suffix}.{ext}")
             }
             TvdbImageKind::ScreenCap(episode_id, id) => {
-                write!(f, "banners/v4/episode/{episode_id}/screencap/{id}.{ext}")
+                write!(f, "v4/episode/{episode_id}/screencap/{id}.{ext}")
             }
             TvdbImageKind::Episodes(episode_id, image_id) => {
-                write!(f, "banners/episodes/{episode_id}/{image_id}.{ext}")
+                write!(f, "episodes/{episode_id}/{image_id}.{ext}")
             }
             TvdbImageKind::Blank(series_id) => {
-                write!(f, "banners/blank/{series_id}.{ext}")
+                write!(f, "blank/{series_id}.{ext}")
             }
             TvdbImageKind::Text(series_id) => {
-                write!(f, "banners/text/{series_id}.{ext}")
+                write!(f, "text/{series_id}.{ext}")
             }
             TvdbImageKind::Missing => {
-                write!(f, "banners/images/missing/series.{ext}")
+                write!(f, "images/missing/series.{ext}")
             }
         }
     }

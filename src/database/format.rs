@@ -83,6 +83,17 @@ impl Format {
         }
     }
 
+    /// Deserialize using the current format.
+    fn deserialize<T>(&self, bytes: &[u8]) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
+        match self {
+            Format::Yaml => Ok(serde_yaml::from_slice(bytes)?),
+            Format::Json => Ok(serde_json::from_slice(&bytes)?),
+        }
+    }
+
     fn serialize_pretty<O, T>(self, f: &mut O, data: &T) -> Result<()>
     where
         O: Write,
@@ -140,20 +151,56 @@ where
     }
 }
 
-/// Save series to the given path.
-pub(crate) fn save_pretty<P, I>(
-    what: &'static str,
-    path: &P,
-    data: I,
-) -> impl Future<Output = Result<()>>
+/// Load configuration file.
+pub(crate) fn load<T>(path: &BackPath) -> Result<Option<(Format, T)>>
+where
+    T: DeserializeOwned,
+{
+    for path in [path.yaml.as_ref(), path.json.as_ref()] {
+        let Some(format) = Format::from_path(path) else {
+            continue;
+        };
+
+        let bytes = match fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e.into()),
+        };
+
+        let output = format.deserialize(&bytes)?;
+        return Ok(Some((format, output)));
+    }
+
+    Ok(None)
+}
+
+/// Save pretty.
+pub(crate) async fn save_pretty<T>(what: &'static str, paths: &BackPath, data: T) -> Result<()>
+where
+    T: 'static + Send + Serialize,
+{
+    save_pretty_inner(what, paths.yaml.as_ref(), data).await?;
+
+    for path in [paths.json.as_ref()] {
+        match tokio::fs::remove_file(path).await {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+
+    Ok(())
+}
+
+async fn save_pretty_inner<P, T>(what: &'static str, path: &P, data: T) -> Result<()>
 where
     P: ?Sized + AsRef<Path>,
-    I: 'static + Send + Serialize,
+    T: 'static + Send + Serialize,
 {
     let path = Box::<Path>::from(path.as_ref());
     tracing::debug!("saving {what}: {}", path.display());
 
-    let task = tokio::spawn(async move {
+    let task = tokio::task::spawn_blocking(move || {
         let Some(dir) = path.parent() else {
             anyhow::bail!("{what}: missing parent directory: {}", path.display());
         };
@@ -184,10 +231,7 @@ where
         Ok(())
     });
 
-    async move {
-        let output: Result<()> = task.await?;
-        output
-    }
+    task.await?
 }
 
 /// Save array to the given paths.

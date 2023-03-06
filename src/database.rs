@@ -45,10 +45,14 @@ impl Database {
     pub(crate) fn load(paths: &Paths) -> Result<Self> {
         let mut db = Self::default();
 
-        if let Some(config) = load_config(&paths.config_json)
-            .with_context(|| anyhow!("{}", paths.config_json.display()))?
+        if let Some((format, config)) =
+            format::load(&paths.config).with_context(|| anyhow!("{}", paths.config.display()))?
         {
             db.config = config;
+
+            if matches!(format, format::Format::Json) {
+                db.changes.change(Change::Config);
+            }
         }
 
         if let Some((format, remotes)) = format::load_array::<RemoteId>(&paths.remotes)? {
@@ -235,7 +239,7 @@ impl Database {
             let guard = paths.lock.lock().await;
 
             if let Some(config) = config {
-                format::save_pretty("config", &paths.config_json, config).await?;
+                format::save_pretty("config", &paths.config, config).await?;
             }
 
             if let Some(sync) = sync {
@@ -348,17 +352,6 @@ impl Changes {
         self.add.remove(id);
         self.remove.insert(*id);
     }
-}
-
-/// Load configuration file.
-pub(crate) fn load_config(path: &Path) -> Result<Option<Config>> {
-    let bytes = match std::fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e.into()),
-    };
-
-    Ok(serde_json::from_slice(&bytes)?)
 }
 
 /// Remove the given file.

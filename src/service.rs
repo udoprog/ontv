@@ -65,9 +65,29 @@ pub(crate) struct PendingRef<'a> {
     pub(crate) episode: &'a Episode,
 }
 
+#[derive(Clone)]
 pub(crate) struct BackPath {
     pub(crate) json: Box<Path>,
     pub(crate) yaml: Box<Path>,
+}
+
+impl BackPath {
+    fn new<P>(path: P) -> Self
+    where
+        P: AsRef<Path>,
+    {
+        let path = path.as_ref();
+
+        Self {
+            json: path.to_owned().with_extension("json").into(),
+            yaml: path.to_owned().with_extension("yaml").into(),
+        }
+    }
+
+    /// Display implementation for back path.
+    pub(crate) fn display(&self) -> std::path::Display<'_> {
+        self.yaml.display()
+    }
 }
 
 pub(crate) struct DirectoryPath {
@@ -80,12 +100,7 @@ impl DirectoryPath {
     where
         P: AsRef<Path>,
     {
-        let path = path.as_ref();
-
-        BackPath {
-            json: self.path.join(path).with_extension("json").into(),
-            yaml: self.path.join(path).with_extension("yaml").into(),
-        }
+        BackPath::new(self.path.join(path))
     }
 }
 
@@ -98,7 +113,7 @@ impl AsRef<Path> for DirectoryPath {
 
 pub(crate) struct Paths {
     pub(crate) lock: tokio::sync::Mutex<()>,
-    pub(crate) config_json: Box<Path>,
+    pub(crate) config: BackPath,
     pub(crate) sync: BackPath,
     pub(crate) remotes: BackPath,
     pub(crate) images: Box<Path>,
@@ -126,27 +141,12 @@ impl Service {
     pub fn new(config: &Path, cache: &Path) -> Result<Self> {
         let paths = Paths {
             lock: tokio::sync::Mutex::new(()),
-            config_json: config.join("config.json").into(),
-            sync: BackPath {
-                json: config.join("sync.json").into(),
-                yaml: config.join("sync.yaml").into(),
-            },
-            remotes: BackPath {
-                json: config.join("remotes.json").into(),
-                yaml: config.join("remotes.yaml").into(),
-            },
-            series: BackPath {
-                json: config.join("series.json").into(),
-                yaml: config.join("series.yaml").into(),
-            },
-            watched: BackPath {
-                json: config.join("watched.json").into(),
-                yaml: config.join("watched.yaml").into(),
-            },
-            pending: BackPath {
-                json: config.join("pending.json").into(),
-                yaml: config.join("pending.yaml").into(),
-            },
+            config: BackPath::new(config.join("config")),
+            sync: BackPath::new(config.join("sync")),
+            remotes: BackPath::new(config.join("remotes")),
+            series: BackPath::new(config.join("series")),
+            watched: BackPath::new(config.join("watched")),
+            pending: BackPath::new(config.join("pending")),
             episodes: DirectoryPath {
                 path: config.join("episodes").into(),
             },
