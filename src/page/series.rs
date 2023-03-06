@@ -122,7 +122,7 @@ impl Series {
                 None => s.missing_poster(),
             };
 
-            let graphic = button(image(poster).height(Length::Units(IMAGE_HEIGHT)))
+            let graphic = button(image(poster).height(IMAGE_HEIGHT))
                 .on_press(Message::Navigate(Page::Season(series.id, season.number)))
                 .style(theme::Button::Text)
                 .padding(0);

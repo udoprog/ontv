@@ -258,7 +258,7 @@ impl Search {
 
             series = series.push(
                 Row::new()
-                    .push(image(handle).height(Length::Units(IMAGE_HEIGHT)))
+                    .push(image(handle).height(IMAGE_HEIGHT))
                     .push(
                         Column::new()
                             .push(result.spacing(SPACE))
@@ -362,7 +362,7 @@ impl Search {
 
             movies = movies.push(
                 Row::new()
-                    .push(image(handle).height(Length::Units(IMAGE_HEIGHT)))
+                    .push(image(handle).height(IMAGE_HEIGHT))
                     .push(
                         Column::new()
                             .push(result.spacing(SPACE))

@@ -133,7 +133,7 @@ impl Dashboard {
             modify = modify.push(
                 button(
                     text("-")
-                        .width(Length::Units(SMALL))
+                        .width(SMALL)
                         .size(SMALL)
                         .horizontal_alignment(Horizontal::Center),
                 )
@@ -145,7 +145,7 @@ impl Dashboard {
         modify = modify.push(
             button(
                 text("+")
-                    .width(Length::Units(SMALL))
+                    .width(SMALL)
                     .size(SMALL)
                     .horizontal_alignment(Horizontal::Center),
             )

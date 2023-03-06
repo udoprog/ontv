@@ -293,7 +293,7 @@ impl Season {
                     row = row.push(
                         text(format!("#{}", n + 1))
                             .size(SMALL)
-                            .width(Length::Units(24))
+                            .width(24.0)
                             .horizontal_alignment(Horizontal::Left),
                     );
 
@@ -315,7 +315,7 @@ impl Season {
             }
 
             let image = container(image(screencap))
-                .max_height(SCREENCAP_HEIGHT as u32)
+                .max_height(SCREENCAP_HEIGHT)
                 .align_x(Horizontal::Center);
 
             episodes = episodes.push(

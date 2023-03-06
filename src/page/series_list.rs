@@ -98,7 +98,7 @@ impl SeriesList {
                 None => s.missing_poster(),
             };
 
-            let graphic = button(image(poster).height(Length::Units(IMAGE_HEIGHT)))
+            let graphic = button(image(poster).height(IMAGE_HEIGHT))
                 .on_press(Message::Navigate(Page::Series(series.id)))
                 .style(theme::Button::Text)
                 .padding(0);

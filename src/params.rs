@@ -1,6 +1,7 @@
 use chrono::Duration;
 use iced::widget::{Column, Container, Text};
 use iced::Element;
+use iced_native::Pixels;
 
 use crate::cache::ImageHint;
 use crate::style;
@@ -11,16 +12,16 @@ pub(crate) const GAP2: u16 = GAP * 2;
 
 pub(crate) const TITLE_SIZE: u16 = 32;
 pub(crate) const SUBTITLE_SIZE: u16 = 24;
-pub(crate) const SMALL: u16 = 16;
+pub(crate) const SMALL: f32 = 16.0;
 pub(crate) const SUB_MENU_SIZE: u16 = 16;
 
-pub(crate) const CONTAINER_WIDTH: u32 = 1200;
+pub(crate) const CONTAINER_WIDTH: Pixels = Pixels(1200.0);
 
 /// Standard poster height used in lists.
-pub(crate) const IMAGE_HEIGHT: u16 = 200;
+pub(crate) const IMAGE_HEIGHT: f32 = 200.0;
 
 /// Standard screencap height.
-pub(crate) const SCREENCAP_HEIGHT: u16 = 270;
+pub(crate) const SCREENCAP_HEIGHT: f32 = 270.0;
 
 /// Dashboard gets a bit more leeway, since the image is dynamically scaled.
 pub(crate) const POSTER_HINT: ImageHint = ImageHint::Fit(500, 750);
