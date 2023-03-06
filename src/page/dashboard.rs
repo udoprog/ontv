@@ -254,7 +254,7 @@ impl Dashboard {
                 )
                 .style(theme::Button::Positive)
                 .on_press(Message::Watch(series.id, episode.id))
-                .width(Length::FillPortion(2)),
+                .width(Length::FillPortion(5)),
             );
 
             actions = actions.push(
@@ -265,8 +265,27 @@ impl Dashboard {
                 )
                 .style(theme::Button::Secondary)
                 .on_press(Message::Skip(series.id, episode.id))
-                .width(Length::FillPortion(2)),
+                .width(Length::FillPortion(5)),
             );
+
+            {
+                let len = s.service.watched(&episode.id).len();
+
+                let style = match len {
+                    0 => theme::Button::Text,
+                    _ => theme::Button::Positive,
+                };
+
+                actions = actions.push(
+                    button(
+                        text(format_args!("{len}"))
+                            .horizontal_alignment(Horizontal::Center)
+                            .size(SMALL),
+                    )
+                    .style(style)
+                    .width(Length::FillPortion(2)),
+                );
+            }
 
             panel = panel.push(actions.spacing(SPACE));
 
