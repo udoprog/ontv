@@ -375,6 +375,8 @@ impl Client {
 
         let mut tasks = FuturesUnordered::new();
 
+        let mut index = 0..;
+
         loop {
             while tasks.len() < PARALLELISM {
                 let Some(e) = it.next() else {
@@ -384,6 +386,7 @@ impl Client {
                 let remote_id = RemoteEpisodeId::Tmdb { id: e.id };
 
                 tasks.push(self.download_remote_ids(
+                    index.next().context("overflow")?,
                     remote_id,
                     series_id,
                     season_number,
@@ -396,10 +399,11 @@ impl Client {
                 break;
             };
 
-            output.push(result?);
+            let d = result?;
+            output.push(d);
         }
 
-        output.sort_by(|a, b| a.episode.episode_number.cmp(&b.episode.episode_number));
+        output.sort_by(|a, b| a.key.cmp(&b.key));
 
         for d in output {
             let mut graphics = EpisodeGraphics::default();
@@ -435,6 +439,7 @@ impl Client {
 
     async fn download_remote_ids(
         &self,
+        index: usize,
         remote_id: RemoteEpisodeId,
         series_id: u32,
         season_number: u32,
@@ -478,6 +483,7 @@ impl Client {
         };
 
         Ok(DownloadEpisode {
+            key: (episode.episode_number, index),
             remote_ids,
             remote_id,
             id,
@@ -612,6 +618,7 @@ struct EpisodeDetail {
 }
 
 struct DownloadEpisode {
+    key: (u32, usize),
     remote_ids: BTreeSet<RemoteEpisodeId>,
     remote_id: RemoteEpisodeId,
     id: EpisodeId,
