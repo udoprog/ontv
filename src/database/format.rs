@@ -1,6 +1,7 @@
 use std::fmt;
 use std::fs;
 use std::future::Future;
+use std::io;
 use std::io::{BufWriter, Read, Write};
 use std::path::Path;
 use std::str::FromStr;
@@ -8,6 +9,8 @@ use std::str::FromStr;
 use anyhow::{anyhow, Context, Error, Result};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+
+use crate::service::BackPath;
 
 pub(crate) enum Format {
     Yaml,
@@ -188,42 +191,28 @@ where
 }
 
 /// Save array to the given paths.
-pub(crate) fn save_array_fallback<P, I, const N: usize>(
-    what: &'static str,
-    paths: [&P; N],
-    data: I,
-) -> impl Future<Output = Result<()>>
+pub(crate) async fn save_array<I>(what: &'static str, paths: &BackPath, data: I) -> Result<()>
 where
-    P: ?Sized + AsRef<Path>,
-    I: 'static + Clone + Send + IntoIterator,
+    I: 'static + Send + IntoIterator,
     I::Item: Serialize,
 {
-    let paths = std::array::from_fn::<_, N, _>(|index| Box::<Path>::from(paths[index].as_ref()));
+    save_array_inner(what, &paths.yaml, data).await?;
 
-    async move {
-        let mut it = paths.into_iter();
-        let last = it.next_back();
-
-        for path in it {
-            save_array(what, &path, data.clone()).await?;
+    for path in [paths.json.as_ref()] {
+        match tokio::fs::remove_file(path).await {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
         }
-
-        if let Some(path) = last {
-            save_array(what, &path, data).await?;
-        }
-
-        Ok(())
     }
+
+    Ok(())
 }
 
 /// Save series to the given path.
-pub(crate) fn save_array<P, I>(
-    what: &'static str,
-    path: &P,
-    data: I,
-) -> impl Future<Output = Result<()>>
+fn save_array_inner<P, I>(what: &'static str, path: P, data: I) -> impl Future<Output = Result<()>>
 where
-    P: ?Sized + AsRef<Path>,
+    P: AsRef<Path>,
     I: 'static + Send + IntoIterator,
     I::Item: Serialize,
 {
@@ -233,7 +222,7 @@ where
 
     let path = Box::<Path>::from(path.as_ref());
 
-    let task = tokio::spawn(async move {
+    let task = tokio::task::spawn_blocking(move || {
         let Some(dir) = path.parent() else {
             anyhow::bail!("{what}: missing parent directory: {}", path.display());
         };
@@ -270,10 +259,7 @@ where
         Ok(())
     });
 
-    async move {
-        let output: Result<()> = task.await?;
-        output
-    }
+    async move { task.await? }
 }
 
 /// Load all episodes found on the given paths.
@@ -312,10 +298,6 @@ where
             None => continue,
         };
 
-        if !matches!(path.extension().and_then(|e| e.to_str()), Some("json")) {
-            continue;
-        }
-
         let Ok(id) = stem.parse() else {
             continue;
         };
@@ -329,16 +311,13 @@ where
 }
 
 /// Load an array from one of several locations.
-pub(crate) fn load_array_fallback<P, T, const N: usize>(
-    paths: [&P; N],
-) -> Result<Option<(usize, Format, Vec<T>)>>
+pub(crate) fn load_array<T>(paths: &BackPath) -> Result<Option<(Format, Vec<T>)>>
 where
-    P: ?Sized + AsRef<Path>,
     T: DeserializeOwned,
 {
-    for (index, path) in paths.into_iter().enumerate().rev() {
-        if let Some((format, array)) = load_array(path)? {
-            return Ok(Some((index, format, array)));
+    for path in [paths.json.as_ref(), paths.yaml.as_ref()] {
+        if let Some(output) = load_array_inner(path)? {
+            return Ok(Some(output));
         }
     }
 
@@ -346,10 +325,10 @@ where
 }
 
 /// Load a simple array from a file.
-pub(crate) fn load_array<P, T>(path: &P) -> Result<Option<(Format, Vec<T>)>>
+fn load_array_inner<P, T>(path: P) -> Result<Option<(Format, Vec<T>)>>
 where
     T: DeserializeOwned,
-    P: ?Sized + AsRef<Path>,
+    P: AsRef<Path>,
 {
     let path = path.as_ref();
 

@@ -65,18 +65,48 @@ pub(crate) struct PendingRef<'a> {
     pub(crate) episode: &'a Episode,
 }
 
+pub(crate) struct BackPath {
+    pub(crate) json: Box<Path>,
+    pub(crate) yaml: Box<Path>,
+}
+
+pub(crate) struct DirectoryPath {
+    pub(crate) path: Box<Path>,
+}
+
+impl DirectoryPath {
+    /// Join a directory path.
+    pub(crate) fn join<P>(&self, path: P) -> BackPath
+    where
+        P: AsRef<Path>,
+    {
+        let path = path.as_ref();
+
+        BackPath {
+            json: self.path.join(path).with_extension("json").into(),
+            yaml: self.path.join(path).with_extension("yaml").into(),
+        }
+    }
+}
+
+impl AsRef<Path> for DirectoryPath {
+    #[inline]
+    fn as_ref(&self) -> &Path {
+        self.path.as_ref()
+    }
+}
+
 pub(crate) struct Paths {
     pub(crate) lock: tokio::sync::Mutex<()>,
-    pub(crate) config: Box<Path>,
-    pub(crate) sync: Box<Path>,
-    pub(crate) remotes: Box<Path>,
+    pub(crate) config_json: Box<Path>,
+    pub(crate) sync: BackPath,
+    pub(crate) remotes: BackPath,
     pub(crate) images: Box<Path>,
-    pub(crate) series_json: Box<Path>,
-    pub(crate) series_yaml: Box<Path>,
-    pub(crate) watched: Box<Path>,
-    pub(crate) pending: Box<Path>,
-    pub(crate) episodes: Box<Path>,
-    pub(crate) seasons: Box<Path>,
+    pub(crate) series: BackPath,
+    pub(crate) watched: BackPath,
+    pub(crate) pending: BackPath,
+    pub(crate) episodes: DirectoryPath,
+    pub(crate) seasons: DirectoryPath,
 }
 
 /// Background service taking care of all state handling.
@@ -96,15 +126,33 @@ impl Service {
     pub fn new(config: &Path, cache: &Path) -> Result<Self> {
         let paths = Paths {
             lock: tokio::sync::Mutex::new(()),
-            config: config.join("config.json").into(),
-            sync: config.join("sync.json").into(),
-            remotes: config.join("remotes.json").into(),
-            series_json: config.join("series.json").into(),
-            series_yaml: config.join("series.yaml").into(),
-            watched: config.join("watched.json").into(),
-            pending: config.join("pending.json").into(),
-            episodes: config.join("episodes").into(),
-            seasons: config.join("seasons").into(),
+            config_json: config.join("config.json").into(),
+            sync: BackPath {
+                json: config.join("sync.json").into(),
+                yaml: config.join("sync.yaml").into(),
+            },
+            remotes: BackPath {
+                json: config.join("remotes.json").into(),
+                yaml: config.join("remotes.yaml").into(),
+            },
+            series: BackPath {
+                json: config.join("series.json").into(),
+                yaml: config.join("series.yaml").into(),
+            },
+            watched: BackPath {
+                json: config.join("watched.json").into(),
+                yaml: config.join("watched.yaml").into(),
+            },
+            pending: BackPath {
+                json: config.join("pending.json").into(),
+                yaml: config.join("pending.yaml").into(),
+            },
+            episodes: DirectoryPath {
+                path: config.join("episodes").into(),
+            },
+            seasons: DirectoryPath {
+                path: config.join("seasons").into(),
+            },
             images: cache.join("images").into(),
         };
 

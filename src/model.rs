@@ -330,12 +330,124 @@ impl<'de> Deserialize<'de> for RemoteSeriesId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", tag = "remote")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum RemoteEpisodeId {
     Tvdb { id: u32 },
     Tmdb { id: u32 },
     Imdb { id: Raw<16> },
+}
+
+impl fmt::Display for RemoteEpisodeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RemoteEpisodeId::Tvdb { id } => {
+                write!(f, "tvdb:{id}")
+            }
+            RemoteEpisodeId::Tmdb { id } => {
+                write!(f, "tmdb:{id}")
+            }
+            RemoteEpisodeId::Imdb { id } => {
+                write!(f, "imdb:{id}")
+            }
+        }
+    }
+}
+
+impl Serialize for RemoteEpisodeId {
+    #[inline]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for RemoteEpisodeId {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct RemoteEpisodeIdVisitor;
+
+        impl<'de> de::Visitor<'de> for RemoteEpisodeIdVisitor {
+            type Value = RemoteEpisodeId;
+
+            #[inline]
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "a remote series id")
+            }
+
+            #[inline]
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let (head, tail) = v
+                    .split_once(':')
+                    .ok_or_else(|| de::Error::custom("missing `:`"))?;
+
+                match head {
+                    "tmdb" => Ok(RemoteEpisodeId::Tmdb {
+                        id: tail.parse().map_err(E::custom)?,
+                    }),
+                    "tvdb" => Ok(RemoteEpisodeId::Tvdb {
+                        id: tail.parse().map_err(E::custom)?,
+                    }),
+                    "imdb" => Ok(RemoteEpisodeId::Imdb {
+                        id: Raw::new(tail)
+                            .ok_or_else(|| de::Error::custom("overflowing imdb identifier"))?,
+                    }),
+                    kind => Err(de::Error::invalid_value(de::Unexpected::Str(kind), &self)),
+                }
+            }
+
+            #[inline]
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut remote = None;
+                let mut id = None;
+
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "remote" => {
+                            remote = Some(map.next_value::<String>()?);
+                        }
+                        "id" => {
+                            id = Some(map.next_value::<serde_json::Value>()?);
+                        }
+                        kind => {
+                            return Err(de::Error::custom(format_args!("unsupported key: {kind}")));
+                        }
+                    }
+                }
+
+                let (Some(remote), Some(id)) = (remote, id) else {
+                    return Err(de::Error::custom("missing remote or id"));
+                };
+
+                let id = id.into_deserializer();
+
+                match remote.as_str() {
+                    "tmdb" => Ok(RemoteEpisodeId::Tmdb {
+                        id: u32::deserialize(id).map_err(de::Error::custom)?,
+                    }),
+                    "tvdb" => Ok(RemoteEpisodeId::Tvdb {
+                        id: u32::deserialize(id).map_err(de::Error::custom)?,
+                    }),
+                    "imdb" => Ok(RemoteEpisodeId::Imdb {
+                        id: Raw::deserialize(id).map_err(de::Error::custom)?,
+                    }),
+                    kind => Err(de::Error::invalid_value(de::Unexpected::Str(kind), &self)),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(RemoteEpisodeIdVisitor)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -419,7 +531,7 @@ pub(crate) struct Series {
     #[serde(default, skip_serializing_if = "SeriesGraphics::is_empty")]
     pub(crate) graphics: SeriesGraphics,
     /// Indicates if the series is tracked or not, in that it will receive updates.
-    #[serde(default, skip_serializing_if = "is_false")]
+    #[serde(default)]
     pub(crate) tracked: bool,
     /// Locally known last modified timestamp.
     #[serde(rename = "last_modified", default, skip_serializing)]
@@ -445,11 +557,6 @@ impl Series {
     pub(crate) fn banner(&self) -> Option<&ImageV2> {
         self.graphics.banner.as_ref()
     }
-}
-
-#[inline]
-fn is_false(b: &bool) -> bool {
-    !*b
 }
 
 /// A movie.

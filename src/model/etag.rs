@@ -72,11 +72,11 @@ impl<'de> de::Visitor<'de> for Visitor {
 
     #[inline]
     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "an identifier")
+        write!(f, "an etag")
     }
 
     #[inline]
-    fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
     where
         E: de::Error,
     {

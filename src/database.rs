@@ -45,13 +45,13 @@ impl Database {
     pub(crate) fn load(paths: &Paths) -> Result<Self> {
         let mut db = Self::default();
 
-        if let Some(config) =
-            load_config(&paths.config).with_context(|| anyhow!("{}", paths.config.display()))?
+        if let Some(config) = load_config(&paths.config_json)
+            .with_context(|| anyhow!("{}", paths.config_json.display()))?
         {
             db.config = config;
         }
 
-        if let Some((_format, remotes)) = format::load_array::<_, RemoteId>(&paths.remotes)? {
+        if let Some((format, remotes)) = format::load_array::<RemoteId>(&paths.remotes)? {
             for remote_id in remotes {
                 match remote_id {
                     RemoteId::Series { uuid, remotes } => {
@@ -66,17 +66,19 @@ impl Database {
                     }
                 }
             }
+
+            if matches!(format, format::Format::Json) {
+                db.changes.change(Change::Remotes);
+            }
         }
 
-        if let Some((_format, syncs)) = format::load_array::<_, sync::Export>(&paths.sync)? {
+        if let Some((_format, syncs)) = format::load_array::<sync::Export>(&paths.sync)? {
             for sync in syncs {
                 db.sync.import_push(sync);
             }
         }
 
-        if let Some((index, _format, series)) =
-            format::load_array_fallback::<_, Series, 2>([&paths.series_json, &paths.series_yaml])?
-        {
+        if let Some((format, series)) = format::load_array::<Series>(&paths.series)? {
             for mut s in series {
                 if let Some(image) = s.compat_poster.take() {
                     s.graphics.poster = Some(image.into_v2());
@@ -121,19 +123,27 @@ impl Database {
                 db.series.insert(s);
             }
 
-            if index == 0 {
+            if matches!(format, format::Format::Json) {
                 db.changes.change(Change::Series);
             }
         }
 
-        if let Some((_format, watched)) = format::load_array::<_, Watched>(&paths.watched)? {
+        if let Some((format, watched)) = format::load_array::<Watched>(&paths.watched)? {
             for w in watched {
                 db.watched.insert(w);
             }
+
+            if matches!(format, format::Format::Json) {
+                db.changes.change(Change::Watched);
+            }
         }
 
-        if let Some((_format, pending)) = format::load_array::<_, Pending>(&paths.pending)? {
+        if let Some((format, pending)) = format::load_array::<Pending>(&paths.pending)? {
             db.pending.extend(pending);
+
+            if matches!(format, format::Format::Json) {
+                db.changes.change(Change::Pending);
+            }
         }
 
         if let Some(episodes) = format::load_directory::<_, SeriesId, Episode>(&paths.episodes)? {
@@ -225,7 +235,7 @@ impl Database {
             let guard = paths.lock.lock().await;
 
             if let Some(config) = config {
-                format::save_pretty("config", &paths.config, config).await?;
+                format::save_pretty("config", &paths.config_json, config).await?;
             }
 
             if let Some(sync) = sync {
@@ -233,20 +243,21 @@ impl Database {
             }
 
             if let Some(series) = series {
-                format::save_array_fallback(
-                    "series",
-                    [&paths.series_json, &paths.series_yaml],
-                    series,
-                )
-                .await?;
+                format::save_array("series", &paths.series, series)
+                    .await
+                    .context("series")?;
             }
 
             if let Some(watched) = watched {
-                format::save_array("watched", &paths.watched, watched).await?;
+                format::save_array("watched", &paths.watched, watched)
+                    .await
+                    .context("watched")?;
             }
 
             if let Some(pending) = pending {
-                format::save_array("pending", &paths.pending, pending).await?;
+                format::save_array("pending", &paths.pending, pending)
+                    .await
+                    .context("pending")?;
             }
 
             if let Some(remotes) = remotes {
@@ -254,16 +265,19 @@ impl Database {
             }
 
             for series_id in remove_series {
-                let episodes = paths.episodes.join(format!("{series_id}.json"));
-                let seasons = paths.seasons.join(format!("{series_id}.json"));
-                let a = remove_file("episodes", &episodes);
-                let b = remove_file("episodes", &seasons);
+                let episodes_path = paths.episodes.join(format!("{series_id}"));
+                let seasons_path = paths.seasons.join(format!("{series_id}"));
+                let a = remove_file("episodes", &episodes_path.json);
+                let b = remove_file("seasons", &seasons_path.json);
+                let _ = tokio::join!(a, b);
+                let a = remove_file("episodes", &episodes_path.yaml);
+                let b = remove_file("seasons", &seasons_path.yaml);
                 let _ = tokio::try_join!(a, b)?;
             }
 
             for (series_id, episodes, seasons) in add_series {
-                let episodes_path = paths.episodes.join(format!("{series_id}.json"));
-                let seasons_path = paths.seasons.join(format!("{series_id}.json"));
+                let episodes_path = paths.episodes.join(format!("{series_id}"));
+                let seasons_path = paths.seasons.join(format!("{series_id}"));
                 let a = format::save_array("episodes", &episodes_path, episodes);
                 let b = format::save_array("seasons", &seasons_path, seasons);
                 let _ = tokio::try_join!(a, b)?;
