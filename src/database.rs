@@ -14,7 +14,7 @@ use anyhow::{anyhow, Context, Result};
 
 use crate::model::{Config, Episode, Pending, RemoteId, Season, Series, SeriesId, Watched};
 use crate::queue::Queue;
-use crate::service::Paths;
+use crate::service::paths;
 
 #[derive(Default)]
 pub(crate) struct Database {
@@ -42,7 +42,7 @@ pub(crate) struct Database {
 
 impl Database {
     /// Try to load initial state.
-    pub(crate) fn load(paths: &Paths) -> Result<Self> {
+    pub(crate) fn load(paths: &paths::Paths) -> Result<Self> {
         let mut db = Self::default();
 
         if let Some((format, config)) =
@@ -182,7 +182,7 @@ impl Database {
     /// Save any pending changes.
     pub(crate) fn save_changes(
         &mut self,
-        paths: &Arc<Paths>,
+        paths: &Arc<paths::Paths>,
         do_not_save: bool,
     ) -> impl Future<Output = Result<()>> {
         let changes = std::mem::take(&mut self.changes);
@@ -271,11 +271,8 @@ impl Database {
             for series_id in remove_series {
                 let episodes_path = paths.episodes.join(format!("{series_id}"));
                 let seasons_path = paths.seasons.join(format!("{series_id}"));
-                let a = remove_file("episodes", &episodes_path.json);
-                let b = remove_file("seasons", &seasons_path.json);
-                let _ = tokio::join!(a, b);
-                let a = remove_file("episodes", &episodes_path.yaml);
-                let b = remove_file("seasons", &seasons_path.yaml);
+                let a = remove_all("episodes", episodes_path.all());
+                let b = remove_all("seasons", seasons_path.all());
                 let _ = tokio::try_join!(a, b)?;
             }
 
@@ -355,8 +352,16 @@ impl Changes {
 }
 
 /// Remove the given file.
-async fn remove_file(what: &'static str, path: &Path) -> Result<()> {
-    tracing::trace!("{what}: removing: {}", path.display());
-    let _ = tokio::fs::remove_file(path).await;
+async fn remove_all<const N: usize>(what: &'static str, paths: [&Path; N]) -> Result<()> {
+    for path in paths {
+        tracing::trace!("{what}: removing: {}", path.display());
+
+        match tokio::fs::remove_file(path).await {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+
     Ok(())
 }

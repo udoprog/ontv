@@ -1,3 +1,5 @@
+pub(crate) mod paths;
+
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt;
@@ -65,68 +67,9 @@ pub(crate) struct PendingRef<'a> {
     pub(crate) episode: &'a Episode,
 }
 
-#[derive(Clone)]
-pub(crate) struct BackPath {
-    pub(crate) json: Box<Path>,
-    pub(crate) yaml: Box<Path>,
-}
-
-impl BackPath {
-    fn new<P>(path: P) -> Self
-    where
-        P: AsRef<Path>,
-    {
-        let path = path.as_ref();
-
-        Self {
-            json: path.to_owned().with_extension("json").into(),
-            yaml: path.to_owned().with_extension("yaml").into(),
-        }
-    }
-
-    /// Display implementation for back path.
-    pub(crate) fn display(&self) -> std::path::Display<'_> {
-        self.yaml.display()
-    }
-}
-
-pub(crate) struct DirectoryPath {
-    pub(crate) path: Box<Path>,
-}
-
-impl DirectoryPath {
-    /// Join a directory path.
-    pub(crate) fn join<P>(&self, path: P) -> BackPath
-    where
-        P: AsRef<Path>,
-    {
-        BackPath::new(self.path.join(path))
-    }
-}
-
-impl AsRef<Path> for DirectoryPath {
-    #[inline]
-    fn as_ref(&self) -> &Path {
-        self.path.as_ref()
-    }
-}
-
-pub(crate) struct Paths {
-    pub(crate) lock: tokio::sync::Mutex<()>,
-    pub(crate) config: BackPath,
-    pub(crate) sync: BackPath,
-    pub(crate) remotes: BackPath,
-    pub(crate) images: Box<Path>,
-    pub(crate) series: BackPath,
-    pub(crate) watched: BackPath,
-    pub(crate) pending: BackPath,
-    pub(crate) episodes: DirectoryPath,
-    pub(crate) seasons: DirectoryPath,
-}
-
 /// Background service taking care of all state handling.
 pub struct Service {
-    paths: Arc<Paths>,
+    paths: Arc<paths::Paths>,
     db: Database,
     tvdb: thetvdb::Client,
     tmdb: themoviedb::Client,
@@ -139,22 +82,7 @@ pub struct Service {
 impl Service {
     /// Construct and setup in-memory state of
     pub fn new(config: &Path, cache: &Path) -> Result<Self> {
-        let paths = Paths {
-            lock: tokio::sync::Mutex::new(()),
-            config: BackPath::new(config.join("config")),
-            sync: BackPath::new(config.join("sync")),
-            remotes: BackPath::new(config.join("remotes")),
-            series: BackPath::new(config.join("series")),
-            watched: BackPath::new(config.join("watched")),
-            pending: BackPath::new(config.join("pending")),
-            episodes: DirectoryPath {
-                path: config.join("episodes").into(),
-            },
-            seasons: DirectoryPath {
-                path: config.join("seasons").into(),
-            },
-            images: cache.join("images").into(),
-        };
+        let paths = paths::Paths::new(config, cache);
 
         if !paths.images.is_dir() {
             tracing::debug!("creating images directory: {}", paths.images.display());

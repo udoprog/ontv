@@ -10,7 +10,7 @@ use anyhow::{anyhow, Context, Error, Result};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::service::BackPath;
+use crate::service::paths;
 
 pub(crate) enum Format {
     Yaml,
@@ -152,11 +152,11 @@ where
 }
 
 /// Load configuration file.
-pub(crate) fn load<T>(path: &BackPath) -> Result<Option<(Format, T)>>
+pub(crate) fn load<T>(path: &paths::Candidate) -> Result<Option<(Format, T)>>
 where
     T: DeserializeOwned,
 {
-    for path in [path.yaml.as_ref(), path.json.as_ref()] {
+    for path in path.read() {
         let Some(format) = Format::from_path(path) else {
             continue;
         };
@@ -175,13 +175,17 @@ where
 }
 
 /// Save pretty.
-pub(crate) async fn save_pretty<T>(what: &'static str, paths: &BackPath, data: T) -> Result<()>
+pub(crate) async fn save_pretty<T>(
+    what: &'static str,
+    path: &paths::Candidate,
+    data: T,
+) -> Result<()>
 where
     T: 'static + Send + Serialize,
 {
-    save_pretty_inner(what, paths.yaml.as_ref(), data).await?;
+    save_pretty_inner(what, path.as_ref(), data).await?;
 
-    for path in [paths.json.as_ref()] {
+    for path in path.remainder() {
         match tokio::fs::remove_file(path).await {
             Ok(()) => {}
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}
@@ -235,14 +239,18 @@ where
 }
 
 /// Save array to the given paths.
-pub(crate) async fn save_array<I>(what: &'static str, paths: &BackPath, data: I) -> Result<()>
+pub(crate) async fn save_array<I>(
+    what: &'static str,
+    path: &paths::Candidate,
+    data: I,
+) -> Result<()>
 where
     I: 'static + Send + IntoIterator,
     I::Item: Serialize,
 {
-    save_array_inner(what, &paths.yaml, data).await?;
+    save_array_inner(what, path.as_ref(), data).await?;
 
-    for path in [paths.json.as_ref()] {
+    for path in path.remainder() {
         match tokio::fs::remove_file(path).await {
             Ok(()) => {}
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}
@@ -355,11 +363,11 @@ where
 }
 
 /// Load an array from one of several locations.
-pub(crate) fn load_array<T>(paths: &BackPath) -> Result<Option<(Format, Vec<T>)>>
+pub(crate) fn load_array<T>(path: &paths::Candidate) -> Result<Option<(Format, Vec<T>)>>
 where
     T: DeserializeOwned,
 {
-    for path in [paths.json.as_ref(), paths.yaml.as_ref()] {
+    for path in path.read() {
         if let Some(output) = load_array_inner(path)? {
             return Ok(Some(output));
         }
