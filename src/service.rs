@@ -783,8 +783,9 @@ impl Service {
                     let mut episodes = Vec::new();
 
                     for season in &seasons {
-                        let new_episodes =
-                            tmdb.episodes(id, season.number, &lookup_episode).await?;
+                        let new_episodes = tmdb
+                            .download_episodes(id, season.number, &lookup_episode)
+                            .await?;
                         episodes.extend(new_episodes);
                     }
 

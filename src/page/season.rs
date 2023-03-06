@@ -26,6 +26,7 @@ pub(crate) enum Message {
 }
 
 struct EpisodeState {
+    id: EpisodeId,
     remove_last_watch: Option<comps::Confirm>,
     remove_watches: Vec<comps::Confirm>,
 }
@@ -35,13 +36,14 @@ where
     I: DoubleEndedIterator<Item = &'a Watched> + Clone,
 {
     #[inline]
-    fn new((series_id, episode_id, watched): (SeriesId, EpisodeId, I)) -> Self {
+    fn new((series_id, id, watched): (SeriesId, EpisodeId, I)) -> Self {
         Self {
+            id,
             remove_last_watch: watched.clone().next_back().map(move |w| {
                 comps::Confirm::new(comps::confirm::Props::new(
                     comps::confirm::Kind::RemoveWatch {
                         series_id,
-                        episode_id,
+                        episode_id: id,
                         watch_id: w.id,
                     },
                 ))
@@ -51,7 +53,7 @@ where
                     comps::Confirm::new(
                         comps::confirm::Props::new(comps::confirm::Kind::RemoveWatch {
                             series_id,
-                            episode_id,
+                            episode_id: id,
                             watch_id: w.id,
                         })
                         .with_ordering(comps::confirm::Ordering::Left),
@@ -63,6 +65,7 @@ where
 
     #[inline]
     fn changed(&mut self, (series_id, episode_id, watched): (SeriesId, EpisodeId, I)) {
+        self.id = episode_id;
         self.remove_last_watch
             .init_from_iter(watched.clone().next_back().map(move |w| {
                 comps::confirm::Props::new(comps::confirm::Kind::RemoveWatch {
@@ -175,13 +178,11 @@ impl Season {
 
         let pending = s.service.get_pending(&series.id).map(|p| p.episode);
 
-        for (index, (episode, data)) in s
-            .service
-            .episodes(&series.id)
-            .filter(|e| e.season == season.number)
-            .zip(&self.episodes)
-            .enumerate()
-        {
+        for (index, data) in self.episodes.iter().enumerate() {
+            let Some(episode) = s.service.episode(&data.id) else {
+                continue;
+            };
+
             let screencap = match episode
                 .filename()
                 .and_then(|image| s.assets.image_with_hint(&image, SCREENCAP_HINT))

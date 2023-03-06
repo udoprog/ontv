@@ -75,10 +75,13 @@ pub(crate) struct Database {
 
 impl Database {
     /// Insert a database.
+    #[tracing::instrument(skip(self, episodes))]
     pub(crate) fn insert(&mut self, id: SeriesId, episodes: Vec<Episode>) {
         let len = episodes.len();
         let mut first = None;
         let mut prev = None;
+
+        let _ = self.remove(&id);
 
         let mut it = episodes.into_iter().peekable();
 
@@ -208,4 +211,9 @@ impl<'a> DoubleEndedIterator for Iter<'a> {
     }
 }
 
-impl ExactSizeIterator for Iter<'_> {}
+impl ExactSizeIterator for Iter<'_> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.len
+    }
+}

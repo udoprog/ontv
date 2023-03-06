@@ -336,7 +336,7 @@ impl Client {
     }
 
     /// Download episodes.
-    pub(crate) async fn episodes(
+    pub(crate) async fn download_episodes(
         &self,
         series_id: u32,
         season: SeasonNumber,
