@@ -1,111 +1,58 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{btree_set, BTreeSet, HashMap};
 
 use chrono::{DateTime, Utc};
-use slab::Slab;
 
 use crate::model::{Pending, SeriesId};
 
-#[repr(transparent)]
-pub(crate) struct Index(usize);
-
 #[derive(Default)]
 pub(crate) struct Database {
-    data: Slab<Pending>,
-    by_timestamp: BTreeMap<(DateTime<Utc>, SeriesId), usize>,
-    by_series: HashMap<SeriesId, usize>,
+    /// Pending by series.
+    data: HashMap<SeriesId, Pending>,
+    /// Index by timestamp.
+    by_timestamp: BTreeSet<(DateTime<Utc>, SeriesId)>,
 }
 
 impl Database {
-    /// Export data from the database.
-    pub(crate) fn export(&self) -> impl IntoIterator<Item = Pending> {
-        let mut data = self.data.clone();
-        self.by_timestamp
-            .clone()
-            .into_values()
-            .map(move |index| data.remove(index))
+    /// Get an existing pending element.
+    #[inline]
+    pub(crate) fn get(&mut self, id: &SeriesId) -> Option<&Pending> {
+        self.data.get(id)
     }
 
-    /// Get a stable position for the pending episode related to the given series.
-    ///
-    /// The position will only be stable for as long as the database hasn't been modified.
-    #[inline]
-    pub(crate) fn position_for_series(&self, id: &SeriesId) -> Option<Index> {
-        Some(Index(*self.by_series.get(id)?))
+    /// Export data from the database.
+    pub(crate) fn export(&self) -> impl IntoIterator<Item = Pending> {
+        let mut export = Vec::with_capacity(self.by_timestamp.len());
+
+        for (_, id) in &self.by_timestamp {
+            if let Some(pending) = self.data.get(id) {
+                export.push(pending.clone());
+            }
+        }
+
+        export
     }
 
     /// Remove by previously looked up index.
     #[inline]
-    pub(crate) fn remove_by_index(&mut self, index: Index) -> Option<Pending> {
-        let p = self.data.try_remove(index.0)?;
-        self.by_series.remove(&p.series);
+    pub(crate) fn remove(&mut self, id: &SeriesId) -> Option<Pending> {
+        let p = self.data.remove(id)?;
         self.by_timestamp.remove(&(p.timestamp, p.series));
         Some(p)
-    }
-
-    /// Remove pending by predicate.
-    #[inline]
-    pub(crate) fn remove_by<P>(&mut self, mut predicate: P)
-    where
-        P: FnMut(&Pending) -> bool,
-    {
-        let mut removed = Vec::new();
-
-        for (index, p) in &self.data {
-            if predicate(p) {
-                removed.push(Index(index));
-            }
-        }
-
-        for index in removed {
-            self.remove_by_index(index);
-        }
     }
 
     /// Iterate immutably over pending entries in timestamp order.
     #[inline]
     pub(crate) fn iter(&self) -> impl DoubleEndedIterator<Item = &Pending> {
-        self.by_timestamp.values().map(|&index| &self.data[index])
-    }
-
-    /// Iterate mutably over data.
-    #[inline]
-    pub(crate) fn iter_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut Pending> {
-        self.data.iter_mut().map(|(_, value)| value)
+        Iter {
+            iter: self.by_timestamp.iter(),
+            data: &self.data,
+        }
     }
 
     /// Get pending by series.
     #[inline]
-    pub(crate) fn by_series(&self, series_id: &SeriesId) -> Option<&Pending> {
-        let index = *self.by_series.get(series_id)?;
-        self.data.get(index)
-    }
-
-    /// Modify pending by index in place.
-    #[inline]
-    pub(crate) fn modify<M>(&mut self, index: Index, mut modify: M)
-    where
-        M: FnMut(&mut Pending),
-    {
-        let Some(p) = self.data.get_mut(index.0) else {
-            return;
-        };
-
-        let old_by_timestamp = (p.timestamp, p.series);
-        let old_by_series = p.series;
-
-        modify(p);
-
-        if p.series != old_by_series {
-            self.by_series.remove(&old_by_series);
-            self.by_series.insert(p.series, index.0);
-        }
-
-        let new_by_timestamp = (p.timestamp, p.series);
-
-        if new_by_timestamp != old_by_timestamp {
-            self.by_timestamp.remove(&old_by_timestamp);
-            self.by_timestamp.insert(new_by_timestamp, index.0);
-        }
+    pub(crate) fn by_series(&self, id: &SeriesId) -> Option<&Pending> {
+        self.data.get(id)
     }
 }
 
@@ -115,11 +62,35 @@ impl Extend<Pending> for Database {
         T: IntoIterator<Item = Pending>,
     {
         for p in iter {
-            let by_timestamp = (p.timestamp, p.series);
-            let by_series = p.series;
-            let index = self.data.insert(p);
-            self.by_series.insert(by_series, index);
-            self.by_timestamp.insert(by_timestamp, index);
+            if let Some(p) = self.data.remove(&p.series) {
+                let _ = self.by_timestamp.remove(&(p.timestamp, p.series));
+            }
+
+            self.by_timestamp.insert((p.timestamp, p.series));
+            self.data.insert(p.series, p);
         }
+    }
+}
+
+struct Iter<'a> {
+    iter: btree_set::Iter<'a, (DateTime<Utc>, SeriesId)>,
+    data: &'a HashMap<SeriesId, Pending>,
+}
+
+impl<'a> Iterator for Iter<'a> {
+    type Item = &'a Pending;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let (_, id) = self.iter.next()?;
+        self.data.get(id)
+    }
+}
+
+impl DoubleEndedIterator for Iter<'_> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let (_, id) = self.iter.next_back()?;
+        self.data.get(id)
     }
 }

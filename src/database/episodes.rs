@@ -6,6 +6,7 @@ use crate::model::{Episode, EpisodeId, SeriesId};
 
 struct EpisodeData {
     episode: Episode,
+    series: SeriesId,
     prev: Option<EpisodeId>,
     next: Option<EpisodeId>,
 }
@@ -14,6 +15,7 @@ impl EpisodeData {
     fn into_ref<'a>(&'a self, data: &'a HashMap<EpisodeId, EpisodeData>) -> EpisodeRef<'a> {
         EpisodeRef {
             episode: &self.episode,
+            series: self.series,
             prev: self.prev,
             next: self.next,
             data,
@@ -25,9 +27,17 @@ impl EpisodeData {
 #[derive(Clone, Copy)]
 pub(crate) struct EpisodeRef<'a> {
     episode: &'a Episode,
+    series: SeriesId,
     prev: Option<EpisodeId>,
     next: Option<EpisodeId>,
     data: &'a HashMap<EpisodeId, EpisodeData>,
+}
+
+impl EpisodeRef<'_> {
+    /// Get series episode belongs to.
+    pub(crate) fn series(&self) -> &SeriesId {
+        &self.series
+    }
 }
 
 impl fmt::Debug for EpisodeRef<'_> {
@@ -76,12 +86,12 @@ pub(crate) struct Database {
 impl Database {
     /// Insert a database.
     #[tracing::instrument(skip(self, episodes))]
-    pub(crate) fn insert(&mut self, id: SeriesId, episodes: Vec<Episode>) {
+    pub(crate) fn insert(&mut self, series: SeriesId, episodes: Vec<Episode>) {
         let len = episodes.len();
         let mut first = None;
         let mut prev = None;
 
-        let _ = self.remove(&id);
+        let _ = self.remove(&series);
 
         let mut it = episodes.into_iter().peekable();
 
@@ -91,6 +101,7 @@ impl Database {
 
             let links = EpisodeData {
                 episode,
+                series,
                 prev,
                 next,
             };
@@ -104,7 +115,7 @@ impl Database {
         }
 
         self.by_series.insert(
-            id,
+            series,
             SeriesData {
                 first,
                 last: prev,
@@ -129,13 +140,7 @@ impl Database {
     /// Get an episode.
     pub(crate) fn get(&self, id: &EpisodeId) -> Option<EpisodeRef<'_>> {
         let data = self.data.get(id)?;
-
-        Some(EpisodeRef {
-            episode: &data.episode,
-            prev: data.prev,
-            next: data.next,
-            data: &self.data,
-        })
+        Some(data.into_ref(&self.data))
     }
 
     /// Get episodes by series.
