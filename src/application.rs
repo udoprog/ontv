@@ -631,10 +631,12 @@ impl Application {
                 TaskKind::DownloadSeriesById {
                     series_id,
                     remote_id,
-                    ..
+                    last_modified: _last_modified,
+                    force,
                 } => {
                     self.commands.perform(
-                        self.state.refresh_series(series_id, remote_id),
+                        self.state
+                            .download_series_by_id(series_id, remote_id, *force),
                         move |result| {
                             Message::TaskSeriesDownloaded(result.map_err(Into::into), task.clone())
                         },

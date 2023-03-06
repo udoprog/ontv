@@ -149,12 +149,18 @@ impl State {
     }
 
     /// Refresh series data.
-    pub(crate) fn refresh_series(
+    pub(crate) fn download_series_by_id(
         &mut self,
         id: &SeriesId,
         remote_id: &RemoteSeriesId,
+        force: bool,
     ) -> impl Future<Output = Result<Option<NewSeries>>> {
-        let none_if_match = self.service.last_etag(id, remote_id).cloned();
+        let none_if_match = if force {
+            None
+        } else {
+            self.service.last_etag(id, remote_id).cloned()
+        };
+
         self.service
             .download_series(&remote_id, none_if_match.as_ref())
     }

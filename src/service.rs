@@ -275,6 +275,7 @@ impl Service {
                     series_id: s.id,
                     remote_id,
                     last_modified: None,
+                    force: false,
                 },
                 RemoteSeriesId::Imdb { .. } => continue,
             };
@@ -301,6 +302,7 @@ impl Service {
                 series_id: s.id,
                 remote_id: *remote_id,
                 last_modified: None,
+                force: false,
             };
 
             if self.db.tasks.push(kind) {
@@ -341,6 +343,7 @@ impl Service {
                 series_id,
                 remote_id,
                 last_modified,
+                force: false,
             };
 
             Ok(Some(kind))

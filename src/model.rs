@@ -1162,6 +1162,7 @@ pub(crate) enum TaskKind {
         series_id: SeriesId,
         remote_id: RemoteSeriesId,
         last_modified: Option<DateTime<Utc>>,
+        force: bool,
     },
     /// Task to add a series by a remote identifier.
     DownloadSeriesByRemoteId { remote_id: RemoteSeriesId },

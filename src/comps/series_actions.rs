@@ -54,6 +54,7 @@ impl SeriesActions {
                         series_id: self.series_id,
                         remote_id,
                         last_modified: None,
+                        force: true,
                     });
             }
             Message::RemoveSeries => {
