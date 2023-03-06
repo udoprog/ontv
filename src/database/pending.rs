@@ -1,7 +1,8 @@
-use std::collections::{btree_set, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 
 use chrono::{DateTime, Utc};
 
+use crate::database::iter::Iter;
 use crate::model::{Pending, SeriesId};
 
 #[derive(Default)]
@@ -43,10 +44,7 @@ impl Database {
     /// Iterate immutably over pending entries in timestamp order.
     #[inline]
     pub(crate) fn iter(&self) -> impl DoubleEndedIterator<Item = &Pending> {
-        Iter {
-            iter: self.by_timestamp.iter(),
-            data: &self.data,
-        }
+        Iter::new(self.by_timestamp.iter().map(|(_, key)| key), &self.data)
     }
 
     /// Get pending by series.
@@ -69,28 +67,5 @@ impl Extend<Pending> for Database {
             self.by_timestamp.insert((p.timestamp, p.series));
             self.data.insert(p.series, p);
         }
-    }
-}
-
-struct Iter<'a> {
-    iter: btree_set::Iter<'a, (DateTime<Utc>, SeriesId)>,
-    data: &'a HashMap<SeriesId, Pending>,
-}
-
-impl<'a> Iterator for Iter<'a> {
-    type Item = &'a Pending;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let (_, id) = self.iter.next()?;
-        self.data.get(id)
-    }
-}
-
-impl DoubleEndedIterator for Iter<'_> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        let (_, id) = self.iter.next_back()?;
-        self.data.get(id)
     }
 }
