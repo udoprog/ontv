@@ -375,8 +375,6 @@ impl Client {
 
         let mut tasks = FuturesUnordered::new();
 
-        let mut n = 0;
-
         loop {
             while tasks.len() < PARALLELISM {
                 let Some(e) = it.next() else {
@@ -386,15 +384,12 @@ impl Client {
                 let remote_id = RemoteEpisodeId::Tmdb { id: e.id };
 
                 tasks.push(self.download_remote_ids(
-                    n,
                     remote_id,
                     series_id,
                     season_number,
                     e,
                     &lookup,
                 ));
-
-                n += 1;
             }
 
             let Some(result) = tasks.next().await else {
@@ -404,28 +399,28 @@ impl Client {
             output.push(result?);
         }
 
-        output.sort_by(|a, b| a.0.cmp(&b.0));
+        output.sort_by(|a, b| a.episode.episode_number.cmp(&b.episode.episode_number));
 
-        for (_, remote_ids, remote_id, id, e) in output {
+        for d in output {
             let mut graphics = EpisodeGraphics::default();
-            graphics.filename = e.still_path.as_deref().and_then(ImageV2::tmdb);
+            graphics.filename = d.episode.still_path.as_deref().and_then(ImageV2::tmdb);
 
             let episode = Episode {
-                id,
-                name: e.name,
-                overview: e.overview.unwrap_or_default(),
+                id: d.id,
+                name: d.episode.name,
+                overview: d.episode.overview.unwrap_or_default(),
                 absolute_number: None,
                 season,
-                number: e.episode_number,
-                aired: e.air_date,
+                number: d.episode.episode_number,
+                aired: d.episode.air_date,
                 compat_filename: None,
                 graphics,
-                remote_id: Some(remote_id),
+                remote_id: Some(d.remote_id),
             };
 
             episodes.push(NewEpisode {
                 episode,
-                remote_ids,
+                remote_ids: d.remote_ids,
             });
         }
 
@@ -440,19 +435,12 @@ impl Client {
 
     async fn download_remote_ids(
         &self,
-        index: usize,
         remote_id: RemoteEpisodeId,
         series_id: u32,
         season_number: u32,
         episode: EpisodeDetail,
         lookup: &impl common::LookupEpisodeId,
-    ) -> Result<(
-        usize,
-        BTreeSet<RemoteEpisodeId>,
-        RemoteEpisodeId,
-        EpisodeId,
-        EpisodeDetail,
-    )> {
+    ) -> Result<DownloadEpisode> {
         tracing::trace!(
             "downloading remote ids for: series: {series_id}, season: {season_number}, episode: {}",
             episode.episode_number
@@ -476,20 +464,25 @@ impl Client {
             }
         };
 
-        let mut remotes = BTreeSet::from([remote_id]);
+        let mut remote_ids = BTreeSet::from([remote_id]);
 
         for remote_id in external_ids.as_remote_episodes() {
-            remotes.insert(remote_id?);
+            remote_ids.insert(remote_id?);
         }
 
         let id = match id {
             Some(id) => id,
             None => lookup
-                .lookup(remotes.iter().copied())
+                .lookup(remote_ids.iter().copied())
                 .unwrap_or_else(EpisodeId::random),
         };
 
-        Ok((index, remotes, remote_id, id, episode))
+        Ok(DownloadEpisode {
+            remote_ids,
+            remote_id,
+            id,
+            episode,
+        })
     }
 
     /// Get external IDs for an episode.
@@ -616,4 +609,11 @@ struct EpisodeDetail {
     overview: Option<String>,
     #[serde(default)]
     still_path: Option<String>,
+}
+
+struct DownloadEpisode {
+    remote_ids: BTreeSet<RemoteEpisodeId>,
+    remote_id: RemoteEpisodeId,
+    id: EpisodeId,
+    episode: EpisodeDetail,
 }

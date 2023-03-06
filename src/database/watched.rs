@@ -45,7 +45,7 @@ pub(crate) struct Database {
 
 impl Database {
     /// Get all watches for the given episode.
-    pub(crate) fn get(
+    pub(crate) fn by_episode(
         &self,
         episode_id: &EpisodeId,
     ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone {
@@ -59,7 +59,7 @@ impl Database {
     }
 
     /// Get all watches for the given series.
-    pub(crate) fn series(
+    pub(crate) fn by_series(
         &self,
         series_id: &SeriesId,
     ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone {

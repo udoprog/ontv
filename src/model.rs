@@ -814,6 +814,13 @@ impl Episode {
 
         *aired <= *today
     }
+
+    /// Get aired timestamp.
+    pub(crate) fn aired_timestamp(&self) -> Option<DateTime<Utc>> {
+        self.aired
+            .as_ref()
+            .and_then(|&d| Some(DateTime::from_utc(d.and_hms_opt(12, 0, 0)?, Utc)))
+    }
 }
 
 impl fmt::Display for Episode {
