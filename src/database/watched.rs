@@ -2,10 +2,10 @@ use std::collections::btree_map::BTreeMap;
 use std::collections::hash_map::{self, HashMap};
 
 use serde::Serialize;
-use slab::Slab;
 use uuid::Uuid;
 
 use crate::database::episodes;
+use crate::database::iter::Iter;
 use crate::model::{EpisodeId, SeasonNumber, SeriesId, Watched, WatchedKind};
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
@@ -37,25 +37,24 @@ pub(crate) struct Export {
 
 #[derive(Default)]
 pub(crate) struct Database {
-    data: Slab<Watched>,
-    by_id: HashMap<Uuid, usize>,
-    by_episode: HashMap<EpisodeId, Vec<usize>>,
-    by_series: HashMap<SeriesId, Vec<usize>>,
+    data: HashMap<Uuid, Watched>,
+    by_episode: HashMap<EpisodeId, Vec<Uuid>>,
+    by_series: HashMap<SeriesId, Vec<Uuid>>,
 }
 
 impl Database {
     /// Get all watches for the given episode.
     pub(crate) fn by_episode(
         &self,
-        episode_id: &EpisodeId,
+        id: &EpisodeId,
     ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone {
         let indexes = self
             .by_episode
-            .get(episode_id)
+            .get(id)
             .map(Vec::as_slice)
             .unwrap_or_default();
 
-        indexes.iter().map(|&index| &self.data[index])
+        Iter::new(indexes.iter(), &self.data)
     }
 
     /// Get all watches for the given series.
@@ -69,20 +68,27 @@ impl Database {
             .map(Vec::as_slice)
             .unwrap_or_default();
 
-        indexes.iter().map(|&index| &self.data[index])
+        Iter::new(indexes.iter(), &self.data)
     }
 
     /// Insert a new entry into watch history.
     pub(crate) fn insert(&mut self, w: Watched) {
         let id = w.id;
         let kind = w.kind;
-        let index = self.data.insert(w);
-        self.by_id.insert(id, index);
+
+        if let Some(w) = self.data.insert(id, w) {
+            match &w.kind {
+                WatchedKind::Series { series, episode } => {
+                    self.clear_series_by_id(series, &w.id);
+                    self.clear_episode_by_id(episode, &w.id);
+                }
+            }
+        }
 
         match kind {
             WatchedKind::Series { series, episode } => {
-                self.by_episode.entry(episode).or_default().push(index);
-                self.by_series.entry(series).or_default().push(index);
+                self.by_episode.entry(episode).or_default().push(w.id);
+                self.by_series.entry(series).or_default().push(w.id);
             }
         }
     }
@@ -93,12 +99,10 @@ impl Database {
             return;
         };
 
-        for index in indexes {
-            let Some(w) = self.data.try_remove(index) else {
+        for id in indexes {
+            let Some(w) = self.data.remove(&id) else {
                 continue;
             };
-
-            let _ = self.by_id.remove(&w.id);
 
             match w.kind {
                 WatchedKind::Series { episode, .. } => {
@@ -116,16 +120,14 @@ impl Database {
 
         let len = removed.len();
 
-        for index in removed {
-            let Some(w) = self.data.try_remove(index) else {
+        for id in removed {
+            let Some(w) = self.data.remove(&id) else {
                 continue;
             };
 
-            let _ = self.by_id.remove(&w.id);
-
             match w.kind {
                 WatchedKind::Series { series, .. } => {
-                    self.clear_series_by_id(&series, index);
+                    self.clear_series_by_id(&series, &w.id);
                 }
             }
         }
@@ -135,18 +137,12 @@ impl Database {
 
     /// Remove a single watch by id.
     pub(crate) fn remove_watch(&mut self, id: &Uuid) -> Option<Watched> {
-        let Some(index) = self.by_id.remove(id) else {
-            return None;
-        };
-
-        let Some(w) = self.data.try_remove(index) else {
-            return None;
-        };
+        let w = self.data.remove(id)?;
 
         match w.kind {
             WatchedKind::Series { series, episode } => {
-                self.clear_series_by_id(&series, index);
-                self.clear_episode_by_id(&episode, index);
+                self.clear_series_by_id(&series, &w.id);
+                self.clear_episode_by_id(&episode, &w.id);
             }
         }
 
@@ -177,24 +173,24 @@ impl Database {
         export.into_values()
     }
 
-    fn clear_series_by_id(&mut self, series_id: &SeriesId, index: usize) {
+    fn clear_series_by_id(&mut self, series_id: &SeriesId, id: &Uuid) {
         let hash_map::Entry::Occupied(mut e) = self.by_series.entry(*series_id) else {
             return;
         };
 
-        e.get_mut().retain(|&this| this != index);
+        e.get_mut().retain(|&this| this != *id);
 
         if e.get().is_empty() {
             e.remove();
         }
     }
 
-    fn clear_episode_by_id(&mut self, episode_id: &EpisodeId, index: usize) {
+    fn clear_episode_by_id(&mut self, episode_id: &EpisodeId, id: &Uuid) {
         let hash_map::Entry::Occupied(mut e) = self.by_episode.entry(*episode_id) else {
             return;
         };
 
-        e.get_mut().retain(|&this| this != index);
+        e.get_mut().retain(|&this| this != *id);
 
         if e.get().is_empty() {
             e.remove();
