@@ -1,13 +1,8 @@
 use std::time::Duration;
 
-use anyhow::Result;
-use chrono::Utc;
-use iced::theme::{self, Theme};
-use iced::widget::scrollable::RelativeOffset;
-use iced::widget::{button, horizontal_rule, scrollable, text, Button, Column, Row, Space};
-use iced::{window, Alignment, Command, Element, Length};
+use iced::window;
+use iced::{Command, Theme};
 use iced_native::image::Handle;
-use uuid::Uuid;
 
 use crate::assets::{Assets, ImageKey};
 use crate::commands::{Commands, CommandsBuf};
@@ -15,6 +10,7 @@ use crate::error::ErrorInfo;
 use crate::model::{ImageV2, Task, TaskKind};
 use crate::page;
 use crate::params::{GAP, SMALL, SPACE, SUB_MENU_SIZE};
+use crate::prelude::*;
 use crate::service::{NewSeries, Service};
 use crate::state::{Page, State};
 use crate::utils::{Singleton, TimedOut, Timeout};
@@ -49,7 +45,7 @@ pub(crate) enum Message {
     /// Navigate history by the specified stride.
     History(isize),
     /// A scroll happened.
-    Scroll(RelativeOffset),
+    Scroll(w::scrollable::RelativeOffset),
     /// Images have been loaded in the background.
     ImagesLoaded(Result<Vec<(ImageKey, Handle)>, ErrorInfo>),
     /// Update download queue with the given items.
@@ -95,7 +91,7 @@ pub(crate) struct Application {
     // Images to load.
     images: Vec<(ImageKey, ImageV2)>,
     /// The identifier used for the main scrollable.
-    scrollable_id: scrollable::Id,
+    scrollable_id: w::scrollable::Id,
 }
 
 pub(crate) struct Flags {
@@ -124,7 +120,7 @@ impl iced::Application for Application {
             image_loader: Singleton::default(),
             exit_after_save: false,
             images: Vec::new(),
-            scrollable_id: scrollable::Id::unique(),
+            scrollable_id: w::scrollable::Id::unique(),
         };
 
         this.prepare();
@@ -360,7 +356,7 @@ impl iced::Application for Application {
             };
 
             self.commands
-                .command(scrollable::snap_to(self.scrollable_id.clone(), scroll));
+                .command(w::scrollable::snap_to(self.scrollable_id.clone(), scroll));
         }
 
         self.prepare();
@@ -393,54 +389,54 @@ impl iced::Application for Application {
     }
 
     fn view(&self) -> Element<Message> {
-        let mut top_menu = Row::new().spacing(GAP).align_items(Alignment::Center);
+        let mut top_menu = w::Row::new().spacing(GAP).align_items(Alignment::Center);
 
         let Some(&page) = self.state.page() else {
-            return text("missing history entry").into();
+            return w::text("missing history entry").into();
         };
 
-        top_menu = top_menu.push(menu_item(&page, text("Dashboard"), Page::Dashboard));
-        top_menu = top_menu.push(menu_item(&page, text("Series"), Page::SeriesList));
-        top_menu = top_menu.push(menu_item(&page, text("Search"), Page::Search));
-        top_menu = top_menu.push(menu_item(&page, text("Settings"), Page::Settings));
+        top_menu = top_menu.push(menu_item(&page, w::text("Dashboard"), Page::Dashboard));
+        top_menu = top_menu.push(menu_item(&page, w::text("Series"), Page::SeriesList));
+        top_menu = top_menu.push(menu_item(&page, w::text("Search"), Page::Search));
+        top_menu = top_menu.push(menu_item(&page, w::text("Settings"), Page::Settings));
 
         // Build queue element.
         {
             let count = self.state.service.tasks().len() + self.state.service.running_tasks().len();
 
             let text = match count {
-                0 => text("Queue"),
-                n => text(format!("Queue ({n})")),
+                0 => w::text("Queue"),
+                n => w::text(format!("Queue ({n})")),
             };
 
             top_menu = top_menu.push(menu_item(&page, text, Page::Queue));
         }
 
-        let mut menu = Column::new().push(top_menu);
+        let mut menu = w::Column::new().push(top_menu);
 
         if let Page::Series(series_id) | Page::Season(series_id, _) = page {
-            let mut sub_menu = Row::new();
+            let mut sub_menu = w::Row::new();
 
             if let Some(series) = self.state.service.series(&series_id) {
                 sub_menu = sub_menu.push(menu_item(
                     &page,
-                    text(&series.title).size(SUB_MENU_SIZE),
+                    w::text(&series.title).size(SUB_MENU_SIZE),
                     Page::Series(series_id),
                 ));
             }
 
             for season in self.state.service.seasons(&series_id) {
-                let title = text(season.number);
+                let title = w::text(season.number);
 
                 let (watched, total) = self
                     .state
                     .service
                     .season_watched(&series_id, &season.number);
 
-                let mut title = Row::new().push(title.size(SUB_MENU_SIZE));
+                let mut title = w::Row::new().push(title.size(SUB_MENU_SIZE));
 
                 if let Some(p) = watched.saturating_mul(100).checked_div(total) {
-                    title = title.push(text(format!(" ({p}%)")).size(SUB_MENU_SIZE));
+                    title = title.push(w::text(format_args!(" ({p}%)")).size(SUB_MENU_SIZE));
                 }
 
                 sub_menu = sub_menu.push(menu_item(
@@ -453,7 +449,7 @@ impl iced::Application for Application {
             menu = menu.push(sub_menu.spacing(GAP));
         }
 
-        let mut window = Column::new();
+        let mut window = w::Column::new();
 
         window = window.push(
             menu.align_items(Alignment::Center)
@@ -474,36 +470,36 @@ impl iced::Application for Application {
             Current::Errors(page) => page.view(&self.state).map(Message::Errors),
         };
 
-        window = window.push(horizontal_rule(1));
+        window = window.push(w::horizontal_rule(1));
         window = window.push(
-            scrollable(page)
+            w::scrollable(page)
                 .id(self.scrollable_id.clone())
                 .on_scroll(Message::Scroll)
                 .height(Length::Fill),
         );
 
-        let mut status_bar = Row::new();
+        let mut status_bar = w::Row::new();
         let mut any = false;
 
         if self.state.is_saving() {
-            status_bar = status_bar.push(Row::new().push(text("Saving... ").size(SMALL)));
+            status_bar = status_bar.push(w::Row::new().push(w::text("Saving... ").size(SMALL)));
             any = true;
         }
 
-        status_bar = status_bar.push(Space::new(Length::Fill, Length::Shrink));
+        status_bar = status_bar.push(w::Space::new(Length::Fill, Length::Shrink));
 
         let errors = self.state.errors().len();
 
         if errors != 0 {
             status_bar = status_bar.push(
-                button(text(format!("Errors ({errors})")).size(SMALL))
+                w::button(w::text(format_args!("Errors ({errors})")).size(SMALL))
                     .style(theme::Button::Destructive)
                     .on_press(Message::Navigate(Page::Errors)),
             );
             any = true;
         }
 
-        window = window.push(horizontal_rule(1));
+        window = window.push(w::horizontal_rule(1));
 
         if any {
             window = window.push(
@@ -689,14 +685,11 @@ impl Application {
 }
 
 /// Helper for building menu items.
-fn menu_item<E>(at: &Page, element: E, page: Page) -> Button<'static, Message>
+fn menu_item<E>(at: &Page, element: E, page: Page) -> w::Button<'static, Message>
 where
     Element<'static, Message>: From<E>,
 {
-    let current = button(element)
-        .padding(0)
-        .style(theme::Button::Text)
-        .width(Length::Fill);
+    let current = link(element).width(Length::Fill);
 
     let current = if *at == page {
         current

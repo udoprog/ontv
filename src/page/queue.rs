@@ -182,10 +182,8 @@ fn build_task_row<'a>(s: &State, kind: &TaskId) -> w::Row<'a, Message> {
             update = update.push(w::text("Downloading").size(SMALL).width(Length::Fill));
 
             update = update.push(
-                w::button(w::text(remote_id).size(SMALL))
+                link(w::text(remote_id).size(SMALL))
                     .width(Length::Fill)
-                    .style(theme::Button::Text)
-                    .padding(0)
                     .on_press(Message::OpenRemoteSeries(*remote_id)),
             );
         }
@@ -193,10 +191,8 @@ fn build_task_row<'a>(s: &State, kind: &TaskId) -> w::Row<'a, Message> {
             update = update.push(w::text("Downloading").size(SMALL).width(Length::Fill));
 
             update = update.push(
-                w::button(w::text(remote_id).size(SMALL))
+                link(w::text(remote_id).size(SMALL))
                     .width(Length::Fill)
-                    .style(theme::Button::Text)
-                    .padding(0)
                     .on_press(Message::OpenRemoteMovie(*remote_id)),
             );
         }
@@ -213,9 +209,7 @@ fn decorate_series<'a>(
 ) -> w::Row<'a, Message> {
     let remote_id = if let Some(series) = state.service.series(series_id) {
         row = row.push(
-            w::button(w::text(&series.title).size(SMALL))
-                .style(theme::Button::Text)
-                .padding(0)
+            link(w::text(&series.title).size(SMALL))
                 .on_press(Message::Navigate(Page::Series(*series_id))),
         );
 
@@ -227,10 +221,8 @@ fn decorate_series<'a>(
 
     if let Some(remote_id) = remote_id {
         row = row.push(
-            w::button(w::text(remote_id).size(SMALL))
+            link(w::text(remote_id).size(SMALL))
                 .width(Length::Fill)
-                .style(theme::Button::Text)
-                .padding(0)
                 .on_press(Message::OpenRemoteSeries(*remote_id)),
         );
     }

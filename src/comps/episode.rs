@@ -274,15 +274,23 @@ impl Episode {
 
         if let Some(p) = pending_series {
             info_top = info_top.push(
-                w::button(w::text(&p.series.title).size(SUBTITLE_SIZE))
-                    .padding(0)
-                    .style(theme::Button::Text)
+                link(w::text(&p.series.title).size(SUBTITLE_SIZE))
                     .on_press(Message::Navigate(Page::Series(p.series.id))),
             );
+
+            if let Some(season) = p.season {
+                info_top = info_top.push(
+                    link(name)
+                        .on_press(Message::Navigate(Page::Season(p.series.id, season.number))),
+                );
+            } else {
+                info_top = info_top.push(name);
+            }
+        } else {
+            info_top = info_top.push(name);
         }
 
         info_top = info_top
-            .push(name)
             .push(actions)
             .push(show_info.spacing(SPACE))
             .spacing(SPACE);

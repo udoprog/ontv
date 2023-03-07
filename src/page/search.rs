@@ -231,10 +231,7 @@ impl Search {
 
             if let Some(local_series) = local_series {
                 result = result.push(
-                    w::button(series_name)
-                        .style(theme::Button::Text)
-                        .padding(0)
-                        .on_press(Message::Navigate(Page::Series(local_series.id))),
+                    link(series_name).on_press(Message::Navigate(Page::Series(local_series.id))),
                 );
             } else {
                 result = result.push(series_name);
@@ -338,10 +335,7 @@ impl Search {
 
             if let Some(local_movie) = local_movie {
                 result = result.push(
-                    w::button(movie_title)
-                        .style(theme::Button::Text)
-                        .padding(0)
-                        .on_press(Message::Navigate(Page::Movie(local_movie.id))),
+                    link(movie_title).on_press(Message::Navigate(Page::Movie(local_movie.id))),
                 );
             } else {
                 result = result.push(movie_title);

@@ -122,10 +122,8 @@ impl Dashboard {
     }
 
     pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
-        let up_next_title = w::button(w::text("Watch next").size(SUBTITLE_SIZE))
+        let up_next_title = link(w::text("Watch next").size(SUBTITLE_SIZE))
             .on_press(Message::Navigate(Page::WatchNext))
-            .padding(0)
-            .style(theme::Button::Text)
             .width(Length::Fill);
 
         let mut modify = w::Row::new().push(w::Space::new(Length::Fill, Length::Shrink));
@@ -238,9 +236,7 @@ impl Dashboard {
             let mut panel = w::Column::new();
 
             panel = panel.push(
-                w::button(w::image(poster).width(Length::Fill))
-                    .padding(0)
-                    .style(theme::Button::Text)
+                link(w::image(poster).width(Length::Fill))
                     .on_press(Message::Navigate(Page::Series(series.id))),
             );
 
@@ -298,13 +294,11 @@ impl Dashboard {
             }
 
             panel = panel.push(
-                w::button(
+                link(
                     episode_title
                         .size(SMALL)
                         .horizontal_alignment(Horizontal::Center),
                 )
-                .padding(0)
-                .style(theme::Button::Text)
                 .on_press(Message::Navigate(Page::Season(series.id, episode.season))),
             );
 
@@ -374,9 +368,7 @@ impl Dashboard {
                 };
 
                 cols = cols.push(
-                    w::button(w::image(poster))
-                        .padding(0)
-                        .style(theme::Button::Text)
+                    link(w::image(poster))
                         .on_press(Message::Navigate(Page::Series(*series_id)))
                         .width(Length::FillPortion(1)),
                 );
@@ -401,18 +393,14 @@ impl Dashboard {
                         None => format!("{}x{}", episode.season.short(), episode.number),
                     };
 
-                    let episode = w::button(w::text(name).size(SMALL))
-                        .style(theme::Button::Text)
-                        .padding(0)
+                    let episode = link(w::text(name).size(SMALL))
                         .on_press(Message::Navigate(Page::Season(series.id, episode.season)));
 
                     episodes = episodes
                         .push(Hoverable::new(episode).on_hover(Message::HoverScheduled(series.id)));
                 }
 
-                let title = w::button(w::text(&series.title))
-                    .padding(0)
-                    .style(theme::Button::Text)
+                let title = link(w::text(&series.title))
                     .on_press(Message::Navigate(Page::Series(series.id)));
 
                 series_column = series_column

@@ -106,14 +106,10 @@ impl Series {
                 None => s.missing_poster(),
             };
 
-            let graphic = w::button(w::image(poster).height(IMAGE_HEIGHT))
-                .on_press(Message::Navigate(Page::Season(series.id, season.number)))
-                .style(theme::Button::Text)
-                .padding(0);
+            let graphic = link(w::image(poster).height(IMAGE_HEIGHT))
+                .on_press(Message::Navigate(Page::Season(series.id, season.number)));
 
-            let title = w::button(w::text(season.number).size(SUBTITLE_SIZE))
-                .padding(0)
-                .style(theme::Button::Text)
+            let title = link(w::text(season.number).size(SUBTITLE_SIZE))
                 .on_press(Message::Navigate(Page::Season(series.id, season.number)));
 
             cols = cols.push(

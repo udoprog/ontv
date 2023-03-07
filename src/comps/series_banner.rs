@@ -37,9 +37,7 @@ impl SeriesBanner {
 
         let banner = w::image(handle);
 
-        let title = w::button(w::text(&series.title).size(TITLE_SIZE))
-            .padding(0)
-            .style(theme::Button::Text)
+        let title = link(w::text(&series.title).size(TITLE_SIZE))
             .on_press(Message::Navigate(Page::Series(series.id)));
 
         w::Column::new()

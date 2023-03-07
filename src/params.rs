@@ -49,6 +49,13 @@ where
         .width(Length::Fill)
 }
 
+/// Construct a simple link.
+pub(crate) fn link<M>(content: impl Into<Element<'static, M>>) -> iced::widget::Button<'static, M> {
+    iced::widget::Button::new(content)
+        .padding(0)
+        .style(iced::theme::Button::Text)
+}
+
 /// Alternate container with background color.
 pub(crate) fn centered<'a, E, M: 'a>(
     content: E,

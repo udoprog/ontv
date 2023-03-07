@@ -90,16 +90,12 @@ impl SeriesList {
                 None => s.missing_poster(),
             };
 
-            let graphic = w::button(w::image(poster).height(IMAGE_HEIGHT))
-                .on_press(Message::Navigate(Page::Series(series.id)))
-                .style(theme::Button::Text)
-                .padding(0);
+            let graphic = link(w::image(poster).height(IMAGE_HEIGHT))
+                .on_press(Message::Navigate(Page::Series(series.id)));
 
             let episodes = s.service.episodes(&series.id);
 
-            let title = w::button(w::text(&series.title).size(SUBTITLE_SIZE))
-                .padding(0)
-                .style(theme::Button::Text)
+            let title = link(w::text(&series.title).size(SUBTITLE_SIZE))
                 .on_press(Message::Navigate(Page::Series(series.id)));
 
             let actions = actions
