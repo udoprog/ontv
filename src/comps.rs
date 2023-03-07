@@ -10,6 +10,9 @@ pub(crate) use self::series_banner::SeriesBanner;
 pub(crate) mod confirm;
 pub(crate) use self::confirm::Confirm;
 
+pub(crate) mod watch;
+pub(crate) use self::watch::Watch;
+
 pub(crate) mod watch_remaining;
 pub(crate) use self::watch_remaining::WatchRemaining;
 

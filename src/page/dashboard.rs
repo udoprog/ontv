@@ -6,6 +6,7 @@ use iced::widget::{
 use iced::{theme, Element};
 use iced::{Alignment, Length};
 
+use crate::component::ComponentInitExt;
 use crate::model::{Episode, EpisodeId, ImageV2, SeasonNumber, SeriesId};
 use crate::params::{centered, GAP, GAP2, POSTER_HINT, SMALL, SPACE, SUBTITLE_SIZE};
 use crate::service::PendingRef;
@@ -22,7 +23,7 @@ pub(crate) enum Message {
     /// Skip an episode.
     Skip(SeriesId, EpisodeId),
     /// Watch an episode.
-    Watch(SeriesId, EpisodeId),
+    Watch(usize, comps::watch::Message),
     /// Navigate.
     Navigate(Page),
     /// Reset show list.
@@ -36,6 +37,7 @@ pub(crate) enum Message {
 /// The state for the settings page.
 pub(crate) struct Dashboard {
     calendar: comps::Calendar,
+    watch: Vec<comps::Watch>,
     schedule_focus: Option<(SeriesId, Option<ImageV2>)>,
 }
 
@@ -56,6 +58,7 @@ impl Dashboard {
 
         Self {
             calendar: comps::Calendar::new(*s.today(), chrono::Weekday::Sun),
+            watch: Vec::new(),
             schedule_focus,
         }
     }
@@ -75,6 +78,13 @@ impl Dashboard {
                 .flat_map(|p| p.season.and_then(|s| s.poster()).or(p.series.poster())),
             POSTER_HINT,
         );
+
+        self.watch.init_from_iter(
+            s.service
+                .pending(*s.today())
+                .rev()
+                .map(|p| comps::watch::Props::new(p.episode.id)),
+        );
     }
 
     pub(crate) fn update(&mut self, s: &mut State, message: Message) {
@@ -91,9 +101,10 @@ impl Dashboard {
                 let now = Utc::now();
                 s.service.skip(&now, &series_id, &episode_id);
             }
-            Message::Watch(series_id, episode_id) => {
-                let now = Utc::now();
-                s.service.watch(&now, &series_id, &episode_id);
+            Message::Watch(index, message) => {
+                if let Some(w) = self.watch.get_mut(index) {
+                    w.update(s, message);
+                }
             }
             Message::Navigate(page) => {
                 s.push_history(page);
@@ -208,16 +219,19 @@ impl Dashboard {
         let limit = s.service.config().dashboard_limit();
         let page = s.service.config().dashboard_page();
 
-        for (
-            index,
-            PendingRef {
+        for (index, (watch, pending_ref)) in self
+            .watch
+            .iter()
+            .zip(s.service.pending(*s.today()).rev().take(limit))
+            .enumerate()
+        {
+            let PendingRef {
                 series,
                 season,
                 episode,
                 ..
-            },
-        ) in s.service.pending(*s.today()).rev().take(limit).enumerate()
-        {
+            } = pending_ref;
+
             if index % page == 0 && index > 0 {
                 cols = cols.push(pending.spacing(GAP));
                 pending = Row::new();
@@ -247,28 +261,29 @@ impl Dashboard {
             let mut actions = Row::new();
 
             actions = actions.push(
-                button(
-                    text("Mark")
-                        .horizontal_alignment(Horizontal::Center)
-                        .size(SMALL),
-                )
-                .style(theme::Button::Positive)
-                .on_press(Message::Watch(series.id, episode.id))
-                .width(Length::FillPortion(5)),
+                watch
+                    .view(
+                        "Mark",
+                        theme::Button::Positive,
+                        theme::Button::Positive,
+                        Length::FillPortion(5),
+                        Horizontal::Center,
+                    )
+                    .map(move |m| Message::Watch(index, m)),
             );
 
-            actions = actions.push(
-                button(
-                    text("Skip")
-                        .horizontal_alignment(Horizontal::Center)
-                        .size(SMALL),
-                )
-                .style(theme::Button::Secondary)
-                .on_press(Message::Skip(series.id, episode.id))
-                .width(Length::FillPortion(5)),
-            );
+            if !watch.is_confirm() {
+                actions = actions.push(
+                    button(
+                        text("Skip")
+                            .horizontal_alignment(Horizontal::Center)
+                            .size(SMALL),
+                    )
+                    .style(theme::Button::Secondary)
+                    .on_press(Message::Skip(series.id, episode.id))
+                    .width(Length::FillPortion(5)),
+                );
 
-            {
                 let len = s.service.watched(&episode.id).len();
 
                 let style = match len {

@@ -18,7 +18,7 @@ use crate::state::State;
 pub(crate) enum Message {
     RemoveLastWatch(usize, comps::confirm::Message),
     RemoveWatch(usize, usize, comps::confirm::Message),
-    Watch(SeriesId, EpisodeId),
+    Watch(usize, comps::watch::Message),
     SelectPending(SeriesId, EpisodeId),
     ClearPending(EpisodeId),
     SeasonInfo(comps::season_info::Message),
@@ -26,7 +26,8 @@ pub(crate) enum Message {
 }
 
 struct EpisodeState {
-    id: EpisodeId,
+    episode_id: EpisodeId,
+    watch: comps::Watch,
     remove_last_watch: Option<comps::Confirm>,
     remove_watches: Vec<comps::Confirm>,
 }
@@ -36,14 +37,15 @@ where
     I: DoubleEndedIterator<Item = &'a Watched> + Clone,
 {
     #[inline]
-    fn new((series_id, id, watched): (SeriesId, EpisodeId, I)) -> Self {
+    fn new((series_id, episode_id, watched): (SeriesId, EpisodeId, I)) -> Self {
         Self {
-            id,
+            episode_id,
+            watch: comps::Watch::new(comps::watch::Props::new(episode_id)),
             remove_last_watch: watched.clone().next_back().map(move |w| {
                 comps::Confirm::new(comps::confirm::Props::new(
                     comps::confirm::Kind::RemoveWatch {
                         series_id,
-                        episode_id: id,
+                        episode_id,
                         watch_id: w.id,
                     },
                 ))
@@ -53,7 +55,7 @@ where
                     comps::Confirm::new(
                         comps::confirm::Props::new(comps::confirm::Kind::RemoveWatch {
                             series_id,
-                            episode_id: id,
+                            episode_id,
                             watch_id: w.id,
                         })
                         .with_ordering(comps::ordering::Ordering::Left),
@@ -65,7 +67,8 @@ where
 
     #[inline]
     fn changed(&mut self, (series_id, episode_id, watched): (SeriesId, EpisodeId, I)) {
-        self.id = episode_id;
+        self.episode_id = episode_id;
+        self.watch.changed(comps::watch::Props::new(episode_id));
         self.remove_last_watch
             .init_from_iter(watched.clone().next_back().map(move |w| {
                 comps::confirm::Props::new(comps::confirm::Kind::RemoveWatch {
@@ -144,9 +147,10 @@ impl Season {
                     c.update(s, message);
                 }
             }
-            Message::Watch(series, episode) => {
-                let now = Utc::now();
-                s.service.watch(&now, &series, &episode);
+            Message::Watch(index, message) => {
+                if let Some(c) = self.episodes.get_mut(index).map(|data| &mut data.watch) {
+                    c.update(s, message);
+                }
             }
             Message::SelectPending(series, episode) => {
                 let now = Utc::now();
@@ -179,7 +183,7 @@ impl Season {
         let pending = s.service.get_pending(&series.id).map(|p| p.episode);
 
         for (index, data) in self.episodes.iter().enumerate() {
-            let Some(episode) = s.service.episode(&data.id) else {
+            let Some(episode) = s.service.episode(&data.episode_id) else {
                 continue;
             };
 
@@ -206,14 +210,20 @@ impl Season {
             let mut actions = Row::new().spacing(SPACE);
 
             let watch_text = match watched.len() {
-                0 => text("First watch"),
-                _ => text("Watch again"),
+                0 => "First watch",
+                _ => "Watch again",
             };
 
             actions = actions.push(
-                button(watch_text.size(SMALL))
-                    .style(theme::Button::Positive)
-                    .on_press(Message::Watch(series.id, episode.id)),
+                data.watch
+                    .view(
+                        watch_text,
+                        theme::Button::Positive,
+                        theme::Button::Positive,
+                        Length::Shrink,
+                        Horizontal::Center,
+                    )
+                    .map(move |m| Message::Watch(index, m)),
             );
 
             let remove_last = match (watched.len(), &data.remove_last_watch) {
