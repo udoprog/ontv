@@ -10,7 +10,7 @@ use crate::state::State;
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     /// Weatch the remainder of all unwatched episodes in the specified season.
-    WatchRemaining(comps::confirm::Message),
+    WatchRemaining(comps::watch_remaining::Message),
     /// Remove all matching season watches.
     RemoveWatches(comps::confirm::Message),
 }
@@ -18,8 +18,8 @@ pub(crate) enum Message {
 pub(crate) struct SeasonInfo {
     series_id: SeriesId,
     season: SeasonNumber,
-    watch_remaining: comps::confirm::Confirm,
-    remove_watches: comps::confirm::Confirm,
+    watch_remaining: comps::WatchRemaining,
+    remove_watches: comps::Confirm,
 }
 
 impl Component<(SeriesId, SeasonNumber)> for SeasonInfo {
@@ -28,8 +28,8 @@ impl Component<(SeriesId, SeasonNumber)> for SeasonInfo {
         Self {
             series_id,
             season,
-            watch_remaining: comps::confirm::Confirm::new(comps::confirm::Props::new(
-                comps::confirm::Kind::WatchRemaining { series_id, season },
+            watch_remaining: comps::WatchRemaining::new(comps::watch_remaining::Props::new(
+                series_id, season,
             )),
             remove_watches: comps::confirm::Confirm::new(comps::confirm::Props::new(
                 comps::confirm::Kind::RemoveSeason { series_id, season },
@@ -41,9 +41,8 @@ impl Component<(SeriesId, SeasonNumber)> for SeasonInfo {
     fn changed(&mut self, (series_id, season): (SeriesId, SeasonNumber)) {
         self.series_id = series_id;
         self.season = season;
-        self.watch_remaining.changed(comps::confirm::Props::new(
-            comps::confirm::Kind::WatchRemaining { series_id, season },
-        ));
+        self.watch_remaining
+            .changed(comps::watch_remaining::Props::new(series_id, season));
         self.remove_watches.changed(comps::confirm::Props::new(
             comps::confirm::Kind::RemoveSeason { series_id, season },
         ));
@@ -69,7 +68,11 @@ impl SeasonInfo {
         if watched < total {
             actions = actions.push(
                 self.watch_remaining
-                    .view("Watch remaining", theme::Button::Positive)
+                    .view(
+                        "Watch remaining",
+                        theme::Button::Positive,
+                        theme::Button::Positive,
+                    )
                     .map(Message::WatchRemaining),
             );
         }

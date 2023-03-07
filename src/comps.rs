@@ -10,5 +10,10 @@ pub(crate) use self::series_banner::SeriesBanner;
 pub(crate) mod confirm;
 pub(crate) use self::confirm::Confirm;
 
+pub(crate) mod watch_remaining;
+pub(crate) use self::watch_remaining::WatchRemaining;
+
 pub(crate) mod calendar;
 pub(crate) use self::calendar::Calendar;
+
+pub(crate) mod ordering;

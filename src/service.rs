@@ -382,6 +382,7 @@ impl Service {
         now: &DateTime<Utc>,
         series_id: &SeriesId,
         season: &SeasonNumber,
+        remaining_season: RemainingSeason,
     ) {
         let today = now.date_naive();
         let mut last = None;
@@ -401,9 +402,20 @@ impl Service {
                 continue;
             }
 
+            let timestamp = match remaining_season {
+                RemainingSeason::Aired => *now,
+                RemainingSeason::AirDate => {
+                    let Some(air_date) = episode.aired_timestamp() else {
+                        continue;
+                    };
+
+                    air_date
+                }
+            };
+
             self.db.watched.insert(Watched {
                 id: Uuid::new_v4(),
-                timestamp: *now,
+                timestamp,
                 kind: WatchedKind::Series {
                     series: *series_id,
                     episode: episode.id,
@@ -1175,4 +1187,11 @@ fn pending_timestamp(
         (Some(candidate), _) => candidate,
         _ => *now,
     }
+}
+
+pub(crate) enum RemainingSeason {
+    /// Timestamp should be right now, but only if an episode has aired.
+    Aired,
+    /// Timestamp should be the air date of the episode.
+    AirDate,
 }

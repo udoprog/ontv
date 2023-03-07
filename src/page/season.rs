@@ -56,7 +56,7 @@ where
                             episode_id: id,
                             watch_id: w.id,
                         })
-                        .with_ordering(comps::confirm::Ordering::Left),
+                        .with_ordering(comps::ordering::Ordering::Left),
                     )
                 })
                 .collect(),
@@ -80,7 +80,7 @@ where
                 episode_id,
                 watch_id: w.id,
             })
-            .with_ordering(comps::confirm::Ordering::Left)
+            .with_ordering(comps::ordering::Ordering::Left)
         }));
     }
 }
