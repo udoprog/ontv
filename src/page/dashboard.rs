@@ -64,7 +64,7 @@ impl Dashboard {
                 .pending(&today)
                 .rev()
                 .take(limit)
-                .flat_map(|p| p.season.and_then(|s| s.poster()).or(p.series.poster())),
+                .flat_map(|p| p.poster()),
             POSTER_HINT,
         );
 
@@ -215,11 +215,8 @@ impl Dashboard {
             .zip(s.service.pending(s.today()).rev().take(limit))
             .enumerate()
         {
-            let PendingRef {
-                series,
-                season,
-                episode,
-                ..
+            let p @ PendingRef {
+                series, episode, ..
             } = pending_ref;
 
             if index % page == 0 && index > 0 {
@@ -230,9 +227,8 @@ impl Dashboard {
                 count += 1;
             }
 
-            let poster = match season
-                .and_then(|s| s.poster())
-                .or(series.poster())
+            let poster = match p
+                .poster()
                 .and_then(|i| s.assets.image_with_hint(&i, POSTER_HINT))
             {
                 Some(handle) => handle,

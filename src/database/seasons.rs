@@ -2,105 +2,106 @@ use core::fmt;
 use std::collections::HashMap;
 use std::ops::Deref;
 
-use crate::model::{Episode, EpisodeId, SeriesId};
+use crate::model::{Season, SeasonNumber, SeriesId};
 
-struct EpisodeData {
-    episode: Episode,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct Pointer {
     series: SeriesId,
-    prev: Option<EpisodeId>,
-    next: Option<EpisodeId>,
+    number: SeasonNumber,
 }
 
-impl EpisodeData {
-    fn into_ref<'a>(&'a self, data: &'a HashMap<EpisodeId, EpisodeData>) -> EpisodeRef<'a> {
-        EpisodeRef {
-            episode: &self.episode,
+impl Pointer {
+    fn new(series: SeriesId, number: SeasonNumber) -> Self {
+        Self { series, number }
+    }
+}
+
+struct SeasonData {
+    season: Season,
+    series: SeriesId,
+    prev: Option<Pointer>,
+    next: Option<Pointer>,
+}
+
+impl SeasonData {
+    fn into_ref<'a>(&'a self) -> SeasonRef<'a> {
+        SeasonRef {
+            season: &self.season,
             series: self.series,
-            prev: self.prev,
-            next: self.next,
-            data,
         }
     }
 }
 
-/// A reference to an episode.
+/// A reference to an season.
 #[derive(Clone, Copy)]
-pub(crate) struct EpisodeRef<'a> {
-    episode: &'a Episode,
+pub(crate) struct SeasonRef<'a> {
+    season: &'a Season,
     series: SeriesId,
-    prev: Option<EpisodeId>,
-    next: Option<EpisodeId>,
-    data: &'a HashMap<EpisodeId, EpisodeData>,
 }
 
-impl EpisodeRef<'_> {
-    /// Get series episode belongs to.
+impl<'a> SeasonRef<'a> {
+    /// Get series season belongs to.
     pub(crate) fn series(&self) -> &SeriesId {
         &self.series
     }
+
+    /// Coerce into season.
+    pub(crate) fn into_season(self) -> &'a Season {
+        self.season
+    }
 }
 
-impl fmt::Debug for EpisodeRef<'_> {
+impl fmt::Debug for SeasonRef<'_> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("EpisodeRef")
-            .field("episode", &self.episode)
-            .field("prev", &self.prev)
-            .field("next", &self.next)
+        f.debug_struct("SeasonRef")
+            .field("season", &self.season)
             .finish_non_exhaustive()
     }
 }
 
-impl<'a> EpisodeRef<'a> {
-    #[inline]
-    pub(crate) fn next(self) -> Option<EpisodeRef<'a>> {
-        let data = self.data.get(&self.next?)?;
-        Some(data.into_ref(self.data))
-    }
-}
-
-impl<'a> Deref for EpisodeRef<'a> {
-    type Target = Episode;
+impl<'a> Deref for SeasonRef<'a> {
+    type Target = Season;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        self.episode
+        self.season
     }
 }
 
 #[derive(Default, Clone, Copy)]
 struct SeriesData {
-    first: Option<EpisodeId>,
-    last: Option<EpisodeId>,
+    first: Option<Pointer>,
+    last: Option<Pointer>,
     len: usize,
 }
 
 #[derive(Default)]
 pub(crate) struct Database {
-    /// Episode data.
-    data: HashMap<EpisodeId, EpisodeData>,
+    /// Season data.
+    data: HashMap<Pointer, SeasonData>,
     /// By series index.
     by_series: HashMap<SeriesId, SeriesData>,
 }
 
 impl Database {
     /// Insert a database.
-    #[tracing::instrument(skip(self, episodes))]
-    pub(crate) fn insert(&mut self, series: SeriesId, episodes: Vec<Episode>) {
-        let len = episodes.len();
+    #[tracing::instrument(skip(self, seasons))]
+    pub(crate) fn insert(&mut self, series: SeriesId, seasons: Vec<Season>) {
+        let len = seasons.len();
         let mut first = None;
         let mut prev = None;
 
         let _ = self.remove(&series);
 
-        let mut it = episodes.into_iter().peekable();
+        let mut it = seasons.into_iter().peekable();
 
-        while let Some(episode) = it.next() {
-            let next = it.peek().map(|e| e.id);
-            let id = episode.id;
+        while let Some(season) = it.next() {
+            let next = it.peek().map(|s| Pointer::new(series, s.number));
+            let id = Pointer::new(series, season.number);
 
-            let links = EpisodeData {
-                episode,
+            let links = SeasonData {
+                season,
                 series,
                 prev,
                 next,
@@ -137,13 +138,13 @@ impl Database {
         }
     }
 
-    /// Get an episode.
-    pub(crate) fn get(&self, id: &EpisodeId) -> Option<EpisodeRef<'_>> {
-        let data = self.data.get(id)?;
-        Some(data.into_ref(&self.data))
+    /// Get an season.
+    pub(crate) fn get(&self, series_id: &SeriesId, season: &SeasonNumber) -> Option<SeasonRef<'_>> {
+        let data = self.data.get(&Pointer::new(*series_id, *season))?;
+        Some(data.into_ref())
     }
 
-    /// Get episodes by series.
+    /// Get seasons by series.
     pub(crate) fn by_series(&self, id: &SeriesId) -> Iter<'_> {
         let state = self.by_series.get(id).copied().unwrap_or_default();
 
@@ -158,19 +159,19 @@ impl Database {
 
 #[derive(Clone)]
 pub(crate) struct Iter<'a> {
-    head: Option<EpisodeId>,
-    tail: Option<EpisodeId>,
+    head: Option<Pointer>,
+    tail: Option<Pointer>,
     len: usize,
-    data: &'a HashMap<EpisodeId, EpisodeData>,
+    data: &'a HashMap<Pointer, SeasonData>,
 }
 
 impl Iter<'_> {
-    /// Export remaining episodes in order.
-    pub(crate) fn export(&self) -> Vec<Episode> {
+    /// Export remaining seasons in order.
+    pub(crate) fn export(&self) -> Vec<Season> {
         let mut data = Vec::with_capacity(self.len);
 
         for e in self.clone() {
-            data.push(e.episode.clone());
+            data.push(e.season.clone());
         }
 
         data
@@ -178,7 +179,7 @@ impl Iter<'_> {
 }
 
 impl<'a> Iterator for Iter<'a> {
-    type Item = EpisodeRef<'a>;
+    type Item = SeasonRef<'a>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -191,7 +192,7 @@ impl<'a> Iterator for Iter<'a> {
         }
 
         self.len = self.len.saturating_sub(1);
-        Some(data.into_ref(self.data))
+        Some(data.into_ref())
     }
 
     #[inline]
@@ -212,7 +213,7 @@ impl<'a> DoubleEndedIterator for Iter<'a> {
         }
 
         self.len = self.len.saturating_sub(1);
-        Some(data.into_ref(self.data))
+        Some(data.into_ref())
     }
 }
 

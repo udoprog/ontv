@@ -31,8 +31,7 @@ impl Series {
         self.seasons.init_from_iter(
             s.service
                 .seasons(&self.series_id)
-                .iter()
-                .map(|s| (self.series_id, s.number)),
+                .map(|s| (*s.series(), s.number)),
         );
 
         self.banner.prepare(s, &self.series_id);
@@ -41,8 +40,7 @@ impl Series {
             s.assets.mark_with_hint(
                 s.service
                     .seasons(&self.series_id)
-                    .iter()
-                    .flat_map(|season| season.poster().or(series.poster())),
+                    .flat_map(|season| season.into_season().poster().or(series.poster())),
                 POSTER_HINT,
             );
         }
@@ -96,13 +94,7 @@ impl Series {
 
         let mut cols = w::Column::new();
 
-        for (index, (season, c)) in s
-            .service
-            .seasons(&series.id)
-            .iter()
-            .zip(&self.seasons)
-            .enumerate()
-        {
+        for (index, (season, c)) in s.service.seasons(&series.id).zip(&self.seasons).enumerate() {
             let poster = match season
                 .graphics
                 .poster

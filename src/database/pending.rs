@@ -16,7 +16,7 @@ pub(crate) struct Database {
 impl Database {
     /// Get an existing pending element.
     #[inline]
-    pub(crate) fn get(&mut self, id: &SeriesId) -> Option<&Pending> {
+    pub(crate) fn get(&self, id: &SeriesId) -> Option<&Pending> {
         self.data.get(id)
     }
 

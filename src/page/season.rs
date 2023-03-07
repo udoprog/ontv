@@ -73,7 +73,7 @@ impl Season {
             return w::Column::new().into();
         };
 
-        let Some(season) = s.service.seasons(&series.id).iter().find(|s| s.number == self.season) else {
+        let Some(season) = s.service.season(&series.id, &self.season) else {
             return w::Column::new().into();
         };
 

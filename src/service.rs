@@ -18,7 +18,7 @@ use crate::api::themoviedb;
 use crate::api::thetvdb;
 use crate::assets::ImageKey;
 use crate::cache::{self};
-use crate::database::{Change, Database, EpisodeRef};
+use crate::database::{Change, Database, EpisodeRef, SeasonRef};
 use crate::model::{
     Config, Episode, EpisodeId, Etag, ImageV2, Movie, MovieId, Pending, RemoteEpisodeId,
     RemoteMovieId, RemoteSeriesId, ScheduledDay, ScheduledSeries, SearchMovie, SearchSeries,
@@ -62,8 +62,20 @@ impl fmt::Debug for NewSeries {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PendingRef<'a> {
     pub(crate) series: &'a Series,
-    pub(crate) season: Option<&'a Season>,
+    pub(crate) season: Option<SeasonRef<'a>>,
     pub(crate) episode: EpisodeRef<'a>,
+}
+impl<'a> PendingRef<'a> {
+    /// Get poster for the given pending reference.
+    pub(crate) fn poster(&self) -> Option<&'a ImageV2> {
+        if let Some(season) = self.season.map(|s| s.into_season()) {
+            if let Some(image) = season.poster() {
+                return Some(image);
+            }
+        }
+
+        self.series.poster()
+    }
 }
 
 /// Background service taking care of all state handling.
@@ -152,14 +164,23 @@ impl Service {
         self.db.episodes.get(id)
     }
 
+    /// Get a single season.
+    #[inline]
+    pub(crate) fn season(
+        &self,
+        series_id: &SeriesId,
+        season: &SeasonNumber,
+    ) -> Option<SeasonRef<'_>> {
+        self.db.seasons.get(series_id, season)
+    }
+
     /// Iterator over available seasons.
     #[inline]
-    pub(crate) fn seasons(&self, series_id: &SeriesId) -> &[Season] {
-        self.db
-            .seasons
-            .get(series_id)
-            .map(Vec::as_slice)
-            .unwrap_or_default()
+    pub(crate) fn seasons(
+        &self,
+        series_id: &SeriesId,
+    ) -> impl DoubleEndedIterator<Item = SeasonRef<'_>> + ExactSizeIterator + Clone {
+        self.db.seasons.by_series(series_id)
     }
 
     /// Get all the watches for the given episode.
@@ -208,29 +229,39 @@ impl Service {
         &'a self,
         today: &'a NaiveDate,
     ) -> impl DoubleEndedIterator<Item = PendingRef<'a>> {
-        self.db.pending.iter().flat_map(move |p| {
-            let series = self.db.series.get(&p.series)?;
+        self.db
+            .pending
+            .iter()
+            .flat_map(move |p| self.pending_ref(p, Some(today)))
+    }
 
-            if !series.tracked {
-                return None;
-            }
+    /// Get pending by series.
+    pub(crate) fn pending_by_series(&self, series_id: &SeriesId) -> Option<PendingRef<'_>> {
+        let p = self.db.pending.get(series_id)?;
+        self.pending_ref(p, None)
+    }
 
-            let episode = self.db.episodes.get(&p.episode)?;
+    fn pending_ref(&self, p: &Pending, today: Option<&NaiveDate>) -> Option<PendingRef<'_>> {
+        let series = self.db.series.get(&p.series)?;
 
+        if !series.tracked {
+            return None;
+        }
+
+        let episode = self.db.episodes.get(&p.episode)?;
+
+        if let Some(today) = today {
             if !episode.has_aired(today) {
                 return None;
             }
+        }
 
-            let season = self
-                .seasons(&p.series)
-                .iter()
-                .find(|s| s.number == episode.season);
+        let season = self.season(&p.series, &episode.season);
 
-            Some(PendingRef {
-                series,
-                season,
-                episode: episode,
-            })
+        Some(PendingRef {
+            series,
+            season,
+            episode,
         })
     }
 

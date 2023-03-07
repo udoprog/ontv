@@ -23,7 +23,7 @@ pub(crate) struct Props<I> {
 }
 
 pub(crate) struct Episode {
-    include_series: bool,
+    pending_series: bool,
     episode_id: EpisodeId,
     watch: comps::Watch,
     remove_last_watch: Option<comps::Confirm>,
@@ -43,7 +43,7 @@ where
     #[inline]
     fn new(props: Props<I>) -> Self {
         Self {
-            include_series: props.include_series,
+            pending_series: props.include_series,
             episode_id: props.episode_id,
             watch: comps::Watch::new(comps::watch::Props::new(props.episode_id)),
             remove_last_watch: props.watched.clone().next_back().map(move |w| {
@@ -71,7 +71,7 @@ where
 
     #[inline]
     fn changed(&mut self, props: Props<I>) {
-        self.include_series = props.include_series;
+        self.pending_series = props.include_series;
         self.episode_id = props.episode_id;
         self.watch
             .changed(comps::watch::Props::new(props.episode_id));
@@ -95,9 +95,9 @@ where
 impl Episode {
     pub(crate) fn prepare(&mut self, s: &mut State) {
         if let Some(e) = s.service.episode(&self.episode_id) {
-            if self.include_series {
-                if let Some(series) = s.service.series(e.series()) {
-                    s.assets.mark_with_hint(series.poster(), POSTER_HINT);
+            if self.pending_series {
+                if let Some(p) = s.service.pending_by_series(e.series()) {
+                    s.assets.mark_with_hint(p.poster(), POSTER_HINT);
                 }
             } else {
                 s.assets.mark_with_hint(e.filename(), SCREENCAP_HINT);
@@ -138,14 +138,14 @@ impl Episode {
             return w::Column::new().into();
         };
 
-        let series = if self.include_series {
-            s.service.series(e.series())
+        let pending_series = if self.pending_series {
+            s.service.pending_by_series(e.series())
         } else {
             None
         };
 
-        let image = if let Some(series) = series {
-            let poster = match series
+        let image = if let Some(p) = pending_series {
+            let poster = match p
                 .poster()
                 .and_then(|image| s.assets.image_with_hint(&image, POSTER_HINT))
             {
@@ -272,12 +272,12 @@ impl Episode {
 
         let mut info_top = w::Column::new();
 
-        if let Some(series) = series {
+        if let Some(p) = pending_series {
             info_top = info_top.push(
-                w::button(w::text(&series.title).size(SUBTITLE_SIZE))
+                w::button(w::text(&p.series.title).size(SUBTITLE_SIZE))
                     .padding(0)
                     .style(theme::Button::Text)
-                    .on_press(Message::Navigate(Page::Series(series.id))),
+                    .on_press(Message::Navigate(Page::Series(p.series.id))),
             );
         }
 
