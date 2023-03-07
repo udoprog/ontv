@@ -92,6 +92,7 @@ impl Watch {
         air_date: theme::Button,
         width: Length,
         alignment: Horizontal,
+        reminder: bool,
     ) -> Element<'static, Message> {
         let mut row = Row::new().width(width);
 
@@ -103,11 +104,23 @@ impl Watch {
                 button(text("Air date").size(SMALL))
                     .style(air_date)
                     .on_press(Message::AirDate),
-                button(text("Cancel").size(SMALL))
-                    .style(theme::Button::Secondary)
-                    .width(Length::Fill)
-                    .on_press(Message::Cancel),
+                button(
+                    text("Cancel")
+                        .horizontal_alignment(Horizontal::Center)
+                        .size(SMALL),
+                )
+                .style(theme::Button::Secondary)
+                .width(width)
+                .on_press(Message::Cancel),
             ];
+
+            let head = if reminder {
+                Some(button(text(title).size(SMALL)).style(theme::Button::Secondary))
+            } else {
+                None
+            };
+
+            let buttons = head.into_iter().chain(buttons);
 
             match self.props.ordering {
                 Ordering::Right => {
@@ -116,7 +129,7 @@ impl Watch {
                     }
                 }
                 Ordering::Left => {
-                    for b in buttons.into_iter().rev() {
+                    for b in buttons.rev() {
                         row = row.push(b);
                     }
                 }
@@ -130,8 +143,8 @@ impl Watch {
                         .horizontal_alignment(alignment),
                 )
                 .style(right_now)
-                .on_press(Message::Start)
-                .width(width),
+                .width(width)
+                .on_press(Message::Start),
             );
         }
 

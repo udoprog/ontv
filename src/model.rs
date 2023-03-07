@@ -194,6 +194,49 @@ pub(crate) enum RemoteId {
     },
 }
 
+/// Remote series season.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum RemoteSeasonId {
+    Tmdb { id: u32, season: SeasonNumber },
+    Imdb { id: Raw<16>, season: SeasonNumber },
+}
+
+impl RemoteSeasonId {
+    pub(crate) fn url(&self) -> String {
+        match self {
+            RemoteSeasonId::Tmdb { id, season } => {
+                let season = match season {
+                    SeasonNumber::Specials => 0,
+                    SeasonNumber::Number(n) => *n,
+                };
+
+                format!("https://www.themoviedb.org/tv/{id}/season/{season}")
+            }
+            RemoteSeasonId::Imdb { id, season } => {
+                let season = match season {
+                    SeasonNumber::Specials => -1,
+                    SeasonNumber::Number(n) => *n as i64,
+                };
+
+                format!("https://www.imdb.com/title/{id}/episodes?season={season}")
+            }
+        }
+    }
+}
+
+impl fmt::Display for RemoteSeasonId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RemoteSeasonId::Tmdb { id, season } => {
+                write!(f, "tmdb:{id} ({season})")
+            }
+            RemoteSeasonId::Imdb { id, season } => {
+                write!(f, "imdb:{id} ({season})")
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum RemoteSeriesId {
     Tvdb { id: u32 },
@@ -202,6 +245,15 @@ pub(crate) enum RemoteSeriesId {
 }
 
 impl RemoteSeriesId {
+    /// Coerce into a remote season.
+    pub(crate) fn into_season(self, season: SeasonNumber) -> Option<RemoteSeasonId> {
+        match self {
+            RemoteSeriesId::Tmdb { id } => Some(RemoteSeasonId::Tmdb { id, season }),
+            RemoteSeriesId::Imdb { id } => Some(RemoteSeasonId::Imdb { id, season }),
+            _ => None,
+        }
+    }
+
     pub(crate) fn url(&self) -> String {
         match self {
             RemoteSeriesId::Tvdb { id } => {

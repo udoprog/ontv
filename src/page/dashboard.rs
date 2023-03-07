@@ -268,6 +268,7 @@ impl Dashboard {
                         theme::Button::Positive,
                         Length::FillPortion(5),
                         Horizontal::Center,
+                        false,
                     )
                     .map(move |m| Message::Watch(index, m)),
             );

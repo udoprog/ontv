@@ -60,6 +60,10 @@ impl Component<Props> for WatchRemaining {
 }
 
 impl WatchRemaining {
+    pub(crate) fn is_confirm(&self) -> bool {
+        self.confirm
+    }
+
     pub(crate) fn update(&mut self, s: &mut State, message: Message) {
         match message {
             Message::RightNow => {

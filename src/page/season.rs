@@ -6,7 +6,7 @@ use iced::{Element, Length};
 
 use crate::component::*;
 use crate::comps;
-use crate::model::{EpisodeId, SeasonNumber, SeriesId, Watched};
+use crate::model::{EpisodeId, RemoteSeasonId, SeasonNumber, SeriesId, Watched};
 use crate::params::{
     centered, GAP, GAP2, SCREENCAP_HEIGHT, SCREENCAP_HINT, SMALL, SPACE, SUBTITLE_SIZE,
 };
@@ -16,6 +16,7 @@ use crate::state::State;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
+    OpenRemote(RemoteSeasonId),
     RemoveLastWatch(usize, comps::confirm::Message),
     RemoveWatch(usize, usize, comps::confirm::Message),
     Watch(usize, comps::watch::Message),
@@ -129,6 +130,10 @@ impl Season {
 
     pub(crate) fn update(&mut self, s: &mut State, message: Message) {
         match message {
+            Message::OpenRemote(remote) => {
+                let url = remote.url();
+                let _ = webbrowser::open_browser(webbrowser::Browser::Default, &url);
+            }
             Message::RemoveLastWatch(index, message) => {
                 if let Some(c) = self
                     .episodes
@@ -209,48 +214,62 @@ impl Season {
 
             let mut actions = Row::new().spacing(SPACE);
 
+            let any_confirm = data.watch.is_confirm()
+                || data
+                    .remove_last_watch
+                    .as_ref()
+                    .map(comps::Confirm::is_confirm)
+                    .unwrap_or_default();
+
             let watch_text = match watched.len() {
                 0 => "First watch",
                 _ => "Watch again",
             };
 
-            actions = actions.push(
-                data.watch
-                    .view(
-                        watch_text,
-                        theme::Button::Positive,
-                        theme::Button::Positive,
-                        Length::Shrink,
-                        Horizontal::Center,
-                    )
-                    .map(move |m| Message::Watch(index, m)),
-            );
-
-            let remove_last = match (watched.len(), &data.remove_last_watch) {
-                (1, Some(c)) => Some(("Remove watch", c)),
-                (_, Some(c)) => Some(("Remove last watch", c)),
-                _ => None,
-            };
-
-            if let Some((watch_text, c)) = remove_last {
+            if !any_confirm || data.watch.is_confirm() {
                 actions = actions.push(
-                    c.view(watch_text, theme::Button::Destructive)
-                        .map(move |m| Message::RemoveLastWatch(index, m)),
+                    data.watch
+                        .view(
+                            watch_text,
+                            theme::Button::Positive,
+                            theme::Button::Positive,
+                            Length::Shrink,
+                            Horizontal::Center,
+                            true,
+                        )
+                        .map(move |m| Message::Watch(index, m)),
                 );
             }
 
-            if pending != Some(episode.id) {
-                actions = actions.push(
-                    button(text("Make next episode").size(SMALL))
-                        .style(theme::Button::Secondary)
-                        .on_press(Message::SelectPending(series.id, episode.id)),
-                );
-            } else {
-                actions = actions.push(
-                    button(text("Clear next episode").size(SMALL))
-                        .style(theme::Button::Destructive)
-                        .on_press(Message::ClearPending(episode.id)),
-                );
+            if let Some(remove_last_watch) = &data.remove_last_watch {
+                if !any_confirm || remove_last_watch.is_confirm() {
+                    let watch_text = match watched.len() {
+                        1 => "Remove watch",
+                        _ => "Remove last watch",
+                    };
+
+                    actions = actions.push(
+                        remove_last_watch
+                            .view(watch_text, theme::Button::Destructive)
+                            .map(move |m| Message::RemoveLastWatch(index, m)),
+                    );
+                }
+            }
+
+            if !any_confirm {
+                if pending != Some(episode.id) {
+                    actions = actions.push(
+                        button(text("Make next episode").size(SMALL))
+                            .style(theme::Button::Secondary)
+                            .on_press(Message::SelectPending(series.id, episode.id)),
+                    );
+                } else {
+                    actions = actions.push(
+                        button(text("Clear next episode").size(SMALL))
+                            .style(theme::Button::Destructive)
+                            .on_press(Message::ClearPending(episode.id)),
+                    );
+                }
             }
 
             let mut show_info = Column::new();
@@ -340,15 +359,39 @@ impl Season {
 
         let season_title = text(season.number).size(SUBTITLE_SIZE);
 
-        let banner = Column::new()
+        let mut banner = Column::new()
             .push(self.banner.view(s, series).map(Message::SeriesBanner))
             .push(season_title)
             .align_items(Alignment::Center)
             .spacing(GAP);
 
-        let top = self.season_info.view(s).map(Message::SeasonInfo);
+        let mut remote_ids = s
+            .service
+            .remotes_by_series(&series.id)
+            .flat_map(|remote_id| remote_id.into_season(season.number))
+            .peekable();
 
-        let header = centered(Column::new().push(banner).push(top).spacing(GAP), None).padding(GAP);
+        if remote_ids.peek().is_some() {
+            let mut remotes = Row::new();
+
+            for remote_season in remote_ids {
+                remotes = remotes.push(
+                    button(text(&remote_season))
+                        .style(theme::Button::Text)
+                        .on_press(Message::OpenRemote(remote_season)),
+                );
+            }
+
+            banner = banner.push(remotes.spacing(SPACE));
+        }
+
+        let top = Column::new()
+            .push(banner)
+            .push(self.season_info.view(s).map(Message::SeasonInfo))
+            .spacing(GAP)
+            .width(Length::Fill);
+
+        let header = centered(top, None).padding(GAP);
 
         Column::new()
             .push(header)

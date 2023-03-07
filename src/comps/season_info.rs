@@ -65,7 +65,9 @@ impl SeasonInfo {
         let (watched, total) = s.service.season_watched(&self.series_id, &self.season);
         let mut actions = Row::new().spacing(SPACE);
 
-        if watched < total {
+        let any_confirm = self.watch_remaining.is_confirm() || self.remove_watches.is_confirm();
+
+        if watched < total && !any_confirm || self.watch_remaining.is_confirm() {
             actions = actions.push(
                 self.watch_remaining
                     .view(
@@ -77,7 +79,7 @@ impl SeasonInfo {
             );
         }
 
-        if watched != 0 {
+        if watched != 0 && !any_confirm || self.remove_watches.is_confirm() {
             actions = actions.push(
                 self.remove_watches
                     .view("Remove watches", theme::Button::Destructive)
