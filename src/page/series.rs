@@ -1,12 +1,4 @@
-use iced::widget::{button, image, text, Column, Row};
-use iced::{theme, Alignment, Element, Length};
-
-use crate::component::*;
-use crate::comps;
-use crate::model::{RemoteSeriesId, SeriesId};
-use crate::params::{centered, GAP, GAP2, IMAGE_HEIGHT, POSTER_HINT, SPACE, SUBTITLE_SIZE};
-use crate::state::{Page, State};
-use crate::style;
+use crate::prelude::*;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -81,19 +73,19 @@ impl Series {
 
     pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
         let Some(series) = s.service.series(&self.series_id) else {
-            return Column::new().into();
+            return w::Column::new().into();
         };
 
-        let mut top = Column::new().push(self.banner.view(s, series).map(Message::SeriesBanner));
+        let mut top = w::Column::new().push(self.banner.view(s, series).map(Message::SeriesBanner));
 
         let remote_ids = s.service.remotes_by_series(&series.id);
 
         if remote_ids.len() > 0 {
-            let mut remotes = Row::new();
+            let mut remotes = w::Row::new();
 
             for remote_id in remote_ids {
                 remotes = remotes.push(
-                    button(text(remote_id.to_string()))
+                    w::button(w::text(remote_id.to_string()))
                         .style(theme::Button::Text)
                         .on_press(Message::OpenRemote(remote_id)),
                 );
@@ -102,7 +94,7 @@ impl Series {
             top = top.push(remotes.spacing(SPACE));
         }
 
-        let mut cols = Column::new();
+        let mut cols = w::Column::new();
 
         for (index, (season, c)) in s
             .service
@@ -122,22 +114,22 @@ impl Series {
                 None => s.missing_poster(),
             };
 
-            let graphic = button(image(poster).height(IMAGE_HEIGHT))
+            let graphic = w::button(w::image(poster).height(IMAGE_HEIGHT))
                 .on_press(Message::Navigate(Page::Season(series.id, season.number)))
                 .style(theme::Button::Text)
                 .padding(0);
 
-            let title = button(text(season.number).size(SUBTITLE_SIZE))
+            let title = w::button(w::text(season.number).size(SUBTITLE_SIZE))
                 .padding(0)
                 .style(theme::Button::Text)
                 .on_press(Message::Navigate(Page::Season(series.id, season.number)));
 
             cols = cols.push(
                 centered(
-                    Row::new()
+                    w::Row::new()
                         .push(graphic)
                         .push(
-                            Column::new()
+                            w::Column::new()
                                 .push(title)
                                 .push(c.view(s).map(move |m| Message::SeasonInfo(index, m)))
                                 .spacing(SPACE),
@@ -150,23 +142,23 @@ impl Series {
         }
 
         let info = match s.service.episodes(&series.id).len() {
-            0 => text("No episodes"),
-            1 => text("One episode"),
-            count => text(format!("{count} episodes")),
+            0 => w::text("No episodes"),
+            1 => w::text("One episode"),
+            count => w::text(format!("{count} episodes")),
         };
 
-        let mut header = Column::new()
+        let mut header = w::Column::new()
             .push(top.align_items(Alignment::Center).spacing(GAP))
             .push(self.series.view(s, series).map(Message::SeriesActions))
             .push(info);
 
         if !series.overview.is_empty() {
-            header = header.push(text(&series.overview));
+            header = header.push(w::text(&series.overview));
         }
 
         let header = centered(header.spacing(GAP), None).padding(GAP);
 
-        Column::new()
+        w::Column::new()
             .push(header)
             .push(cols.spacing(GAP2))
             .width(Length::Fill)

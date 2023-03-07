@@ -1,11 +1,4 @@
-use iced::widget::{text, Column, Row};
-use iced::{theme, Element, Length};
-
-use crate::component::Component;
-use crate::comps;
-use crate::model::{SeasonNumber, SeriesId};
-use crate::params::{GAP, SPACE};
-use crate::state::State;
+use crate::prelude::*;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -63,7 +56,7 @@ impl SeasonInfo {
 
     pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
         let (watched, total) = s.service.season_watched(&self.series_id, &self.season);
-        let mut actions = Row::new().spacing(SPACE);
+        let mut actions = w::Row::new().spacing(SPACE);
 
         let any_confirm = self.watch_remaining.is_confirm() || self.remove_watches.is_confirm();
 
@@ -92,17 +85,12 @@ impl SeasonInfo {
             _ => "episodes",
         };
 
-        let percentage = if let Some(p) = (watched * 100).checked_div(total) {
-            format!("{p}%")
-        } else {
-            String::from("0%")
-        };
-
-        let info = text(format!(
-            "Watched {watched} out of {total} {plural} ({percentage})"
+        let info = w::text(format_args!(
+            "Watched {watched} out of {total} {plural} ({percentage}%)",
+            percentage = (watched * 100).checked_div(total).unwrap_or(0),
         ));
 
-        Column::new()
+        w::Column::new()
             .push(actions)
             .push(info)
             .spacing(GAP)

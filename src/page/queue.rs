@@ -1,14 +1,6 @@
 use std::time::Duration;
 
-use chrono::Utc;
-use iced::alignment::Horizontal;
-use iced::widget::{button, horizontal_rule, text, vertical_space, Column, Row};
-use iced::{theme, Element, Length};
-
-use crate::commands::Commands;
-use crate::model::{RemoteMovieId, RemoteSeriesId, SeriesId, TaskId};
-use crate::params::{default_container, duration_display, GAP, GAP2, SMALL, SPACE};
-use crate::state::{Page, State};
+use crate::prelude::*;
 use crate::utils::{TimedOut, Timeout};
 
 const UPDATE_TIMER: u64 = 10;
@@ -71,14 +63,14 @@ impl Queue {
     pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
         let now = Utc::now();
 
-        let mut running_col = Column::new();
+        let mut running_col = w::Column::new();
 
         let mut running = s.service.running_tasks().peekable();
 
         running_col = running_col.push(
-            Row::new()
+            w::Row::new()
                 .push(
-                    text(format!("Running ({})", running.len()))
+                    w::text(format!("Running ({})", running.len()))
                         .width(Length::Fill)
                         .horizontal_alignment(Horizontal::Center),
                 )
@@ -87,37 +79,37 @@ impl Queue {
 
         if running.len() == 0 {
             running_col = running_col.push(
-                text("Empty")
+                w::text("Empty")
                     .size(SMALL)
                     .width(Length::Fill)
                     .horizontal_alignment(Horizontal::Center),
             );
         }
 
-        let mut list = Column::new();
+        let mut list = w::Column::new();
 
         while let Some(task) = running.next() {
-            let mut row = Row::new();
+            let mut row = w::Row::new();
             let update = build_task_row(s, &task.kind);
             row = row.push(update.width(Length::Fill).spacing(GAP));
 
             list = list.push(row.width(Length::Fill).spacing(GAP));
 
             if running.peek().is_some() {
-                list = list.push(horizontal_rule(1));
+                list = list.push(w::horizontal_rule(1));
             }
         }
 
         running_col = running_col.push(list.spacing(SPACE));
 
-        let mut tasks_col = Column::new();
+        let mut tasks_col = w::Column::new();
 
         let mut tasks = s.service.tasks().peekable();
 
         tasks_col = tasks_col.push(
-            Row::new()
+            w::Row::new()
                 .push(
-                    text(format!("Queue ({})", tasks.len()))
+                    w::text(format!("Queue ({})", tasks.len()))
                         .width(Length::Fill)
                         .horizontal_alignment(Horizontal::Center),
                 )
@@ -126,14 +118,14 @@ impl Queue {
 
         if tasks.len() == 0 {
             tasks_col = tasks_col.push(
-                text("Empty")
+                w::text("Empty")
                     .size(SMALL)
                     .width(Length::Fill)
                     .horizontal_alignment(Horizontal::Center),
             );
         }
 
-        let mut list = Column::new();
+        let mut list = w::Column::new();
 
         while let Some(task) = tasks.next() {
             let mut row = build_task_row(s, &task.kind.id());
@@ -149,20 +141,20 @@ impl Queue {
             list = list.push(row.width(Length::Fill).spacing(GAP));
 
             if tasks.peek().is_some() {
-                list = list.push(horizontal_rule(1));
+                list = list.push(w::horizontal_rule(1));
             }
         }
 
         tasks_col = tasks_col.push(list.spacing(SPACE));
 
-        let page = Row::new()
+        let page = w::Row::new()
             .push(tasks_col.width(Length::FillPortion(1)).spacing(GAP))
             .push(running_col.width(Length::FillPortion(1)).spacing(GAP));
 
         default_container(
-            Column::new()
+            w::Column::new()
                 .push(page.spacing(GAP2))
-                .push(vertical_space(Length::Shrink))
+                .push(w::vertical_space(Length::Shrink))
                 .padding(GAP)
                 .spacing(GAP),
         )
@@ -170,8 +162,8 @@ impl Queue {
     }
 }
 
-fn build_task_row<'a>(s: &State, kind: &TaskId) -> Row<'a, Message> {
-    let mut update = Row::new();
+fn build_task_row<'a>(s: &State, kind: &TaskId) -> w::Row<'a, Message> {
+    let mut update = w::Row::new();
 
     match kind {
         TaskId::CheckForUpdates {
@@ -179,18 +171,18 @@ fn build_task_row<'a>(s: &State, kind: &TaskId) -> Row<'a, Message> {
             remote_id,
             ..
         } => {
-            update = update.push(text("Updates").size(SMALL));
+            update = update.push(w::text("Updates").size(SMALL));
             update = decorate_series(s, series_id, Some(remote_id), update);
         }
         TaskId::DownloadSeriesById { series_id, .. } => {
-            update = update.push(text("Downloading").size(SMALL));
+            update = update.push(w::text("Downloading").size(SMALL));
             update = decorate_series(s, series_id, None, update);
         }
         TaskId::DownloadSeriesByRemoteId { remote_id, .. } => {
-            update = update.push(text("Downloading").size(SMALL).width(Length::Fill));
+            update = update.push(w::text("Downloading").size(SMALL).width(Length::Fill));
 
             update = update.push(
-                button(text(remote_id).size(SMALL))
+                w::button(w::text(remote_id).size(SMALL))
                     .width(Length::Fill)
                     .style(theme::Button::Text)
                     .padding(0)
@@ -198,10 +190,10 @@ fn build_task_row<'a>(s: &State, kind: &TaskId) -> Row<'a, Message> {
             );
         }
         TaskId::DownloadMovieByRemoteId { remote_id } => {
-            update = update.push(text("Downloading").size(SMALL).width(Length::Fill));
+            update = update.push(w::text("Downloading").size(SMALL).width(Length::Fill));
 
             update = update.push(
-                button(text(remote_id).size(SMALL))
+                w::button(w::text(remote_id).size(SMALL))
                     .width(Length::Fill)
                     .style(theme::Button::Text)
                     .padding(0)
@@ -217,11 +209,11 @@ fn decorate_series<'a>(
     state: &State,
     series_id: &SeriesId,
     remote_id: Option<&RemoteSeriesId>,
-    mut row: Row<'a, Message>,
-) -> Row<'a, Message> {
+    mut row: w::Row<'a, Message>,
+) -> w::Row<'a, Message> {
     let remote_id = if let Some(series) = state.service.series(series_id) {
         row = row.push(
-            button(text(&series.title).size(SMALL))
+            w::button(w::text(&series.title).size(SMALL))
                 .style(theme::Button::Text)
                 .padding(0)
                 .on_press(Message::Navigate(Page::Series(*series_id))),
@@ -229,13 +221,13 @@ fn decorate_series<'a>(
 
         remote_id.or(series.remote_id.as_ref())
     } else {
-        row = row.push(text(format!("{series_id}")).size(SMALL));
+        row = row.push(w::text(format!("{series_id}")).size(SMALL));
         remote_id
     };
 
     if let Some(remote_id) = remote_id {
         row = row.push(
-            button(text(remote_id).size(SMALL))
+            w::button(w::text(remote_id).size(SMALL))
                 .width(Length::Fill)
                 .style(theme::Button::Text)
                 .padding(0)

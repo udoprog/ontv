@@ -1,9 +1,4 @@
-use iced::widget::{button, image, text, Column};
-use iced::{theme, Alignment, Element, Length};
-
-use crate::model::{Series, SeriesId};
-use crate::params::{BANNER, GAP, TITLE_SIZE};
-use crate::state::{Page, State};
+use crate::prelude::*;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -40,14 +35,14 @@ impl SeriesBanner {
             None => s.assets.missing_banner(),
         };
 
-        let banner = image(handle);
+        let banner = w::image(handle);
 
-        let title = button(text(&series.title).size(TITLE_SIZE))
+        let title = w::button(w::text(&series.title).size(TITLE_SIZE))
             .padding(0)
             .style(theme::Button::Text)
             .on_press(Message::Navigate(Page::Series(series.id)));
 
-        Column::new()
+        w::Column::new()
             .push(banner)
             .push(title)
             .spacing(GAP)

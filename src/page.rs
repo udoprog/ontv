@@ -24,3 +24,6 @@ pub(crate) use self::settings::Settings;
 
 pub(crate) mod errors;
 pub(crate) use self::errors::Errors;
+
+pub(crate) mod watch_next;
+pub(crate) use self::watch_next::WatchNext;

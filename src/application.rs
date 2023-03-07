@@ -30,6 +30,7 @@ pub(crate) enum Message {
     CloseRequested,
     Settings(page::settings::Message),
     Dashboard(page::dashboard::Message),
+    WatchNext(page::watch_next::Message),
     Search(page::search::Message),
     SeriesList(page::series_list::Message),
     Series(page::series::Message),
@@ -62,6 +63,7 @@ pub(crate) enum Message {
 /// Current page state.
 enum Current {
     Dashboard(page::Dashboard),
+    WatchNext(page::WatchNext),
     Settings(page::Settings),
     Search(page::Search),
     Series(page::Series),
@@ -143,6 +145,7 @@ impl iced::Application for Application {
                 Page::Dashboard => {
                     return format!("{BASE} - Dashboard");
                 }
+                Page::WatchNext => return format!("{BASE} - Watch next"),
                 Page::Search => {
                     return format!("{BASE} - Search");
                 }
@@ -188,6 +191,9 @@ impl iced::Application for Application {
                 page.update(&mut self.state, message);
             }
             (Message::Dashboard(message), Current::Dashboard(page)) => {
+                page.update(&mut self.state, message);
+            }
+            (Message::WatchNext(message), Current::WatchNext(page)) => {
                 page.update(&mut self.state, message);
             }
             (Message::Search(message), Current::Search(page)) => {
@@ -337,6 +343,7 @@ impl iced::Application for Application {
         if let Some((page, scroll)) = self.state.history_change() {
             self.current = match page {
                 Page::Dashboard => Current::Dashboard(page::Dashboard::new(&self.state)),
+                Page::WatchNext => Current::WatchNext(page::WatchNext::new()),
                 Page::Search => Current::Search(page::Search::default()),
                 Page::SeriesList => Current::SeriesList(page::SeriesList::default()),
                 Page::Series(series_id) => Current::Series(page::Series::new(series_id)),
@@ -456,6 +463,7 @@ impl iced::Application for Application {
 
         let page: Element<'static, Message> = match &self.current {
             Current::Dashboard(page) => page.view(&self.state).map(Message::Dashboard),
+            Current::WatchNext(page) => page.view(&self.state).map(Message::WatchNext),
             Current::Search(page) => page.view(&self.state).map(Message::Search),
             Current::SeriesList(page) => page.view(&self.state).map(Message::SeriesList),
             Current::Series(page) => page.view(&self.state).map(Message::Series),
@@ -526,6 +534,9 @@ impl Application {
     fn prepare(&mut self) {
         match &mut self.current {
             Current::Dashboard(page) => {
+                page.prepare(&mut self.state);
+            }
+            Current::WatchNext(page) => {
                 page.prepare(&mut self.state);
             }
             Current::Search(page) => {

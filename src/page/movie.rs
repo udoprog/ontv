@@ -1,8 +1,4 @@
-use iced::widget::{text, Column};
-use iced::Element;
-
-use crate::model::MovieId;
-use crate::state::State;
+use crate::prelude::*;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {}
@@ -25,8 +21,8 @@ impl Movie {
     }
 
     pub(crate) fn view(&self, _: &State) -> Element<'static, Message> {
-        let id = text(self.movie_id.to_string());
+        let id = w::text(self.movie_id.to_string());
 
-        Column::new().push(id).into()
+        w::Column::new().push(id).into()
     }
 }

@@ -14,6 +14,7 @@ use crate::service::{NewSeries, Service};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Page {
     Dashboard,
+    WatchNext,
     Search,
     SeriesList,
     Series(SeriesId),

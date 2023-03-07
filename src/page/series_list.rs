@@ -1,12 +1,4 @@
-use iced::widget::{button, image, text, text_input, Column, Row};
-use iced::{theme, Element, Length};
-
-use crate::component::*;
-use crate::comps;
-use crate::model::SeriesId;
-use crate::params::{centered, GAP, GAP2, IMAGE_HEIGHT, POSTER_HINT, SPACE, SUBTITLE_SIZE};
-use crate::state::{Page, State};
-use crate::style;
+use crate::prelude::*;
 
 /// Messages generated and handled by [SeriesList].
 #[derive(Debug, Clone)]
@@ -76,7 +68,7 @@ impl SeriesList {
     }
 
     pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
-        let mut rows = Column::new();
+        let mut rows = w::Column::new();
 
         let mut it;
         let mut it2;
@@ -98,14 +90,14 @@ impl SeriesList {
                 None => s.missing_poster(),
             };
 
-            let graphic = button(image(poster).height(IMAGE_HEIGHT))
+            let graphic = w::button(w::image(poster).height(IMAGE_HEIGHT))
                 .on_press(Message::Navigate(Page::Series(series.id)))
                 .style(theme::Button::Text)
                 .padding(0);
 
             let episodes = s.service.episodes(&series.id);
 
-            let title = button(text(&series.title).size(SUBTITLE_SIZE))
+            let title = w::button(w::text(&series.title).size(SUBTITLE_SIZE))
                 .padding(0)
                 .style(theme::Button::Text)
                 .on_press(Message::Navigate(Page::Series(series.id)));
@@ -114,23 +106,23 @@ impl SeriesList {
                 .view(s, series)
                 .map(move |m| Message::SeriesActions(index, m));
 
-            let mut content = Column::new().width(Length::Fill);
+            let mut content = w::Column::new().width(Length::Fill);
 
             content = content.push(
-                Column::new()
+                w::Column::new()
                     .push(title)
-                    .push(text(format!("{} episode(s)", episodes.len())))
+                    .push(w::text(format!("{} episode(s)", episodes.len())))
                     .push(actions)
                     .spacing(SPACE),
             );
 
             if !series.overview.is_empty() {
-                content = content.push(text(&series.overview));
+                content = content.push(w::text(&series.overview));
             }
 
             rows = rows.push(
                 centered(
-                    Row::new()
+                    w::Row::new()
                         .push(graphic)
                         .push(content.spacing(GAP))
                         .spacing(GAP)
@@ -141,14 +133,14 @@ impl SeriesList {
             );
         }
 
-        let filter = text_input("Filter...", &self.filter, |value| {
+        let filter = w::text_input("Filter...", &self.filter, |value| {
             Message::ChangeFilter(value)
         })
         .width(Length::Fill);
 
-        Column::new()
+        w::Column::new()
             .push(centered(
-                Row::new().push(filter).padding(GAP).width(Length::Fill),
+                w::Row::new().push(filter).padding(GAP).width(Length::Fill),
                 None,
             ))
             .push(rows.spacing(GAP2))

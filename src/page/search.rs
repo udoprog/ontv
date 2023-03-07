@@ -1,20 +1,5 @@
-use anyhow::{anyhow, Context, Result};
-use iced::widget::{button, image, radio, text, text_input, Column, Row};
-use iced::{theme, Alignment, Element, Length};
-use uuid::Uuid;
-
-use crate::commands::Commands;
-use crate::error::{ErrorId, ErrorInfo};
-use crate::model::{
-    MovieId, RemoteMovieId, RemoteSeriesId, SearchKind, SearchMovie, SearchSeries, SeriesId,
-    TaskId, TaskKind,
-};
-use crate::params::{
-    default_container, GAP, GAP2, IMAGE_HEIGHT, POSTER_HINT, SMALL, SPACE, SUBTITLE_SIZE,
-    TITLE_SIZE,
-};
+use crate::prelude::*;
 use crate::queue::TaskStatus;
-use crate::state::{Page, State};
 
 /// Number of results per page.
 const PER_PAGE: usize = 5;
@@ -173,7 +158,7 @@ impl Search {
 
     /// Generate the view for the settings page.
     pub(crate) fn view(&self, st: &State) -> Element<'static, Message> {
-        let mut series = Column::new();
+        let mut series = w::Column::new();
 
         for s in self
             .series
@@ -191,7 +176,7 @@ impl Search {
                 None => st.missing_poster(),
             };
 
-            let mut actions = Row::new();
+            let mut actions = w::Row::new();
 
             let status = st
                 .service
@@ -199,32 +184,34 @@ impl Search {
 
             match status {
                 Some(TaskStatus::Pending) => {
-                    actions = actions
-                        .push(button(text("Queued...").size(SMALL)).style(theme::Button::Primary));
+                    actions = actions.push(
+                        w::button(w::text("Queued...").size(SMALL)).style(theme::Button::Primary),
+                    );
                 }
                 Some(TaskStatus::Running) => {
                     actions = actions.push(
-                        button(text("Downloading...").size(SMALL)).style(theme::Button::Primary),
+                        w::button(w::text("Downloading...").size(SMALL))
+                            .style(theme::Button::Primary),
                     );
                 }
                 None => {
                     if let Some(local) = local_series {
                         if local.remote_id != Some(s.id) {
                             actions = actions.push(
-                                button(text("Switch").size(SMALL))
+                                w::button(w::text("Switch").size(SMALL))
                                     .style(theme::Button::Primary)
                                     .on_press(Message::SwitchSeries(local.id, s.id)),
                             );
                         }
 
                         actions = actions.push(
-                            button(text("Remove").size(SMALL))
+                            w::button(w::text("Remove").size(SMALL))
                                 .style(theme::Button::Destructive)
                                 .on_press(Message::RemoveSeries(local.id)),
                         );
                     } else {
                         actions = actions.push(
-                            button(text("Add").size(SMALL))
+                            w::button(w::text("Add").size(SMALL))
                                 .style(theme::Button::Positive)
                                 .on_press(Message::AddSeriesByRemote(s.id)),
                         );
@@ -232,19 +219,19 @@ impl Search {
                 }
             }
 
-            let mut first_aired = Column::new();
+            let mut first_aired = w::Column::new();
 
             if let Some(date) = s.first_aired {
-                first_aired = first_aired.push(text(format!("First aired: {date}")).size(SMALL));
+                first_aired = first_aired.push(w::text(format!("First aired: {date}")).size(SMALL));
             }
 
-            let mut result = Column::new();
+            let mut result = w::Column::new();
 
-            let series_name = text(&s.name).size(SUBTITLE_SIZE);
+            let series_name = w::text(&s.name).size(SUBTITLE_SIZE);
 
             if let Some(local_series) = local_series {
                 result = result.push(
-                    button(series_name)
+                    w::button(series_name)
                         .style(theme::Button::Text)
                         .padding(0)
                         .on_press(Message::Navigate(Page::Series(local_series.id))),
@@ -257,12 +244,12 @@ impl Search {
             result = result.push(actions.spacing(SPACE));
 
             series = series.push(
-                Row::new()
-                    .push(image(handle).height(IMAGE_HEIGHT))
+                w::Row::new()
+                    .push(w::image(handle).height(IMAGE_HEIGHT))
                     .push(
-                        Column::new()
+                        w::Column::new()
                             .push(result.spacing(SPACE))
-                            .push(text(&s.overview))
+                            .push(w::text(&s.overview))
                             .spacing(GAP),
                     )
                     .spacing(GAP),
@@ -275,7 +262,7 @@ impl Search {
             Message::SeriesPage,
         ));
 
-        let mut movies = Column::new();
+        let mut movies = w::Column::new();
 
         for m in self
             .movies
@@ -293,7 +280,7 @@ impl Search {
                 None => st.missing_poster(),
             };
 
-            let mut actions = Row::new();
+            let mut actions = w::Row::new();
 
             let status = st
                 .service
@@ -301,32 +288,34 @@ impl Search {
 
             match status {
                 Some(TaskStatus::Pending) => {
-                    actions = actions
-                        .push(button(text("Queued...").size(SMALL)).style(theme::Button::Primary));
+                    actions = actions.push(
+                        w::button(w::text("Queued...").size(SMALL)).style(theme::Button::Primary),
+                    );
                 }
                 Some(TaskStatus::Running) => {
                     actions = actions.push(
-                        button(text("Downloading...").size(SMALL)).style(theme::Button::Primary),
+                        w::button(w::text("Downloading...").size(SMALL))
+                            .style(theme::Button::Primary),
                     );
                 }
                 None => {
                     if let Some(local) = local_movie {
                         if local.remote_id != Some(m.id) {
                             actions = actions.push(
-                                button(text("Switch").size(SMALL))
+                                w::button(w::text("Switch").size(SMALL))
                                     .style(theme::Button::Primary)
                                     .on_press(Message::SwitchMovie(local.id, m.id)),
                             );
                         }
 
                         actions = actions.push(
-                            button(text("Remove").size(SMALL))
+                            w::button(w::text("Remove").size(SMALL))
                                 .style(theme::Button::Destructive)
                                 .on_press(Message::RemoveMovie(local.id)),
                         );
                     } else {
                         actions = actions.push(
-                            button(text("Add").size(SMALL))
+                            w::button(w::text("Add").size(SMALL))
                                 .style(theme::Button::Positive)
                                 .on_press(Message::AddMovieByRemote(m.id)),
                         );
@@ -336,19 +325,20 @@ impl Search {
 
             let overview = m.overview.as_str();
 
-            let mut release_date = Column::new();
+            let mut release_date = w::Column::new();
 
             if let Some(date) = m.release_date {
-                release_date = release_date.push(text(format!("First aired: {date}")).size(SMALL));
+                release_date =
+                    release_date.push(w::text(format!("First aired: {date}")).size(SMALL));
             }
 
-            let mut result = Column::new();
+            let mut result = w::Column::new();
 
-            let movie_title = text(&m.title).size(SUBTITLE_SIZE);
+            let movie_title = w::text(&m.title).size(SUBTITLE_SIZE);
 
             if let Some(local_movie) = local_movie {
                 result = result.push(
-                    button(movie_title)
+                    w::button(movie_title)
                         .style(theme::Button::Text)
                         .padding(0)
                         .on_press(Message::Navigate(Page::Movie(local_movie.id))),
@@ -361,12 +351,12 @@ impl Search {
             result = result.push(actions.spacing(SPACE));
 
             movies = movies.push(
-                Row::new()
-                    .push(image(handle).height(IMAGE_HEIGHT))
+                w::Row::new()
+                    .push(w::image(handle).height(IMAGE_HEIGHT))
                     .push(
-                        Column::new()
+                        w::Column::new()
                             .push(result.spacing(SPACE))
-                            .push(text(overview))
+                            .push(w::text(overview))
                             .spacing(GAP),
                     )
                     .spacing(GAP),
@@ -379,9 +369,10 @@ impl Search {
             Message::MoviesPage,
         ));
 
-        let query = text_input("Query...", &self.text, Message::Change).on_submit(Message::Search);
+        let query =
+            w::text_input("Query...", &self.text, Message::Change).on_submit(Message::Search);
 
-        let submit = button("Search");
+        let submit = w::button("Search");
 
         let submit = if !self.text.is_empty() {
             submit.on_press(Message::Search)
@@ -389,14 +380,14 @@ impl Search {
             submit
         };
 
-        let mut search_kind = Column::new().push(text("Source:").size(SMALL));
+        let mut search_kind = w::Column::new().push(w::text("Source:").size(SMALL));
 
         search_kind =
             [SearchKind::Tvdb, SearchKind::Tmdb]
                 .iter()
                 .fold(search_kind, |column, kind| {
                     column.push(
-                        radio(
+                        w::radio(
                             kind.to_string(),
                             *kind,
                             Some(st.service.config().search_kind),
@@ -406,14 +397,14 @@ impl Search {
                     )
                 });
 
-        let mut page = Column::new();
+        let mut page = w::Column::new();
 
-        page = page.push(text("Search").size(TITLE_SIZE));
-        page = page.push(Row::new().push(query).push(submit));
+        page = page.push(w::text("Search").size(TITLE_SIZE));
+        page = page.push(w::Row::new().push(query).push(submit));
 
         if let Some(e) = st.get_error(ErrorId::Search(self.search_id)) {
             page = page.push(
-                button(text(format!("Error: {}", e.message)))
+                w::button(w::text(format!("Error: {}", e.message)))
                     .width(Length::Fill)
                     .style(theme::Button::Destructive)
                     .on_press(Message::Navigate(Page::Errors)),
@@ -422,7 +413,7 @@ impl Search {
 
         page = page.push(search_kind.spacing(SPACE));
 
-        let mut row = Row::new();
+        let mut row = w::Row::new();
         row = row.push(series.spacing(GAP2).width(Length::FillPortion(1)));
         row = row.push(movies.spacing(GAP2).width(Length::FillPortion(1)));
         page = page.push(row.spacing(GAP2));
@@ -430,15 +421,15 @@ impl Search {
     }
 }
 
-fn paginate<M>(page: usize, len: usize, m: M) -> Row<'static, Message>
+fn paginate<M>(page: usize, len: usize, m: M) -> w::Row<'static, Message>
 where
     M: FnOnce(usize) -> Message + Copy,
 {
-    let mut row = Row::new();
+    let mut row = w::Row::new();
 
     if len > PER_PAGE {
-        let mut prev = button("previous page").style(theme::Button::Positive);
-        let mut next = button("next page").style(theme::Button::Positive);
+        let mut prev = w::button("previous page").style(theme::Button::Positive);
+        let mut next = w::button("next page").style(theme::Button::Positive);
 
         if let Some(page) = page.checked_sub(1) {
             prev = prev.on_press(m(page));
@@ -448,14 +439,14 @@ where
             next = next.on_press(m(page + 1));
         }
 
-        let text = text(format!(
+        let text = w::text(format!(
             "{}-{} ({})",
             page * PER_PAGE,
             ((page + 1) * PER_PAGE).min(len),
             len,
         ));
 
-        row = Row::new()
+        row = w::Row::new()
             .push(prev)
             .push(next)
             .push(text)

@@ -1,14 +1,6 @@
-use chrono::Utc;
-use iced::alignment::Horizontal;
-use iced::widget::{button, text, Row};
-use iced::{theme, Element, Length};
-
-use crate::component::Component;
 use crate::comps::ordering::Ordering;
-use crate::model::EpisodeId;
-use crate::params::SMALL;
+use crate::prelude::*;
 use crate::service::RemainingSeason;
-use crate::state::State;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -94,18 +86,18 @@ impl Watch {
         alignment: Horizontal,
         reminder: bool,
     ) -> Element<'static, Message> {
-        let mut row = Row::new().width(width);
+        let mut row = w::Row::new().width(width);
 
         if self.confirm {
             let buttons = [
-                button(text("Now").size(SMALL))
+                w::button(w::text("Now").size(SMALL))
                     .style(right_now)
                     .on_press(Message::RightNow),
-                button(text("Air date").size(SMALL))
+                w::button(w::text("Air date").size(SMALL))
                     .style(air_date)
                     .on_press(Message::AirDate),
-                button(
-                    text("Cancel")
+                w::button(
+                    w::text("Cancel")
                         .horizontal_alignment(Horizontal::Center)
                         .size(SMALL),
                 )
@@ -115,7 +107,7 @@ impl Watch {
             ];
 
             let head = if reminder {
-                Some(button(text(title).size(SMALL)).style(theme::Button::Secondary))
+                Some(w::button(w::text(title).size(SMALL)).style(theme::Button::Secondary))
             } else {
                 None
             };
@@ -136,8 +128,8 @@ impl Watch {
             }
         } else {
             row = row.push(
-                button(
-                    text(title)
+                w::button(
+                    w::text(title)
                         .size(SMALL)
                         .width(Length::Fill)
                         .horizontal_alignment(alignment),

@@ -20,3 +20,6 @@ pub(crate) mod calendar;
 pub(crate) use self::calendar::Calendar;
 
 pub(crate) mod ordering;
+
+pub(crate) mod episode;
+pub(crate) use self::episode::Episode;

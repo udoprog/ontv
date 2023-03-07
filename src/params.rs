@@ -20,11 +20,14 @@ pub(crate) const CONTAINER_WIDTH: Pixels = Pixels(1200.0);
 /// Standard poster height used in lists.
 pub(crate) const IMAGE_HEIGHT: f32 = 200.0;
 
+/// Standard poster height.
+pub(crate) const POSTER_HEIGHT: f32 = 750.0;
+
 /// Standard screencap height.
 pub(crate) const SCREENCAP_HEIGHT: f32 = 270.0;
 
 /// Dashboard gets a bit more leeway, since the image is dynamically scaled.
-pub(crate) const POSTER_HINT: ImageHint = ImageHint::Fit(500, 750);
+pub(crate) const POSTER_HINT: ImageHint = ImageHint::Fit(500, POSTER_HEIGHT as u32);
 
 // Force a 16:9 aspect ratio
 pub(crate) const SCREENCAP_HINT: ImageHint = ImageHint::Fill(480, SCREENCAP_HEIGHT as u32);

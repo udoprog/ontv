@@ -1,11 +1,5 @@
-use iced::widget::{button, text, Row};
-use iced::{theme, Element};
-
-use crate::component::Component;
-use crate::model::{RemoteSeriesId, Series, SeriesId, TaskId, TaskKind};
-use crate::params::{SMALL, SPACE};
+use crate::prelude::*;
 use crate::queue::TaskStatus;
-use crate::state::State;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -64,17 +58,17 @@ impl SeriesActions {
     }
 
     pub(crate) fn view(&self, s: &State, series: &Series) -> Element<'static, Message> {
-        let mut row = Row::new();
+        let mut row = w::Row::new();
 
         if series.tracked {
             row = row.push(
-                button(text("Untrack").size(SMALL))
+                w::button(w::text("Untrack").size(SMALL))
                     .style(theme::Button::Destructive)
                     .on_press(Message::Untrack),
             );
         } else {
             row = row.push(
-                button(text("Track").size(SMALL))
+                w::button(w::text("Track").size(SMALL))
                     .style(theme::Button::Positive)
                     .on_press(Message::Track),
             );
@@ -87,17 +81,19 @@ impl SeriesActions {
         match status {
             Some(TaskStatus::Pending) => {
                 row = row.push(
-                    button(text("Refresh in queue").size(SMALL)).style(theme::Button::Positive),
+                    w::button(w::text("Refresh in queue").size(SMALL))
+                        .style(theme::Button::Positive),
                 );
             }
             Some(TaskStatus::Running) => {
-                row = row
-                    .push(button(text("Downloading...").size(SMALL)).style(theme::Button::Primary));
+                row = row.push(
+                    w::button(w::text("Downloading...").size(SMALL)).style(theme::Button::Primary),
+                );
             }
             None => {
                 if let Some(remote_id) = series.remote_id {
                     row = row.push(
-                        button(text("Refresh").size(SMALL))
+                        w::button(w::text("Refresh").size(SMALL))
                             .style(theme::Button::Positive)
                             .on_press(Message::RefreshSeries(remote_id)),
                     );
@@ -106,7 +102,7 @@ impl SeriesActions {
         }
 
         row = row.push(
-            button(text("Remove").size(SMALL))
+            w::button(w::text("Remove").size(SMALL))
                 .style(theme::Button::Destructive)
                 .on_press(Message::RemoveSeries),
         );

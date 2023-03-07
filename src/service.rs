@@ -112,8 +112,8 @@ impl Service {
     }
 
     /// Naive date.
-    pub(crate) fn now(&self) -> NaiveDate {
-        self.now
+    pub(crate) fn now(&self) -> &NaiveDate {
+        &self.now
     }
 
     /// A scheduled day.
@@ -204,10 +204,10 @@ impl Service {
     }
 
     /// Return list of pending episodes.
-    pub(crate) fn pending(
-        &self,
-        today: NaiveDate,
-    ) -> impl DoubleEndedIterator<Item = PendingRef<'_>> {
+    pub(crate) fn pending<'a>(
+        &'a self,
+        today: &'a NaiveDate,
+    ) -> impl DoubleEndedIterator<Item = PendingRef<'a>> {
         self.db.pending.iter().flat_map(move |p| {
             let series = self.db.series.get(&p.series)?;
 
@@ -217,7 +217,7 @@ impl Service {
 
             let episode = self.db.episodes.get(&p.episode)?;
 
-            if !episode.has_aired(&today) {
+            if !episode.has_aired(today) {
                 return None;
             }
 
@@ -492,12 +492,11 @@ impl Service {
     }
 
     /// Select the next pending episode to use for a show.
-    pub(crate) fn select_pending(
-        &mut self,
-        now: &DateTime<Utc>,
-        series_id: &SeriesId,
-        episode_id: &EpisodeId,
-    ) {
+    pub(crate) fn select_pending(&mut self, now: &DateTime<Utc>, episode_id: &EpisodeId) {
+        let Some(episode) = self.db.episodes.get(episode_id) else {
+            return;
+        };
+
         let aired = self
             .db
             .episodes
@@ -507,13 +506,13 @@ impl Service {
         let timestamp = self
             .db
             .watched
-            .by_series(series_id)
+            .by_series(episode.series())
             .next_back()
             .map(|w| w.timestamp);
 
         self.db.pending.extend([Pending {
-            series: *series_id,
-            episode: *episode_id,
+            series: *episode.series(),
+            episode: episode.id,
             timestamp: pending_timestamp(now, [timestamp, aired]),
         }]);
 
@@ -530,17 +529,10 @@ impl Service {
     }
 
     /// Remove all watches of the given episode.
-    pub(crate) fn remove_episode_watch(
-        &mut self,
-        series_id: &SeriesId,
-        episode_id: &EpisodeId,
-        watch_id: &Uuid,
-    ) {
-        tracing::trace!(
-            "remove series_id: {series_id}, episode_id: {episode_id}, watch_id: {watch_id}"
-        );
+    pub(crate) fn remove_episode_watch(&mut self, episode_id: &EpisodeId, watch_id: &Uuid) {
+        tracing::trace!(?episode_id, ?watch_id,);
 
-        let Some(w) = self.db.watched.remove_watch(watch_id) else {
+        let (Some(w), Some(episode)) = (self.db.watched.remove_watch(watch_id), self.db.episodes.get(episode_id)) else {
             return;
         };
 
@@ -548,8 +540,8 @@ impl Service {
         self.db.changes.change(Change::Pending);
 
         self.db.pending.extend([Pending {
-            series: *series_id,
-            episode: *episode_id,
+            series: *episode.series(),
+            episode: episode.id,
             timestamp: w.timestamp,
         }]);
     }

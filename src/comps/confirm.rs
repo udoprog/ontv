@@ -13,7 +13,6 @@ use crate::state::State;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Kind {
     RemoveWatch {
-        series_id: SeriesId,
         episode_id: EpisodeId,
         watch_id: Uuid,
     },
@@ -86,12 +85,10 @@ impl Confirm {
 
                 match &self.props.kind {
                     Kind::RemoveWatch {
-                        series_id,
                         episode_id,
                         watch_id,
                     } => {
-                        s.service
-                            .remove_episode_watch(series_id, episode_id, watch_id);
+                        s.service.remove_episode_watch(episode_id, watch_id);
                     }
                     Kind::RemoveSeason { series_id, season } => {
                         let now = Utc::now();

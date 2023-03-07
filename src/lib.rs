@@ -91,6 +91,24 @@ mod utils;
 
 pub use self::service::Service;
 
+mod prelude {
+    pub(crate) use anyhow::{anyhow, Context, Result};
+    pub(crate) use chrono::Utc;
+    pub(crate) use iced::alignment::Horizontal;
+    pub(crate) use iced::widget as w;
+    pub(crate) use iced::{theme, Alignment, Element, Length};
+    pub(crate) use uuid::Uuid;
+
+    pub(crate) use crate::commands::Commands;
+    pub(crate) use crate::component::*;
+    pub(crate) use crate::comps;
+    pub(crate) use crate::error::{ErrorId, ErrorInfo};
+    pub(crate) use crate::model::*;
+    pub(crate) use crate::params::*;
+    pub(crate) use crate::state::{Page, State};
+    pub(crate) use crate::style;
+}
+
 /// Run the GUI application.
 pub fn run(service: service::Service) -> anyhow::Result<()> {
     use iced::Application;

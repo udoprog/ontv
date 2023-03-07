@@ -1,10 +1,4 @@
-use iced::widget::{button, horizontal_rule, radio, text, text_input, Column};
-use iced::Element;
-
-use crate::model::ThemeType;
-use crate::params::{default_container, GAP, SPACE};
-
-use crate::state::State;
+use crate::prelude::*;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -43,12 +37,12 @@ impl Settings {
     pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
         let config = s.service.config();
 
-        let mut page = Column::new();
+        let mut page = w::Column::new();
 
         page = page.push([ThemeType::Light, ThemeType::Dark].iter().fold(
-            Column::new().push(text("Theme:")).spacing(SPACE),
+            w::Column::new().push(w::text("Theme:")).spacing(SPACE),
             |column, theme| {
-                column.push(radio(
+                column.push(w::radio(
                     format!("{theme:?}"),
                     *theme,
                     Some(config.theme),
@@ -58,27 +52,29 @@ impl Settings {
         ));
 
         page = page.push(
-            Column::new()
-                .push(text("TheTVDB Legacy API Key:"))
-                .push(text_input("Key...", &config.tvdb_legacy_apikey, |value| {
-                    Message::TvdbLegacyApiKeyChange(value)
-                }))
+            w::Column::new()
+                .push(w::text("TheTVDB Legacy API Key:"))
+                .push(w::text_input(
+                    "Key...",
+                    &config.tvdb_legacy_apikey,
+                    |value| Message::TvdbLegacyApiKeyChange(value),
+                ))
                 .spacing(SPACE),
         );
 
         page = page.push(
-            Column::new()
-                .push(text("TheMovieDB API Key:"))
-                .push(text_input("Key...", &config.tmdb_api_key, |value| {
+            w::Column::new()
+                .push(w::text("TheMovieDB API Key:"))
+                .push(w::text_input("Key...", &config.tmdb_api_key, |value| {
                     Message::TmdbApiKeyChange(value)
                 }))
                 .spacing(SPACE),
         );
 
-        page = page.push(horizontal_rule(1));
+        page = page.push(w::horizontal_rule(1));
 
         page = page.push("Clear last sync times in database:");
-        page = page.push(button("Clear last sync").on_press(Message::ClearLastSync));
+        page = page.push(w::button("Clear last sync").on_press(Message::ClearLastSync));
 
         default_container(page.spacing(GAP).padding(GAP)).into()
     }
