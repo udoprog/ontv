@@ -76,6 +76,16 @@ impl<'a> PendingRef<'a> {
 
         self.series.poster()
     }
+
+    /// Test if episode will air in the future.
+    pub(crate) fn will_air(&self, today: &NaiveDate) -> bool {
+        self.episode.will_air(today)
+    }
+
+    /// Test if pending ref has aired.
+    pub(crate) fn has_aired(&self, today: &NaiveDate) -> bool {
+        self.episode.has_aired(today)
+    }
 }
 
 /// Background service taking care of all state handling.
@@ -225,23 +235,20 @@ impl Service {
     }
 
     /// Return list of pending episodes.
-    pub(crate) fn pending<'a>(
-        &'a self,
-        today: &'a NaiveDate,
-    ) -> impl DoubleEndedIterator<Item = PendingRef<'a>> {
+    pub(crate) fn pending(&self) -> impl DoubleEndedIterator<Item = PendingRef<'_>> + Clone {
         self.db
             .pending
             .iter()
-            .flat_map(move |p| self.pending_ref(p, Some(today)))
+            .flat_map(move |p| self.pending_ref(p))
     }
 
     /// Get pending by series.
     pub(crate) fn pending_by_series(&self, series_id: &SeriesId) -> Option<PendingRef<'_>> {
         let p = self.db.pending.get(series_id)?;
-        self.pending_ref(p, None)
+        self.pending_ref(p)
     }
 
-    fn pending_ref(&self, p: &Pending, today: Option<&NaiveDate>) -> Option<PendingRef<'_>> {
+    fn pending_ref(&self, p: &Pending) -> Option<PendingRef<'_>> {
         let series = self.db.series.get(&p.series)?;
 
         if !series.tracked {
@@ -249,13 +256,6 @@ impl Service {
         }
 
         let episode = self.db.episodes.get(&p.episode)?;
-
-        if let Some(today) = today {
-            if !episode.has_aired(today) {
-                return None;
-            }
-        }
-
         let season = self.season(&p.series, &episode.season);
 
         Some(PendingRef {

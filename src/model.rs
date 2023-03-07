@@ -858,6 +858,17 @@ impl Episode {
         self.graphics.filename.as_ref()
     }
 
+    /// Test if episode will air in the future.
+    ///
+    /// This ignores episodes without an air date.
+    pub(crate) fn will_air(&self, today: &NaiveDate) -> bool {
+        let Some(aired) = &self.aired else {
+            return false;
+        };
+
+        *aired > *today
+    }
+
     /// Test if the given episode has aired by the provided timestamp.
     pub(crate) fn has_aired(&self, today: &NaiveDate) -> bool {
         let Some(aired) = &self.aired else {

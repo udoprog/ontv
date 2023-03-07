@@ -1,7 +1,7 @@
 use crate::component::{Component, ComponentInitExt};
 use crate::comps;
 use crate::model::{EpisodeId, Watched};
-use crate::params::{GAP, SCREENCAP_HEIGHT, SCREENCAP_HINT, SMALL, SPACE};
+use crate::params::{GAP, SCREENCAP_HINT, SMALL, SPACE};
 use crate::prelude::*;
 use crate::state::State;
 
@@ -144,7 +144,7 @@ impl Episode {
             None
         };
 
-        let image = if let Some(p) = pending_series {
+        let (image, (image_fill, rest_fill)) = if let Some(p) = pending_series {
             let poster = match p
                 .poster()
                 .and_then(|image| s.assets.image_with_hint(&image, POSTER_HINT))
@@ -153,9 +153,10 @@ impl Episode {
                 None => s.missing_poster(),
             };
 
-            w::container(w::image(poster))
-                .max_height(SCREENCAP_HEIGHT)
-                .align_x(Horizontal::Center)
+            (
+                w::container(w::image(poster)).align_x(Horizontal::Center),
+                (2, 10),
+            )
         } else {
             let screencap = match e
                 .filename()
@@ -165,9 +166,10 @@ impl Episode {
                 None => s.assets.missing_screencap(),
             };
 
-            w::container(w::image(screencap))
-                .max_height(SCREENCAP_HEIGHT)
-                .align_x(Horizontal::Center)
+            (
+                w::container(w::image(screencap)).align_x(Horizontal::Center),
+                (4, 8),
+            )
         };
 
         let mut name = w::Row::new().spacing(SPACE);
@@ -330,8 +332,8 @@ impl Episode {
         }
 
         w::Row::new()
-            .push(image)
-            .push(info.width(Length::Fill).spacing(GAP))
+            .push(image.width(Length::FillPortion(image_fill)))
+            .push(info.width(Length::FillPortion(rest_fill)).spacing(GAP))
             .spacing(GAP)
             .into()
     }

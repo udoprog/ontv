@@ -43,7 +43,7 @@ impl Database {
 
     /// Iterate immutably over pending entries in timestamp order.
     #[inline]
-    pub(crate) fn iter(&self) -> impl DoubleEndedIterator<Item = &Pending> {
+    pub(crate) fn iter(&self) -> impl DoubleEndedIterator<Item = &Pending> + Clone {
         Iter::new(self.by_timestamp.iter().map(|(_, key)| key), &self.data)
     }
 

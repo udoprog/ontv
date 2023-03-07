@@ -59,21 +59,18 @@ impl Dashboard {
         let limit = s.service.config().dashboard_limit();
         let today = *s.today();
 
-        s.assets.mark_with_hint(
-            s.service
-                .pending(&today)
-                .rev()
-                .take(limit)
-                .flat_map(|p| p.poster()),
-            POSTER_HINT,
-        );
+        let iter = s
+            .service
+            .pending()
+            .filter(|p| p.has_aired(&today))
+            .rev()
+            .take(limit);
 
-        self.watch.init_from_iter(
-            s.service
-                .pending(&today)
-                .rev()
-                .map(|p| comps::watch::Props::new(p.episode.id)),
-        );
+        s.assets
+            .mark_with_hint(iter.clone().flat_map(|p| p.poster()), POSTER_HINT);
+
+        self.watch
+            .init_from_iter(iter.map(|p| comps::watch::Props::new(p.episode.id)));
     }
 
     pub(crate) fn update(&mut self, s: &mut State, message: Message) {
@@ -207,12 +204,14 @@ impl Dashboard {
         let limit = s.service.config().dashboard_limit();
         let page = s.service.config().dashboard_page();
 
-        for (index, (watch, pending_ref)) in self
-            .watch
-            .iter()
-            .zip(s.service.pending(s.today()).rev().take(limit))
-            .enumerate()
-        {
+        let iter = s
+            .service
+            .pending()
+            .rev()
+            .filter(|p| p.has_aired(s.today()))
+            .take(limit);
+
+        for (index, (watch, pending_ref)) in self.watch.iter().zip(iter).enumerate() {
             let p @ PendingRef {
                 series, episode, ..
             } = pending_ref;
