@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Utc};
 
@@ -8,7 +8,7 @@ use crate::model::{Pending, SeriesId};
 #[derive(Default)]
 pub(crate) struct Database {
     /// Pending by series.
-    data: HashMap<SeriesId, Pending>,
+    data: BTreeMap<SeriesId, Pending>,
     /// Index by timestamp.
     by_timestamp: BTreeSet<(DateTime<Utc>, SeriesId)>,
 }
@@ -24,10 +24,8 @@ impl Database {
     pub(crate) fn export(&self) -> impl IntoIterator<Item = Pending> {
         let mut export = Vec::with_capacity(self.by_timestamp.len());
 
-        for (_, id) in &self.by_timestamp {
-            if let Some(pending) = self.data.get(id) {
-                export.push(pending.clone());
-            }
+        for (_, pending) in &self.data {
+            export.push(pending.clone());
         }
 
         export
