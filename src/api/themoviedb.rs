@@ -227,22 +227,33 @@ impl Client {
             .send()
             .await?;
 
+        let images = self
+            .request_with_auth(Method::GET, &["tv", &id.to_string(), "images"])
+            .send()
+            .await?;
+
         let last_modified = common::parse_last_modified(&details)?;
         let last_etag = common::parse_etag(&details);
 
-        let (external_ids, details) =
-            tokio::try_join!(handle_res(external_ids), handle_res(details))?;
+        let (external_ids, details, images) = tokio::try_join!(
+            handle_res(external_ids),
+            handle_res(details),
+            handle_res(images)
+        )?;
 
         if tracing::enabled!(tracing::Level::TRACE) {
             let details = serde_json::from_slice::<serde_json::Value>(&details)?;
             tracing::trace!("details: {details}");
             let external_ids = serde_json::from_slice::<serde_json::Value>(&external_ids)?;
             tracing::trace!("external_ids: {external_ids}");
+            let images = serde_json::from_slice::<serde_json::Value>(&images)?;
+            tracing::trace!("images: {images}");
         }
 
         let details: Details = serde_json::from_slice(&details).context("details response")?;
         let external_ids: ExternalIds =
             serde_json::from_slice(&external_ids).context("remote ids")?;
+        let images: Images = serde_json::from_slice(&images).context("remote ids")?;
 
         let remote_id = RemoteSeriesId::Tmdb { id: details.id };
 
@@ -259,7 +270,16 @@ impl Client {
 
         let mut graphics = SeriesGraphics::default();
         graphics.poster = details.poster_path.as_deref().and_then(ImageV2::tmdb);
+
+        for image in images.posters {
+            graphics.posters.extend(ImageV2::tmdb(&image.file_path));
+        }
+
         graphics.banner = details.backdrop_path.as_deref().and_then(ImageV2::tmdb);
+
+        for image in images.backdrops {
+            graphics.banners.extend(ImageV2::tmdb(&image.file_path));
+        }
 
         let series = Series {
             id,
@@ -596,6 +616,19 @@ impl ExternalIds {
 
         a.into_iter().chain(b)
     }
+}
+
+#[derive(Deserialize)]
+struct Image {
+    file_path: String,
+}
+
+#[derive(Deserialize)]
+struct Images {
+    #[serde(default)]
+    backdrops: Vec<Image>,
+    #[serde(default)]
+    posters: Vec<Image>,
 }
 
 #[derive(Deserialize)]

@@ -765,22 +765,18 @@ impl Service {
     /// Download series using a remote identifier.
     #[tracing::instrument(skip(self))]
     pub(crate) fn download_series(
-        &mut self,
+        &self,
         remote_id: &RemoteSeriesId,
         if_none_match: Option<&Etag>,
     ) -> impl Future<Output = Result<Option<NewSeries>>> {
         let tvdb = self.tvdb.clone();
         let tmdb = self.tmdb.clone();
-
         let proxy = self.db.remotes.proxy();
-
         let remote_id = *remote_id;
-
         let if_none_match = if_none_match.cloned();
 
         async move {
             let lookup_series = |q| proxy.find_series_by_remote(q);
-
             let lookup_episode = |q| proxy.find_episode_by_remote(q);
 
             let data = match remote_id {
@@ -910,7 +906,7 @@ impl Service {
         self.db.seasons.insert(series_id, data.seasons.clone());
 
         if let Some(current) = self.db.series.get_mut(&series_id) {
-            *current = data.series;
+            current.merge_from(data.series);
         } else {
             self.db.series.insert(data.series);
         }

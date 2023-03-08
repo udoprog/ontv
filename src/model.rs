@@ -2,7 +2,7 @@ mod etag;
 mod hex;
 mod raw;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::str::FromStr;
 
@@ -514,22 +514,55 @@ impl fmt::Display for RemoteMovieId {
     }
 }
 
+/// Graphics which have been customized.
+#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum CustomGraphic {
+    /// A custom series poster.
+    Poster,
+    /// A series banner.
+    Banner,
+}
+
 /// Associated series graphics.
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct SeriesGraphics {
+    /// Graphical elements which have been customized.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub(crate) custom: BTreeSet<CustomGraphic>,
     /// Poster image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) poster: Option<ImageV2>,
+    /// Available alternative poster images.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub(crate) posters: BTreeSet<ImageV2>,
     /// Banner image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) banner: Option<ImageV2>,
+    /// Available alternative banner images.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub(crate) banners: BTreeSet<ImageV2>,
     /// Fanart image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) fanart: Option<ImageV2>,
 }
 
 impl SeriesGraphics {
+    fn merge_from(&mut self, other: Self) {
+        if !self.custom.contains(&CustomGraphic::Poster) {
+            self.poster = other.poster;
+        }
+
+        if !self.custom.contains(&CustomGraphic::Banner) {
+            self.banner = other.banner;
+        }
+
+        self.posters = other.posters;
+        self.banners = other.banners;
+        self.fanart = other.fanart;
+    }
+
     fn is_empty(&self) -> bool {
         self.poster.is_none() && self.banner.is_none() && self.fanart.is_none()
     }
@@ -579,6 +612,15 @@ pub(crate) struct Series {
 }
 
 impl Series {
+    /// Merge this series from another.
+    pub(crate) fn merge_from(&mut self, other: Self) {
+        self.title = other.title;
+        self.first_air_date = other.first_air_date;
+        self.overview = other.overview;
+        self.graphics.merge_from(other.graphics);
+        self.remote_id = other.remote_id;
+    }
+
     /// Get the poster of the series.
     pub(crate) fn poster(&self) -> Option<&ImageV2> {
         self.graphics.poster.as_ref()

@@ -55,8 +55,9 @@ impl<'a> Ctxt<'a> {
     }
 
     /// Refresh series data.
+    #[tracing::instrument(skip(self))]
     pub(crate) fn download_series_by_id(
-        &mut self,
+        &self,
         id: &SeriesId,
         remote_id: &RemoteSeriesId,
         force: bool,
