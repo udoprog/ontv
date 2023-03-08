@@ -9,8 +9,6 @@ pub(crate) enum Message {
 }
 
 pub(crate) struct Season {
-    series_id: SeriesId,
-    season: SeasonNumber,
     episodes: Vec<comps::Episode>,
     season_info: comps::SeasonInfo,
     banner: comps::SeriesBanner,
@@ -18,21 +16,24 @@ pub(crate) struct Season {
 
 impl Season {
     #[inline]
-    pub(crate) fn new(series_id: SeriesId, season: SeasonNumber) -> Self {
+    pub(crate) fn new(series_id: &SeriesId, season: &SeasonNumber) -> Self {
         Self {
-            series_id,
-            season,
             episodes: Vec::new(),
-            season_info: comps::SeasonInfo::new((series_id, season)),
+            season_info: comps::SeasonInfo::new((*series_id, *season)),
             banner: comps::SeriesBanner::default(),
         }
     }
 
-    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>) {
+    pub(crate) fn prepare(
+        &mut self,
+        cx: &mut Ctxt<'_>,
+        series_id: &SeriesId,
+        season: &SeasonNumber,
+    ) {
         self.episodes.init_from_iter(
             cx.service
-                .episodes(&self.series_id)
-                .filter(|e| e.season == self.season)
+                .episodes(series_id)
+                .filter(|e| e.season == *season)
                 .map(|e| comps::episode::Props {
                     include_series: false,
                     episode_id: e.id,
@@ -44,7 +45,7 @@ impl Season {
             e.prepare(cx);
         }
 
-        self.banner.prepare(cx, &self.series_id);
+        self.banner.prepare(cx, series_id);
     }
 
     pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, message: Message) {
@@ -68,12 +69,17 @@ impl Season {
     }
 
     /// Render season view.
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
-        let Some(series) = cx.service.series(&self.series_id) else {
+    pub(crate) fn view(
+        &self,
+        cx: &CtxtRef<'_>,
+        series_id: &SeriesId,
+        season: &SeasonNumber,
+    ) -> Element<'static, Message> {
+        let Some(series) = cx.service.series(series_id) else {
             return w::Column::new().into();
         };
 
-        let Some(season) = cx.service.season(&series.id, &self.season) else {
+        let Some(season) = cx.service.season(&series.id, season) else {
             return w::Column::new().into();
         };
 

@@ -10,7 +10,6 @@ pub(crate) enum Message {
 }
 
 pub(crate) struct Series {
-    series_id: SeriesId,
     series: comps::SeriesActions,
     seasons: Vec<comps::SeasonInfo>,
     banner: comps::SeriesBanner,
@@ -18,28 +17,27 @@ pub(crate) struct Series {
 
 impl Series {
     #[inline]
-    pub(crate) fn new(series_id: SeriesId) -> Self {
+    pub(crate) fn new(series_id: &SeriesId) -> Self {
         Self {
-            series_id,
-            series: comps::SeriesActions::new(series_id),
+            series: comps::SeriesActions::new(*series_id),
             seasons: Vec::new(),
             banner: comps::SeriesBanner::default(),
         }
     }
 
-    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>) {
+    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>, series_id: &SeriesId) {
         self.seasons.init_from_iter(
             cx.service
-                .seasons(&self.series_id)
+                .seasons(series_id)
                 .map(|s| (*s.series(), s.number)),
         );
 
-        self.banner.prepare(cx, &self.series_id);
+        self.banner.prepare(cx, series_id);
 
-        if let Some(series) = cx.service.series(&self.series_id) {
+        if let Some(series) = cx.service.series(series_id) {
             cx.assets.mark_with_hint(
                 cx.service
-                    .seasons(&self.series_id)
+                    .seasons(series_id)
                     .flat_map(|season| season.into_season().poster().or(series.poster())),
                 POSTER_HINT,
             );
@@ -69,8 +67,8 @@ impl Series {
         }
     }
 
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
-        let Some(series) = cx.service.series(&self.series_id) else {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>, series_id: &SeriesId) -> Element<'static, Message> {
+        let Some(series) = cx.service.series(series_id) else {
             return w::Column::new().into();
         };
 

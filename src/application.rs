@@ -8,7 +8,7 @@ use crate::assets::{Assets, ImageKey};
 use crate::commands::{Commands, CommandsBuf};
 use crate::context::{Ctxt, CtxtRef};
 use crate::error::ErrorInfo;
-use crate::history::{History, Page};
+use crate::history::{History, HistoryMutations, Page};
 use crate::model::{ImageV2, Task, TaskKind};
 use crate::page;
 use crate::params::{GAP, SMALL, SPACE, SUB_MENU_SIZE};
@@ -21,7 +21,7 @@ macro_rules! ctxt_mut {
     ($self:expr) => {
         &mut Ctxt {
             state: &mut $self.state,
-            history: &mut $self.history,
+            history: &mut $self.history_mutations,
             service: &mut $self.service,
             assets: &mut $self.assets,
         }
@@ -101,6 +101,8 @@ pub(crate) struct Application {
     state: State,
     /// Application history.
     history: History,
+    /// History mutations.
+    history_mutations: HistoryMutations,
     /// Backing service.
     service: Service,
     /// Assets manager.
@@ -143,6 +145,7 @@ impl iced::Application for Application {
             commands: CommandsBuf::default(),
             state,
             history: History::new(),
+            history_mutations: HistoryMutations::default(),
             service: flags.service,
             assets: Assets::new(),
             current,
@@ -174,7 +177,7 @@ impl iced::Application for Application {
                     return format!("{BASE} - Dashboard");
                 }
                 Page::WatchNext(..) => return format!("{BASE} - Watch next"),
-                Page::Search => {
+                Page::Search(..) => {
                     return format!("{BASE} - Search");
                 }
                 Page::SeriesList => {
@@ -228,9 +231,10 @@ impl iced::Application for Application {
             ) => {
                 page.update(ctxt_mut!(self), state, message);
             }
-            (Message::Search(message), Current::Search(page), _) => {
+            (Message::Search(message), Current::Search(page), Some(Page::Search(state))) => {
                 page.update(
                     ctxt_mut!(self),
+                    state,
                     message,
                     self.commands.by_ref().map(Message::Search),
                 );
@@ -250,9 +254,6 @@ impl iced::Application for Application {
                     message,
                     self.commands.by_ref().map(Message::Queue),
                 );
-            }
-            (Message::Errors(..), Current::Errors(page), _) => {
-                // do nothing
             }
             (Message::CloseRequested, _, _) => {
                 tracing::debug!("Close requested");
@@ -322,10 +323,10 @@ impl iced::Application for Application {
                 self.service.complete_task(task);
             }
             (Message::Navigate(page), _, _) => {
-                self.history.push_history(&mut self.assets, page);
+                self.history_mutations.push_history(&mut self.assets, page);
             }
             (Message::History(relative), _, _) => {
-                self.history.history(relative);
+                self.history_mutations.navigate(relative);
             }
             (Message::Scroll(offset), _, _) => {
                 self.history.history_scroll(offset);
@@ -372,21 +373,19 @@ impl iced::Application for Application {
             );
         }
 
-        if let Some((page, scroll)) = self.history.history_change() {
+        if let Some((page, scroll)) = self.history.apply_mutation(&mut self.history_mutations) {
             self.current = match page {
                 Page::Dashboard => {
                     Current::Dashboard(page::Dashboard::new(&self.state, &self.service))
                 }
-                Page::WatchNext(state) => {
-                    Current::WatchNext(page::WatchNext::new(ctxt_mut!(self), state))
-                }
-                Page::Search => Current::Search(page::Search::default()),
+                Page::WatchNext(..) => Current::WatchNext(page::WatchNext::default()),
+                Page::Search(..) => Current::Search(page::Search::default()),
                 Page::SeriesList => Current::SeriesList(page::SeriesList::default()),
-                Page::Series(series_id) => Current::Series(page::Series::new(*series_id)),
-                Page::Movie(movie_id) => Current::Movie(page::Movie::new(*movie_id)),
+                Page::Series(series_id) => Current::Series(page::Series::new(series_id)),
+                Page::Movie(movie_id) => Current::Movie(page::Movie::new(movie_id)),
                 Page::Settings => Current::Settings(page::Settings::default()),
                 Page::Season(series_id, season) => {
-                    Current::Season(page::Season::new(*series_id, *season))
+                    Current::Season(page::Season::new(series_id, season))
                 }
                 Page::Queue => {
                     let page = page::Queue::new(self.commands.by_ref().map(Message::Queue));
@@ -435,10 +434,33 @@ impl iced::Application for Application {
             return w::text("missing history entry").into();
         };
 
-        top_menu = top_menu.push(menu_item(page, w::text("Dashboard"), Page::Dashboard));
-        top_menu = top_menu.push(menu_item(page, w::text("Series"), Page::SeriesList));
-        top_menu = top_menu.push(menu_item(page, w::text("Search"), Page::Search));
-        top_menu = top_menu.push(menu_item(page, w::text("Settings"), Page::Settings));
+        top_menu = top_menu.push(menu_item(
+            page,
+            w::text("Dashboard"),
+            |p| matches!(p, Page::Dashboard),
+            || Page::Dashboard,
+        ));
+
+        top_menu = top_menu.push(menu_item(
+            page,
+            w::text("Series"),
+            |p| matches!(p, Page::SeriesList),
+            || Page::SeriesList,
+        ));
+
+        top_menu = top_menu.push(menu_item(
+            page,
+            w::text("Search"),
+            |p| matches!(p, Page::Search(..)),
+            || Page::Search(page::search::PageState::default()),
+        ));
+
+        top_menu = top_menu.push(menu_item(
+            page,
+            w::text("Settings"),
+            |p| matches!(p, Page::Settings),
+            || Page::Settings,
+        ));
 
         // Build queue element.
         {
@@ -449,7 +471,12 @@ impl iced::Application for Application {
                 n => w::text(format!("Queue ({n})")),
             };
 
-            top_menu = top_menu.push(menu_item(&page, text, Page::Queue));
+            top_menu = top_menu.push(menu_item(
+                &page,
+                text,
+                |p| matches!(p, Page::Queue),
+                || Page::Queue,
+            ));
         }
 
         let mut menu = w::Column::new().push(top_menu);
@@ -461,7 +488,8 @@ impl iced::Application for Application {
                 sub_menu = sub_menu.push(menu_item(
                     &page,
                     w::text(&series.title).size(SUB_MENU_SIZE),
-                    Page::Series(*series_id),
+                    |p| matches!(p, Page::Series(s) if *s == *series_id),
+                    || Page::Series(*series_id),
                 ));
             }
 
@@ -479,7 +507,8 @@ impl iced::Application for Application {
                 sub_menu = sub_menu.push(menu_item(
                     &page,
                     title,
-                    Page::Season(*series_id, season.number),
+                    |p| matches!(p, Page::Season(series, number) if *series == *series_id && *number == season.number),
+                    || Page::Season(*series_id, season.number)
                 ));
             }
 
@@ -499,14 +528,23 @@ impl iced::Application for Application {
             (Current::WatchNext(page), Some(Page::WatchNext(state))) => {
                 page.view(ctxt_ref!(self), state).map(Message::WatchNext)
             }
-            (Current::Search(page), _) => page.view(ctxt_ref!(self)).map(Message::Search),
+            (Current::Search(page), Some(Page::Search(state))) => {
+                page.view(ctxt_ref!(self), state).map(Message::Search)
+            }
             (Current::SeriesList(page), _) => page.view(ctxt_ref!(self)).map(Message::SeriesList),
-            (Current::Series(page), _) => page.view(ctxt_ref!(self)).map(Message::Series),
-            (Current::Movie(page), _) => page.view().map(Message::Movie),
+            (Current::Series(page), Some(Page::Series(series_id))) => {
+                page.view(ctxt_ref!(self), series_id).map(Message::Series)
+            }
+            (Current::Movie(page), Some(Page::Movie(movie_id))) => {
+                page.view(movie_id).map(Message::Movie)
+            }
             (Current::Settings(page), _) => page.view(ctxt_ref!(self)).map(Message::Settings),
-            (Current::Season(page), _) => page.view(ctxt_ref!(self)).map(Message::Season),
+            (Current::Season(page), Some(Page::Season(series_id, season))) => page
+                .view(ctxt_ref!(self), series_id, season)
+                .map(Message::Season),
             (Current::Queue(page), _) => page.view(ctxt_ref!(self)).map(Message::Queue),
             (Current::Errors(page), _) => page.view(ctxt_ref!(self)).map(Message::Errors),
+            _ => return w::text("invalid page state").into(),
         };
 
         window = window.push(w::horizontal_rule(1));
@@ -568,34 +606,25 @@ impl Application {
     // Call prepare on the appropriate components to prepare asset loading.
     fn prepare(&mut self) {
         match (&mut self.current, self.history.page_mut()) {
-            (Current::Dashboard(page), Some(Page::Dashboard)) => {
+            (Current::Dashboard(page), _) => {
                 page.prepare(ctxt_mut!(self));
             }
             (Current::WatchNext(page), Some(Page::WatchNext(state))) => {
                 page.prepare(ctxt_mut!(self), state);
             }
-            (Current::Search(page), Some(Page::Search)) => {
+            (Current::Search(page), Some(Page::Search(state))) => {
+                page.prepare(ctxt_mut!(self), state);
+            }
+            (Current::SeriesList(page), _) => {
                 page.prepare(ctxt_mut!(self));
             }
-            (Current::SeriesList(page), Some(Page::SeriesList)) => {
-                page.prepare(ctxt_mut!(self));
+            (Current::Series(page), Some(Page::Series(series_id))) => {
+                page.prepare(ctxt_mut!(self), series_id);
             }
-            (Current::Series(page), Some(Page::Series(..))) => {
-                page.prepare(ctxt_mut!(self));
+            (Current::Season(page), Some(Page::Season(series_id, season))) => {
+                page.prepare(ctxt_mut!(self), series_id, season);
             }
-            (Current::Movie(..), Some(Page::Movie(..))) => {
-                // noop
-            }
-            (Current::Settings(..), Some(Page::Settings)) => {
-                // noop
-            }
-            (Current::Season(page), Some(Page::Season(..))) => {
-                page.prepare(ctxt_mut!(self));
-            }
-            (Current::Queue(..), Some(Page::Queue)) => {
-                // noop
-            }
-            (Current::Errors(..), Some(Page::Errors)) => {
+            _ => {
                 // noop
             }
         }
@@ -721,16 +750,18 @@ impl Application {
 }
 
 /// Helper for building menu items.
-fn menu_item<E>(at: &Page, element: E, page: Page) -> w::Button<'static, Message>
+fn menu_item<E, M, P>(at: &Page, element: E, m: M, page: P) -> w::Button<'static, Message>
 where
     Element<'static, Message>: From<E>,
+    M: FnOnce(&Page) -> bool,
+    P: FnOnce() -> Page,
 {
     let current = link(element).width(Length::Fill);
 
-    let current = if *at == page {
+    let current = if m(at) {
         current
     } else {
-        current.on_press(Message::Navigate(page))
+        current.on_press(Message::Navigate(page()))
     };
 
     current.width(Length::Shrink)

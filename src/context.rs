@@ -3,7 +3,7 @@ use std::future::Future;
 use anyhow::Result;
 
 use crate::assets::Assets;
-use crate::history::{History, Page};
+use crate::history::{HistoryMutations, Page};
 use crate::model::{RemoteSeriesId, SeriesId};
 use crate::service::{NewSeries, Service};
 use crate::state::State;
@@ -31,7 +31,7 @@ impl<'a> CtxtRef<'a> {
 pub(crate) struct Ctxt<'a> {
     pub(crate) state: &'a mut State,
     /// Mutable history.
-    pub(crate) history: &'a mut History,
+    pub(crate) history: &'a mut HistoryMutations,
     /// Data service.
     pub(crate) service: &'a mut Service,
     /// Asset loader.
@@ -46,10 +46,10 @@ impl<'a> Ctxt<'a> {
 
     /// Remove a series.
     pub(crate) fn remove_series(&mut self, series_id: &SeriesId) {
-        if matches!(self.history.page(), Some(Page::Series(id) | Page::Season(id, _)) if *id == *series_id)
+        /*if matches!(self.history.page(), Some(Page::Series(id) | Page::Season(id, _)) if *id == *series_id)
         {
             self.history.push_history(self.assets, Page::Dashboard);
-        }
+        }*/
 
         self.service.remove_series(series_id);
     }

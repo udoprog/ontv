@@ -9,7 +9,7 @@ use crate::page;
 pub(crate) enum Page {
     Dashboard,
     WatchNext(page::watch_next::PageState),
-    Search,
+    Search(page::search::PageState),
     SeriesList,
     Series(SeriesId),
     Movie(MovieId),
@@ -19,13 +19,35 @@ pub(crate) enum Page {
     Errors,
 }
 
+#[derive(Default)]
+pub(crate) struct HistoryMutations {
+    relative: Option<isize>,
+    push: Option<Page>,
+}
+
+impl HistoryMutations {
+    /// Test if there are any recorded mutations.
+    fn has_any(&self) -> bool {
+        self.relative.is_some() || self.push.is_some()
+    }
+
+    /// Navigate history.
+    pub(crate) fn navigate(&mut self, relative: isize) {
+        self.relative = Some(relative);
+    }
+
+    /// Push a history entry.
+    pub(crate) fn push_history(&mut self, assets: &mut Assets, page: Page) {
+        assets.clear();
+        self.push = Some(page);
+    }
+}
+
 pub(crate) struct History {
     // History entries.
     history: Vec<(Page, RelativeOffset)>,
     // Current history entry.
     history_index: usize,
-    // History has changed.
-    history_changed: bool,
 }
 
 impl History {
@@ -34,7 +56,6 @@ impl History {
         Self {
             history: vec![(Page::Dashboard, RelativeOffset::default())],
             history_index: 0,
-            history_changed: false,
         }
     }
 
@@ -48,19 +69,6 @@ impl History {
         Some(&mut self.history.get_mut(self.history_index)?.0)
     }
 
-    /// Push a history entry.
-    pub(crate) fn push_history(&mut self, assets: &mut Assets, page: Page) {
-        assets.clear();
-
-        while self.history_index + 1 < self.history.len() {
-            self.history.pop();
-        }
-
-        self.history.push((page, RelativeOffset::default()));
-        self.history_index += 1;
-        self.history_changed = true;
-    }
-
     /// Update scroll location in history.
     pub(crate) fn history_scroll(&mut self, scroll: RelativeOffset) {
         if let Some((_, s)) = self.history.get_mut(self.history_index) {
@@ -68,25 +76,34 @@ impl History {
         }
     }
 
-    /// Navigate the current history.
-    pub(crate) fn history(&mut self, relative: isize) {
-        if relative > 0 {
-            self.history_index = self.history_index.saturating_add(relative as usize);
-        } else if relative < 0 {
-            self.history_index = self.history_index.saturating_sub(-relative as usize);
-        }
-
-        self.history_index = self.history_index.min(self.history.len().saturating_sub(1));
-        self.history_changed = true;
-    }
-
-    /// Acquire history scroll to restore.
-    pub(crate) fn history_change(&mut self) -> Option<&(Page, RelativeOffset)> {
-        if !self.history_changed {
+    /// Apply an existing history mutation.
+    pub(crate) fn apply_mutation(
+        &mut self,
+        mutation: &mut HistoryMutations,
+    ) -> Option<&(Page, RelativeOffset)> {
+        if !mutation.has_any() {
             return None;
         }
 
-        self.history_changed = false;
+        if let Some(relative) = mutation.relative.take() {
+            if relative > 0 {
+                self.history_index = self.history_index.saturating_add(relative as usize);
+            } else if relative < 0 {
+                self.history_index = self.history_index.saturating_sub(-relative as usize);
+            }
+
+            self.history_index = self.history_index.min(self.history.len().saturating_sub(1));
+        }
+
+        if let Some(page) = mutation.push.take() {
+            while self.history_index + 1 < self.history.len() {
+                self.history.pop();
+            }
+
+            self.history.push((page, RelativeOffset::default()));
+            self.history_index += 1;
+        }
+
         self.history.get(self.history_index)
     }
 }

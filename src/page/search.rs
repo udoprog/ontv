@@ -23,25 +23,29 @@ pub(crate) enum Message {
     RemoveMovie(MovieId),
 }
 
-/// The state for the settings page.
-#[derive(Default)]
-pub(crate) struct Search {
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PageState {
     text: String,
-    series: Vec<SearchSeries>,
-    movies: Vec<SearchMovie>,
     series_page: usize,
     movies_page: usize,
     // Unique identifier of last search so that we can look up any recorded errors.
     search_id: Uuid,
 }
 
+/// The state for the settings page.
+#[derive(Default)]
+pub(crate) struct Search {
+    series: Vec<SearchSeries>,
+    movies: Vec<SearchMovie>,
+}
+
 impl Search {
     /// Prepare data that is needed for the view.
-    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>) {
+    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>, state: &PageState) {
         cx.assets.mark_with_hint(
             self.series
                 .iter()
-                .skip(self.series_page * PER_PAGE)
+                .skip(state.series_page * PER_PAGE)
                 .take(PER_PAGE)
                 .flat_map(|s| s.poster()),
             POSTER_HINT,
@@ -50,7 +54,7 @@ impl Search {
         cx.assets.mark_with_hint(
             self.movies
                 .iter()
-                .skip(self.movies_page * PER_PAGE)
+                .skip(state.movies_page * PER_PAGE)
                 .take(PER_PAGE)
                 .flat_map(|s| s.poster()),
             POSTER_HINT,
@@ -61,6 +65,7 @@ impl Search {
     pub(crate) fn update(
         &mut self,
         cx: &mut Ctxt<'_>,
+        state: &mut PageState,
         message: Message,
         commands: impl Commands<Message>,
     ) {
@@ -72,17 +77,17 @@ impl Search {
                 cx.push_history(page);
             }
             Message::Search => {
-                self.search(cx, commands);
+                self.search(cx, state, commands);
             }
             Message::Change(text) => {
-                self.text = text;
+                state.text = text;
             }
             Message::SeriesPage(page) => {
-                self.series_page = page;
+                state.series_page = page;
                 cx.assets.clear();
             }
             Message::MoviesPage(page) => {
-                self.movies_page = page;
+                state.movies_page = page;
                 cx.assets.clear();
             }
             Message::Result(series, movies) => {
@@ -92,7 +97,7 @@ impl Search {
             }
             Message::SearchKindChanged(kind) => {
                 cx.service.config_mut().search_kind = kind;
-                self.search(cx, commands);
+                self.search(cx, state, commands);
             }
             Message::AddSeriesByRemote(remote_id) => {
                 cx.service
@@ -112,22 +117,27 @@ impl Search {
         }
     }
 
-    fn search(&mut self, cx: &mut Ctxt<'_>, mut commands: impl Commands<Message>) {
-        if self.text.is_empty() {
+    fn search(
+        &mut self,
+        cx: &mut Ctxt<'_>,
+        state: &mut PageState,
+        mut commands: impl Commands<Message>,
+    ) {
+        if state.text.is_empty() {
             return;
         }
 
-        self.series_page = 0;
-        self.movies_page = 0;
+        state.series_page = 0;
+        state.movies_page = 0;
 
         let search_id = Uuid::new_v4();
-        let query = self.text.clone();
+        let query = state.text.clone();
         let search_kind = cx.service.config().search_kind;
-        self.search_id = search_id;
+        state.search_id = search_id;
 
         match search_kind {
             SearchKind::Tvdb => {
-                let op = cx.service.search_tvdb(&self.text);
+                let op = cx.service.search_tvdb(&state.text);
 
                 let translate = move |out: Result<_>| match out
                     .with_context(|| anyhow!("Searching {search_kind} for `{query}`"))
@@ -139,8 +149,8 @@ impl Search {
                 commands.perform(op, translate);
             }
             SearchKind::Tmdb => {
-                let series = cx.service.search_series_tmdb(&self.text);
-                let movies = cx.service.search_movies_tmdb(&self.text);
+                let series = cx.service.search_series_tmdb(&state.text);
+                let movies = cx.service.search_movies_tmdb(&state.text);
 
                 let op = async move {
                     match tokio::try_join!(series, movies) {
@@ -157,13 +167,13 @@ impl Search {
     }
 
     /// Generate the view for the settings page.
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>, state: &PageState) -> Element<'static, Message> {
         let mut series = w::Column::new();
 
         for s in self
             .series
             .iter()
-            .skip(self.series_page * PER_PAGE)
+            .skip(state.series_page * PER_PAGE)
             .take(PER_PAGE)
         {
             let local_series = cx.service.get_series_by_remote(&s.id);
@@ -254,7 +264,7 @@ impl Search {
         }
 
         series = series.push(paginate(
-            self.series_page,
+            state.series_page,
             self.series.len(),
             Message::SeriesPage,
         ));
@@ -264,7 +274,7 @@ impl Search {
         for m in self
             .movies
             .iter()
-            .skip(self.movies_page * PER_PAGE)
+            .skip(state.movies_page * PER_PAGE)
             .take(PER_PAGE)
         {
             let local_movie = cx.service.get_movie_by_remote(&m.id);
@@ -358,17 +368,17 @@ impl Search {
         }
 
         movies = movies.push(paginate(
-            self.movies_page,
+            state.movies_page,
             self.movies.len(),
             Message::MoviesPage,
         ));
 
         let query =
-            w::text_input("Query...", &self.text, Message::Change).on_submit(Message::Search);
+            w::text_input("Query...", &state.text, Message::Change).on_submit(Message::Search);
 
         let submit = w::button("Search");
 
-        let submit = if !self.text.is_empty() {
+        let submit = if !state.text.is_empty() {
             submit.on_press(Message::Search)
         } else {
             submit
@@ -396,7 +406,7 @@ impl Search {
         page = page.push(w::text("Search").size(TITLE_SIZE));
         page = page.push(w::Row::new().push(query).push(submit));
 
-        if let Some(e) = cx.state.get_error(ErrorId::Search(self.search_id)) {
+        if let Some(e) = cx.state.get_error(ErrorId::Search(state.search_id)) {
             page = page.push(
                 w::button(w::text(format!("Error: {}", e.message)))
                     .width(Length::Fill)

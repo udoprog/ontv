@@ -12,23 +12,13 @@ pub(crate) enum Message {
     ToggleFuture(bool),
 }
 
+#[derive(Default)]
 pub(crate) struct WatchNext {
     future: Vec<comps::Episode>,
     episodes: Vec<comps::Episode>,
 }
 
 impl WatchNext {
-    #[inline]
-    pub(crate) fn new(cx: &mut Ctxt<'_>, state: &PageState) -> Self {
-        let mut this = Self {
-            future: Vec::new(),
-            episodes: Vec::new(),
-        };
-
-        this.prepare(cx, state);
-        this
-    }
-
     pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>, state: &PageState) {
         let today = cx.state.today();
 
@@ -82,25 +72,25 @@ impl WatchNext {
 
         list = list.push(w::vertical_space(Length::Shrink));
 
-        let mut options = w::Row::new();
-
-        options = options.push(
-            w::Column::new()
-                .push(w::text("Show future:"))
-                .spacing(SPACE)
-                .push(w::checkbox(
-                    "show future episodes",
-                    state.future,
-                    Message::ToggleFuture,
-                )),
-        );
-
-        list = list.push(options);
-
         list = list.push(centered(
             w::text("Watch next").size(TITLE_SIZE).width(Length::Fill),
             None,
         ));
+
+        let mut options = w::Row::new();
+
+        options = options.push(centered(
+            w::Row::new()
+                .push(w::checkbox(
+                    "Show future episodes",
+                    state.future,
+                    Message::ToggleFuture,
+                ))
+                .width(Length::Fill),
+            None,
+        ));
+
+        list = list.push(options.width(Length::Fill));
 
         if !self.future.is_empty() {
             list = list.push(centered(
