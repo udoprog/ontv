@@ -1,4 +1,16 @@
+use serde::{Deserialize, Serialize};
+
 use crate::prelude::*;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) struct State {
+    pub(crate) id: SeriesId,
+}
+
+pub(crate) fn page(id: SeriesId) -> Page {
+    Page::Series(State { id })
+}
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -17,27 +29,27 @@ pub(crate) struct Series {
 
 impl Series {
     #[inline]
-    pub(crate) fn new(series_id: &SeriesId) -> Self {
+    pub(crate) fn new(state: &State) -> Self {
         Self {
-            series: comps::SeriesActions::new(*series_id),
+            series: comps::SeriesActions::new(state.id),
             seasons: Vec::new(),
             banner: comps::SeriesBanner::default(),
         }
     }
 
-    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>, series_id: &SeriesId) {
+    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>, state: &State) {
         self.seasons.init_from_iter(
             cx.service
-                .seasons(series_id)
+                .seasons(&state.id)
                 .map(|s| (*s.series(), s.number)),
         );
 
-        self.banner.prepare(cx, series_id);
+        self.banner.prepare(cx, &state.id);
 
-        if let Some(series) = cx.service.series(series_id) {
+        if let Some(series) = cx.service.series(&state.id) {
             cx.assets.mark_with_hint(
                 cx.service
-                    .seasons(series_id)
+                    .seasons(&state.id)
                     .flat_map(|season| season.into_season().poster().or(series.poster())),
                 POSTER_HINT,
             );
@@ -67,8 +79,8 @@ impl Series {
         }
     }
 
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>, series_id: &SeriesId) -> Element<'static, Message> {
-        let Some(series) = cx.service.series(series_id) else {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>, state: &State) -> Element<'static, Message> {
+        let Some(series) = cx.service.series(&state.id) else {
             return w::Column::new().into();
         };
 
@@ -110,11 +122,13 @@ impl Series {
                 None => cx.missing_poster(),
             };
 
-            let graphic = link(w::image(poster).height(IMAGE_HEIGHT))
-                .on_press(Message::Navigate(Page::Season(series.id, season.number)));
+            let graphic = link(w::image(poster).height(IMAGE_HEIGHT)).on_press(Message::Navigate(
+                page::season::page(series.id, season.number),
+            ));
 
-            let title = link(w::text(season.number).size(SUBTITLE_SIZE))
-                .on_press(Message::Navigate(Page::Season(series.id, season.number)));
+            let title = link(w::text(season.number).size(SUBTITLE_SIZE)).on_press(
+                Message::Navigate(page::season::page(series.id, season.number)),
+            );
 
             cols = cols.push(
                 centered(

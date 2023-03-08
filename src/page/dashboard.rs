@@ -116,7 +116,7 @@ impl Dashboard {
     pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
         let up_next_title = link(w::text("Watch next").size(SUBTITLE_SIZE))
             .on_press(Message::Navigate(Page::WatchNext(
-                crate::page::watch_next::PageState::default(),
+                crate::page::watch_next::State::default(),
             )))
             .width(Length::Fill);
 
@@ -233,7 +233,7 @@ impl Dashboard {
 
             panel = panel.push(
                 link(w::image(poster).width(Length::Fill))
-                    .on_press(Message::Navigate(Page::Series(series.id))),
+                    .on_press(Message::Navigate(page::series::page(series.id))),
             );
 
             let mut actions = w::Row::new();
@@ -295,7 +295,10 @@ impl Dashboard {
                         .size(SMALL)
                         .horizontal_alignment(Horizontal::Center),
                 )
-                .on_press(Message::Navigate(Page::Season(series.id, episode.season))),
+                .on_press(Message::Navigate(page::season::page(
+                    series.id,
+                    episode.season,
+                ))),
             );
 
             pending = pending.push(
@@ -365,7 +368,7 @@ impl Dashboard {
 
                 cols = cols.push(
                     link(w::image(poster))
-                        .on_press(Message::Navigate(Page::Series(*series_id)))
+                        .on_press(Message::Navigate(page::series::page(*series_id)))
                         .width(Length::FillPortion(1)),
                 );
 
@@ -389,15 +392,16 @@ impl Dashboard {
                         None => format!("{}x{}", episode.season.short(), episode.number),
                     };
 
-                    let episode = link(w::text(name).size(SMALL))
-                        .on_press(Message::Navigate(Page::Season(series.id, episode.season)));
+                    let episode = link(w::text(name).size(SMALL)).on_press(Message::Navigate(
+                        page::season::page(series.id, episode.season),
+                    ));
 
                     episodes = episodes
                         .push(Hoverable::new(episode).on_hover(Message::HoverScheduled(series.id)));
                 }
 
                 let title = link(w::text(&series.title))
-                    .on_press(Message::Navigate(Page::Series(series.id)));
+                    .on_press(Message::Navigate(page::series::page(series.id)));
 
                 series_column = series_column
                     .push(Hoverable::new(title).on_hover(Message::HoverScheduled(series.id)));

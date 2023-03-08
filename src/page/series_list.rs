@@ -91,12 +91,12 @@ impl SeriesList {
             };
 
             let graphic = link(w::image(poster).height(IMAGE_HEIGHT))
-                .on_press(Message::Navigate(Page::Series(series.id)));
+                .on_press(Message::Navigate(page::series::page(series.id)));
 
             let episodes = cx.service.episodes(&series.id);
 
             let title = link(w::text(&series.title).size(SUBTITLE_SIZE))
-                .on_press(Message::Navigate(Page::Series(series.id)));
+                .on_press(Message::Navigate(page::series::page(series.id)));
 
             let actions = actions
                 .view(cx, series)

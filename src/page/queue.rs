@@ -208,7 +208,7 @@ fn decorate_series<'a>(
     let remote_id = if let Some(series) = cx.service.series(series_id) {
         row = row.push(
             link(w::text(&series.title).size(SMALL))
-                .on_press(Message::Navigate(Page::Series(*series_id))),
+                .on_press(Message::Navigate(page::series::page(*series_id))),
         );
 
         remote_id.or(series.remote_id.as_ref())

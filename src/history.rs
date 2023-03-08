@@ -1,20 +1,21 @@
 use iced::widget::scrollable::RelativeOffset;
+use serde::{Deserialize, Serialize};
 
 use crate::assets::Assets;
-use crate::model::{MovieId, SeasonNumber, SeriesId};
 use crate::page;
 
 /// The current page.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum Page {
     Dashboard,
-    WatchNext(page::watch_next::PageState),
-    Search(page::search::PageState),
+    WatchNext(page::watch_next::State),
+    Search(page::search::State),
     SeriesList,
-    Series(SeriesId),
-    Movie(MovieId),
+    Series(page::series::State),
+    Movie(page::movie::State),
     Settings,
-    Season(SeriesId, SeasonNumber),
+    Season(page::season::State),
     Queue,
     Errors,
 }

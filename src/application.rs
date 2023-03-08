@@ -183,22 +183,26 @@ impl iced::Application for Application {
                 Page::SeriesList => {
                     return format!("{BASE} - Series overview");
                 }
-                Page::Series(id) => {
-                    if let Some(series) = self.service.series(id) {
+                Page::Series(state) => {
+                    if let Some(series) = self.service.series(&state.id) {
                         return format!("{BASE} - {}", series.title);
                     }
                 }
-                Page::Movie(id) => {
-                    if let Some(movie) = self.service.movie(id) {
+                Page::Movie(state) => {
+                    if let Some(movie) = self.service.movie(&state.id) {
                         return format!("{BASE} - {}", movie.title);
                     }
                 }
                 Page::Settings => {
                     return format!("{BASE} - Settings");
                 }
-                Page::Season(series, season) => {
-                    if let Some(series) = self.service.series(series) {
-                        return format!("{BASE} - {} - {season}", series.title);
+                Page::Season(state) => {
+                    if let Some(series) = self.service.series(&state.series_id) {
+                        return format!(
+                            "{BASE} - {} - {season}",
+                            series.title,
+                            season = state.season
+                        );
                     }
                 }
                 Page::Queue => {
@@ -381,12 +385,10 @@ impl iced::Application for Application {
                 Page::WatchNext(..) => Current::WatchNext(page::WatchNext::default()),
                 Page::Search(..) => Current::Search(page::Search::default()),
                 Page::SeriesList => Current::SeriesList(page::SeriesList::default()),
-                Page::Series(series_id) => Current::Series(page::Series::new(series_id)),
-                Page::Movie(movie_id) => Current::Movie(page::Movie::new(movie_id)),
+                Page::Series(state) => Current::Series(page::Series::new(state)),
+                Page::Movie(state) => Current::Movie(page::Movie::new(state)),
                 Page::Settings => Current::Settings(page::Settings::default()),
-                Page::Season(series_id, season) => {
-                    Current::Season(page::Season::new(series_id, season))
-                }
+                Page::Season(state) => Current::Season(page::Season::new(state)),
                 Page::Queue => {
                     let page = page::Queue::new(self.commands.by_ref().map(Message::Queue));
                     Current::Queue(page)
@@ -452,7 +454,7 @@ impl iced::Application for Application {
             page,
             w::text("Search"),
             |p| matches!(p, Page::Search(..)),
-            || Page::Search(page::search::PageState::default()),
+            || Page::Search(page::search::State::default()),
         ));
 
         top_menu = top_menu.push(menu_item(
@@ -481,15 +483,17 @@ impl iced::Application for Application {
 
         let mut menu = w::Column::new().push(top_menu);
 
-        if let Page::Series(series_id) | Page::Season(series_id, _) = page {
+        if let Page::Series(page::series::State { id: series_id })
+        | Page::Season(page::season::State { series_id, .. }) = page
+        {
             let mut sub_menu = w::Row::new();
 
             if let Some(series) = self.service.series(&series_id) {
                 sub_menu = sub_menu.push(menu_item(
                     &page,
                     w::text(&series.title).size(SUB_MENU_SIZE),
-                    |p| matches!(p, Page::Series(s) if *s == *series_id),
-                    || Page::Series(*series_id),
+                    |p| matches!(p, Page::Series(page::series::State { id }) if *id == *series_id),
+                    || page::series::page(*series_id),
                 ));
             }
 
@@ -507,8 +511,8 @@ impl iced::Application for Application {
                 sub_menu = sub_menu.push(menu_item(
                     &page,
                     title,
-                    |p| matches!(p, Page::Season(series, number) if *series == *series_id && *number == season.number),
-                    || Page::Season(*series_id, season.number)
+                    |p| matches!(p, Page::Season(page::season::State { series_id: a, season: b }) if *a == *series_id && *b == season.number),
+                    || page::season::page(*series_id, season.number)
                 ));
             }
 
@@ -535,13 +539,13 @@ impl iced::Application for Application {
             (Current::Series(page), Some(Page::Series(series_id))) => {
                 page.view(ctxt_ref!(self), series_id).map(Message::Series)
             }
-            (Current::Movie(page), Some(Page::Movie(movie_id))) => {
-                page.view(movie_id).map(Message::Movie)
+            (Current::Movie(page), Some(Page::Movie(state))) => {
+                page.view(state).map(Message::Movie)
             }
             (Current::Settings(page), _) => page.view(ctxt_ref!(self)).map(Message::Settings),
-            (Current::Season(page), Some(Page::Season(series_id, season))) => page
-                .view(ctxt_ref!(self), series_id, season)
-                .map(Message::Season),
+            (Current::Season(page), Some(Page::Season(state))) => {
+                page.view(ctxt_ref!(self), state).map(Message::Season)
+            }
             (Current::Queue(page), _) => page.view(ctxt_ref!(self)).map(Message::Queue),
             (Current::Errors(page), _) => page.view(ctxt_ref!(self)).map(Message::Errors),
             _ => return w::text("invalid page state").into(),
@@ -613,16 +617,20 @@ impl Application {
                 page.prepare(ctxt_mut!(self), state);
             }
             (Current::Search(page), Some(Page::Search(state))) => {
-                page.prepare(ctxt_mut!(self), state);
+                page.prepare(
+                    ctxt_mut!(self),
+                    state,
+                    self.commands.by_ref().map(Message::Search),
+                );
             }
             (Current::SeriesList(page), _) => {
                 page.prepare(ctxt_mut!(self));
             }
-            (Current::Series(page), Some(Page::Series(series_id))) => {
-                page.prepare(ctxt_mut!(self), series_id);
+            (Current::Series(page), Some(Page::Series(state))) => {
+                page.prepare(ctxt_mut!(self), state);
             }
-            (Current::Season(page), Some(Page::Season(series_id, season))) => {
-                page.prepare(ctxt_mut!(self), series_id, season);
+            (Current::Season(page), Some(Page::Season(state))) => {
+                page.prepare(ctxt_mut!(self), state);
             }
             _ => {
                 // noop

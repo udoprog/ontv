@@ -108,6 +108,7 @@ mod prelude {
     pub(crate) use crate::error::{ErrorId, ErrorInfo};
     pub(crate) use crate::history::Page;
     pub(crate) use crate::model::*;
+    pub(crate) use crate::page;
     pub(crate) use crate::params::*;
     pub(crate) use crate::state::State;
     pub(crate) use crate::style;

@@ -1,3 +1,7 @@
+use std::fmt;
+
+use serde::{Deserialize, Serialize};
+
 use crate::prelude::*;
 use crate::queue::TaskStatus;
 
@@ -23,13 +27,34 @@ pub(crate) enum Message {
     RemoveMovie(MovieId),
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PageState {
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum SearchKind {
+    Tvdb,
+    #[default]
+    Tmdb,
+}
+
+impl fmt::Display for SearchKind {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SearchKind::Tvdb => write!(f, "thetvdb.com"),
+            SearchKind::Tmdb => write!(f, "themoviedb.com"),
+        }
+    }
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) struct State {
     text: String,
     series_page: usize,
     movies_page: usize,
     // Unique identifier of last search so that we can look up any recorded errors.
     search_id: Uuid,
+    // Current search kind.
+    kind: SearchKind,
 }
 
 /// The state for the settings page.
@@ -37,11 +62,17 @@ pub(crate) struct PageState {
 pub(crate) struct Search {
     series: Vec<SearchSeries>,
     movies: Vec<SearchMovie>,
+    initialized: bool,
 }
 
 impl Search {
     /// Prepare data that is needed for the view.
-    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>, state: &PageState) {
+    pub(crate) fn prepare(
+        &mut self,
+        cx: &mut Ctxt<'_>,
+        state: &mut State,
+        commands: impl Commands<Message>,
+    ) {
         cx.assets.mark_with_hint(
             self.series
                 .iter()
@@ -59,13 +90,18 @@ impl Search {
                 .flat_map(|s| s.poster()),
             POSTER_HINT,
         );
+
+        if !self.initialized {
+            self.initialized = true;
+            self.search(cx, state, commands);
+        }
     }
 
     /// Handle theme change.
     pub(crate) fn update(
         &mut self,
         cx: &mut Ctxt<'_>,
-        state: &mut PageState,
+        state: &mut State,
         message: Message,
         commands: impl Commands<Message>,
     ) {
@@ -96,7 +132,7 @@ impl Search {
                 cx.assets.clear();
             }
             Message::SearchKindChanged(kind) => {
-                cx.service.config_mut().search_kind = kind;
+                state.kind = kind;
                 self.search(cx, state, commands);
             }
             Message::AddSeriesByRemote(remote_id) => {
@@ -120,7 +156,7 @@ impl Search {
     fn search(
         &mut self,
         cx: &mut Ctxt<'_>,
-        state: &mut PageState,
+        state: &mut State,
         mut commands: impl Commands<Message>,
     ) {
         if state.text.is_empty() {
@@ -132,15 +168,15 @@ impl Search {
 
         let search_id = Uuid::new_v4();
         let query = state.text.clone();
-        let search_kind = cx.service.config().search_kind;
         state.search_id = search_id;
+        let kind = state.kind;
 
-        match search_kind {
+        match kind {
             SearchKind::Tvdb => {
                 let op = cx.service.search_tvdb(&state.text);
 
                 let translate = move |out: Result<_>| match out
-                    .with_context(|| anyhow!("Searching {search_kind} for `{query}`"))
+                    .with_context(|| anyhow!("Searching {kind} for `{query}`"))
                 {
                     Ok(series) => Message::Result(series, Vec::new()),
                     Err(error) => Message::Error(ErrorInfo::new(ErrorId::Search(search_id), error)),
@@ -167,7 +203,7 @@ impl Search {
     }
 
     /// Generate the view for the settings page.
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>, state: &PageState) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>, state: &State) -> Element<'static, Message> {
         let mut series = w::Column::new();
 
         for s in self
@@ -241,7 +277,8 @@ impl Search {
 
             if let Some(local_series) = local_series {
                 result = result.push(
-                    link(series_name).on_press(Message::Navigate(Page::Series(local_series.id))),
+                    link(series_name)
+                        .on_press(Message::Navigate(page::series::page(local_series.id))),
                 );
             } else {
                 result = result.push(series_name);
@@ -345,7 +382,8 @@ impl Search {
 
             if let Some(local_movie) = local_movie {
                 result = result.push(
-                    link(movie_title).on_press(Message::Navigate(Page::Movie(local_movie.id))),
+                    link(movie_title)
+                        .on_press(Message::Navigate(page::movie::page(local_movie.id))),
                 );
             } else {
                 result = result.push(movie_title);
@@ -394,7 +432,7 @@ impl Search {
                         w::radio(
                             kind.to_string(),
                             *kind,
-                            Some(cx.service.config().search_kind),
+                            Some(state.kind),
                             Message::SearchKindChanged,
                         )
                         .size(SMALL),

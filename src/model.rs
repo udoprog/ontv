@@ -73,24 +73,6 @@ pub(crate) enum ThemeType {
     Dark,
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum SearchKind {
-    Tvdb,
-    #[default]
-    Tmdb,
-}
-
-impl fmt::Display for SearchKind {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SearchKind::Tvdb => write!(f, "thetvdb.com"),
-            SearchKind::Tmdb => write!(f, "themoviedb.com"),
-        }
-    }
-}
-
 #[inline]
 fn default_days() -> u64 {
     7
@@ -127,8 +109,6 @@ pub(crate) struct Config {
     pub(crate) tmdb_api_key: String,
     #[serde(default = "default_days")]
     pub(crate) schedule_duration_days: u64,
-    #[serde(default)]
-    pub(crate) search_kind: SearchKind,
     #[serde(default = "default_dashboard_limit")]
     pub(crate) dashboard_limit: usize,
     #[serde(default = "default_dashboard_page")]
@@ -161,7 +141,6 @@ impl Default for Config {
             tvdb_legacy_apikey: Default::default(),
             tmdb_api_key: Default::default(),
             schedule_duration_days: default_days(),
-            search_kind: SearchKind::default(),
             dashboard_limit: default_dashboard_limit(),
             dashboard_page: default_dashboard_page(),
             schedule_limit: default_schedule_limit(),

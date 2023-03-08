@@ -1,7 +1,10 @@
+use serde::{Deserialize, Serialize};
+
 use crate::prelude::*;
 
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PageState {
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) struct State {
     future: bool,
 }
 
@@ -19,7 +22,7 @@ pub(crate) struct WatchNext {
 }
 
 impl WatchNext {
-    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>, state: &PageState) {
+    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>, state: &State) {
         let today = cx.state.today();
 
         if state.future {
@@ -49,7 +52,7 @@ impl WatchNext {
         }
     }
 
-    pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, state: &mut PageState, message: Message) {
+    pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, state: &mut State, message: Message) {
         match message {
             Message::Future(index, m) => {
                 if let Some(c) = self.future.get_mut(index) {
@@ -67,7 +70,7 @@ impl WatchNext {
         }
     }
 
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>, state: &PageState) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>, state: &State) -> Element<'static, Message> {
         let mut list = w::Column::new();
 
         list = list.push(w::vertical_space(Length::Shrink));
