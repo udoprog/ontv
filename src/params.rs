@@ -33,7 +33,7 @@ pub(crate) const POSTER_HINT: ImageHint = ImageHint::Fit(500, POSTER_HEIGHT as u
 pub(crate) const SCREENCAP_HINT: ImageHint = ImageHint::Fill(480, SCREENCAP_HEIGHT as u32);
 
 // Banner dimensions.
-pub(crate) const BANNER: ImageHint = ImageHint::Fill(1600, 300);
+pub(crate) const BANNER: ImageHint = ImageHint::Fill(1600, 400);
 
 /// Build a default container.
 pub(crate) fn default_container<'a, E, M: 'a>(content: E) -> Column<'a, M>
