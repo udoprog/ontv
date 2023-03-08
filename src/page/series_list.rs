@@ -17,18 +17,18 @@ pub(crate) struct SeriesList {
 
 impl SeriesList {
     /// Prepare the view.
-    pub(crate) fn prepare(&mut self, s: &mut State) {
+    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>) {
         if let Some(filtered) = &self.filtered {
-            let series = filtered.iter().flat_map(|id| s.service.series(id));
+            let series = filtered.iter().flat_map(|id| cx.service.series(id));
             self.actions.init_from_iter(series.clone().map(|s| s.id));
-            s.assets
+            cx.assets
                 .mark_with_hint(series.flat_map(|s| s.graphics.poster.as_ref()), POSTER_HINT);
         } else {
             self.actions
-                .init_from_iter(s.service.series_by_name().map(|s| s.id));
+                .init_from_iter(cx.service.series_by_name().map(|s| s.id));
 
-            s.assets.mark_with_hint(
-                s.service
+            cx.assets.mark_with_hint(
+                cx.service
                     .series_by_name()
                     .flat_map(|s| s.graphics.poster.as_ref()),
                 POSTER_HINT,
@@ -36,7 +36,7 @@ impl SeriesList {
         }
     }
 
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
+    pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, message: Message) {
         match message {
             Message::ChangeFilter(filter) => {
                 self.filter = filter;
@@ -45,7 +45,7 @@ impl SeriesList {
                 self.filtered = if !filter.is_empty() {
                     let mut filtered = Vec::new();
 
-                    for s in s.service.series_by_name() {
+                    for s in cx.service.series_by_name() {
                         if filter.matches(&s.title) {
                             filtered.push(s.id);
                         }
@@ -58,48 +58,48 @@ impl SeriesList {
             }
             Message::SeriesActions(index, message) => {
                 if let Some(actions) = self.actions.get_mut(index) {
-                    actions.update(s, message);
+                    actions.update(cx, message);
                 }
             }
             Message::Navigate(page) => {
-                s.push_history(page);
+                cx.push_history(page);
             }
         }
     }
 
-    pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
         let mut rows = w::Column::new();
 
         let mut it;
         let mut it2;
 
         let iter: &mut dyn Iterator<Item = _> = if let Some(filtered) = &self.filtered {
-            it = filtered.iter().flat_map(|id| s.service.series(id));
+            it = filtered.iter().flat_map(|id| cx.service.series(id));
             &mut it
         } else {
-            it2 = s.service.series_by_name();
+            it2 = cx.service.series_by_name();
             &mut it2
         };
 
         for (index, (series, actions)) in iter.zip(&self.actions).enumerate() {
             let poster = match series
                 .poster()
-                .and_then(|i| s.assets.image_with_hint(i, POSTER_HINT))
+                .and_then(|i| cx.assets.image_with_hint(i, POSTER_HINT))
             {
                 Some(handle) => handle,
-                None => s.missing_poster(),
+                None => cx.missing_poster(),
             };
 
             let graphic = link(w::image(poster).height(IMAGE_HEIGHT))
                 .on_press(Message::Navigate(Page::Series(series.id)));
 
-            let episodes = s.service.episodes(&series.id);
+            let episodes = cx.service.episodes(&series.id);
 
             let title = link(w::text(&series.title).size(SUBTITLE_SIZE))
                 .on_press(Message::Navigate(Page::Series(series.id)));
 
             let actions = actions
-                .view(s, series)
+                .view(cx, series)
                 .map(move |m| Message::SeriesActions(index, m));
 
             let mut content = w::Column::new().width(Length::Fill);

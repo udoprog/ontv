@@ -13,16 +13,8 @@ impl Movie {
         Self { movie_id }
     }
 
-    pub(crate) fn prepare(&mut self, _: &mut State) {}
-
-    #[allow(unused)]
-    pub(crate) fn update(&mut self, _: &mut State, message: Message) {
-        match message {}
-    }
-
-    pub(crate) fn view(&self, _: &State) -> Element<'static, Message> {
+    pub(crate) fn view(&self) -> Element<'static, Message> {
         let id = w::text(self.movie_id.to_string());
-
         w::Column::new().push(id).into()
     }
 }

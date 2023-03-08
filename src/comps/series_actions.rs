@@ -34,16 +34,16 @@ impl Component<SeriesId> for SeriesActions {
 }
 
 impl SeriesActions {
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
+    pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, message: Message) {
         match message {
             Message::Untrack => {
-                s.service.untrack(&self.series_id);
+                cx.service.untrack(&self.series_id);
             }
             Message::Track => {
-                s.service.track(&self.series_id);
+                cx.service.track(&self.series_id);
             }
             Message::RefreshSeries(remote_id) => {
-                s.service
+                cx.service
                     .push_task_without_delay(TaskKind::DownloadSeriesById {
                         series_id: self.series_id,
                         remote_id,
@@ -52,12 +52,12 @@ impl SeriesActions {
                     });
             }
             Message::RemoveSeries => {
-                s.remove_series(&self.series_id);
+                cx.remove_series(&self.series_id);
             }
         }
     }
 
-    pub(crate) fn view(&self, s: &State, series: &Series) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>, series: &Series) -> Element<'static, Message> {
         let mut row = w::Row::new();
 
         if series.tracked {
@@ -74,7 +74,7 @@ impl SeriesActions {
             );
         }
 
-        let status = s.service.task_status(&TaskId::DownloadSeriesById {
+        let status = cx.service.task_status(&TaskId::DownloadSeriesById {
             series_id: series.id,
         });
 

@@ -56,12 +56,12 @@ impl WatchRemaining {
         self.confirm
     }
 
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
+    pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, message: Message) {
         match message {
             Message::RightNow => {
                 self.confirm = false;
                 let now = Utc::now();
-                s.service.watch_remaining_season(
+                cx.service.watch_remaining_season(
                     &now,
                     &self.props.series_id,
                     &self.props.season,
@@ -71,7 +71,7 @@ impl WatchRemaining {
             Message::AirDate => {
                 self.confirm = false;
                 let now = Utc::now();
-                s.service.watch_remaining_season(
+                cx.service.watch_remaining_season(
                     &now,
                     &self.props.series_id,
                     &self.props.season,

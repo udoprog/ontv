@@ -1,14 +1,6 @@
-use chrono::Utc;
-use iced::widget::{button, text, Row};
-use iced::{theme, Element};
-use uuid::Uuid;
+use crate::prelude::*;
 
-use crate::component::Component;
 use crate::comps::ordering::Ordering;
-use crate::model::SeriesId;
-use crate::model::{EpisodeId, SeasonNumber};
-use crate::params::SMALL;
-use crate::state::State;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Kind {
@@ -78,7 +70,7 @@ impl Confirm {
         self.confirm
     }
 
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
+    pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, message: Message) {
         match message {
             Message::Confirm => {
                 self.confirm = false;
@@ -88,11 +80,11 @@ impl Confirm {
                         episode_id,
                         watch_id,
                     } => {
-                        s.service.remove_episode_watch(episode_id, watch_id);
+                        cx.service.remove_episode_watch(episode_id, watch_id);
                     }
                     Kind::RemoveSeason { series_id, season } => {
                         let now = Utc::now();
-                        s.service.remove_season_watches(&now, series_id, season);
+                        cx.service.remove_season_watches(&now, series_id, season);
                     }
                 }
             }
@@ -110,15 +102,15 @@ impl Confirm {
         title: &str,
         initial_theme: theme::Button,
     ) -> Element<'static, Message> {
-        let mut row = Row::new();
+        let mut row = w::Row::new();
 
         if self.confirm {
             let buttons = [
-                button(text(title).size(SMALL)).style(theme::Button::Secondary),
-                button(text("Confirm").size(SMALL))
+                w::button(w::text(title).size(SMALL)).style(theme::Button::Secondary),
+                w::button(w::text("Confirm").size(SMALL))
                     .style(initial_theme)
                     .on_press(Message::Confirm),
-                button(text("Cancel").size(SMALL))
+                w::button(w::text("Cancel").size(SMALL))
                     .style(theme::Button::Secondary)
                     .on_press(Message::Cancel),
             ];
@@ -137,7 +129,7 @@ impl Confirm {
             }
         } else {
             row = row.push(
-                button(text(title).size(SMALL))
+                w::button(w::text(title).size(SMALL))
                     .style(initial_theme)
                     .on_press(Message::Start),
             );

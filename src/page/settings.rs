@@ -12,30 +12,27 @@ pub(crate) enum Message {
 pub(crate) struct Settings;
 
 impl Settings {
-    /// Prepare data that is needed for the view.
-    pub(crate) fn prepare(&mut self, _: &mut State) {}
-
     /// Handle theme change.
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
+    pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, message: Message) {
         match message {
             Message::ThemeChanged(theme) => {
-                s.service.set_theme(theme);
+                cx.service.set_theme(theme);
             }
             Message::TvdbLegacyApiKeyChange(string) => {
-                s.service.set_tvdb_legacy_api_key(string);
+                cx.service.set_tvdb_legacy_api_key(string);
             }
             Message::TmdbApiKeyChange(string) => {
-                s.service.set_tmdb_api_key(string);
+                cx.service.set_tmdb_api_key(string);
             }
             Message::ClearLastSync => {
-                s.service.clear_last_sync();
+                cx.service.clear_last_sync();
             }
         }
     }
 
     /// Generate the view for the settings page.
-    pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
-        let config = s.service.config();
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
+        let config = cx.service.config();
 
         let mut page = w::Column::new();
 

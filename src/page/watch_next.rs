@@ -1,9 +1,15 @@
 use crate::prelude::*;
 
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PageState {
+    future: bool,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     Future(usize, comps::episode::Message),
     Episode(usize, comps::episode::Message),
+    ToggleFuture(bool),
 }
 
 pub(crate) struct WatchNext {
@@ -13,58 +19,83 @@ pub(crate) struct WatchNext {
 
 impl WatchNext {
     #[inline]
-    pub(crate) fn new() -> Self {
-        Self {
+    pub(crate) fn new(cx: &mut Ctxt<'_>, state: &PageState) -> Self {
+        let mut this = Self {
             future: Vec::new(),
             episodes: Vec::new(),
-        }
+        };
+
+        this.prepare(cx, state);
+        this
     }
 
-    pub(crate) fn prepare(&mut self, s: &mut State) {
-        let today = s.today();
+    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>, state: &PageState) {
+        let today = cx.state.today();
 
-        let future = s.service.pending().rev().filter(|p| p.will_air(&today));
+        if state.future {
+            let future = cx.service.pending().rev().filter(|p| p.will_air(&today));
 
-        self.future
-            .init_from_iter(future.map(|p| comps::episode::Props {
-                include_series: true,
-                episode_id: p.episode.id,
-                watched: s.service.watched(&p.episode.id),
-            }));
+            self.future
+                .init_from_iter(future.map(|p| comps::episode::Props {
+                    include_series: true,
+                    episode_id: p.episode.id,
+                    watched: cx.service.watched(&p.episode.id),
+                }));
+        } else {
+            self.future.clear();
+        }
 
-        let episodes = s.service.pending().rev().filter(|p| p.has_aired(&today));
+        let episodes = cx.service.pending().rev().filter(|p| p.has_aired(&today));
 
         self.episodes
             .init_from_iter(episodes.map(|p| comps::episode::Props {
                 include_series: true,
                 episode_id: p.episode.id,
-                watched: s.service.watched(&p.episode.id),
+                watched: cx.service.watched(&p.episode.id),
             }));
 
         for e in self.future.iter_mut().chain(&mut self.episodes) {
-            e.prepare(s);
+            e.prepare(cx);
         }
     }
 
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
+    pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, state: &mut PageState, message: Message) {
         match message {
             Message::Future(index, m) => {
                 if let Some(c) = self.future.get_mut(index) {
-                    c.update(s, m);
+                    c.update(cx, m);
                 }
             }
             Message::Episode(index, m) => {
                 if let Some(c) = self.episodes.get_mut(index) {
-                    c.update(s, m);
+                    c.update(cx, m);
                 }
+            }
+            Message::ToggleFuture(value) => {
+                state.future = value;
             }
         }
     }
 
-    pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>, state: &PageState) -> Element<'static, Message> {
         let mut list = w::Column::new();
 
         list = list.push(w::vertical_space(Length::Shrink));
+
+        let mut options = w::Row::new();
+
+        options = options.push(
+            w::Column::new()
+                .push(w::text("Show future:"))
+                .spacing(SPACE)
+                .push(w::checkbox(
+                    "show future episodes",
+                    state.future,
+                    Message::ToggleFuture,
+                )),
+        );
+
+        list = list.push(options);
 
         list = list.push(centered(
             w::text("Watch next").size(TITLE_SIZE).width(Length::Fill),
@@ -83,7 +114,7 @@ impl WatchNext {
                 list = list.push(
                     centered(
                         episode
-                            .view(s, true)
+                            .view(cx, true)
                             .map(move |m| Message::Future(index, m)),
                         Some(style::weak),
                     )
@@ -104,7 +135,7 @@ impl WatchNext {
                 list = list.push(
                     centered(
                         episode
-                            .view(s, true)
+                            .view(cx, true)
                             .map(move |m| Message::Episode(index, m)),
                         Some(style::weak),
                     )

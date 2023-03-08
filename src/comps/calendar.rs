@@ -3,11 +3,8 @@
 use std::mem;
 
 use chrono::{Datelike, Days, Months, NaiveDate, Weekday};
-use iced::alignment::Horizontal;
-use iced::widget::{button, text, Column, Row};
-use iced::{theme, Alignment, Element, Length};
 
-use crate::params::{SMALL, SPACE};
+use crate::prelude::*;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -59,21 +56,21 @@ impl Calendar {
     }
 
     pub(crate) fn view(&self) -> Element<'static, Message> {
-        let mut placeholder = Column::new();
+        let mut placeholder = w::Column::new();
 
         let mut cols = [
-            Column::new(),
-            Column::new(),
-            Column::new(),
-            Column::new(),
-            Column::new(),
-            Column::new(),
-            Column::new(),
+            w::Column::new(),
+            w::Column::new(),
+            w::Column::new(),
+            w::Column::new(),
+            w::Column::new(),
+            w::Column::new(),
+            w::Column::new(),
         ];
 
         for (date, o) in self.week(self.start_of_week).zip(cols.iter_mut()) {
             let mut col = mem::replace(o, placeholder);
-            col = col.push(text(format_week(date)).size(SMALL));
+            col = col.push(w::text(format_week(date)).size(SMALL));
             placeholder = mem::replace(o, col);
         }
 
@@ -83,8 +80,8 @@ impl Calendar {
             .take_while(|d| *d <= self.last)
             .zip((0..7).into_iter().cycle())
         {
-            let mut button = button(
-                text(date.day())
+            let mut button = w::button(
+                w::text(date.day())
                     .width(Length::Fill)
                     .size(SMALL)
                     .horizontal_alignment(Horizontal::Center),
@@ -105,7 +102,7 @@ impl Calendar {
             placeholder = mem::replace(&mut cols[o], col);
         }
 
-        let mut row = Row::new();
+        let mut row = w::Row::new();
 
         for col in cols {
             row = row.push(
@@ -115,14 +112,14 @@ impl Calendar {
             );
         }
 
-        let mut column = Column::new();
+        let mut column = w::Column::new();
 
-        let mut title = Row::new();
+        let mut title = w::Row::new();
 
-        title = title.push(button(text("Prev").size(SMALL)).on_press(Message::PrevMonth));
+        title = title.push(w::button(w::text("Prev").size(SMALL)).on_press(Message::PrevMonth));
 
         title = title.push(
-            text(format!(
+            w::text(format!(
                 "{} {}",
                 format_month(self.month.month()),
                 self.month.year()
@@ -131,7 +128,7 @@ impl Calendar {
             .width(Length::Fill),
         );
 
-        title = title.push(button(text("Next").size(SMALL)).on_press(Message::NextMonth));
+        title = title.push(w::button(w::text("Next").size(SMALL)).on_press(Message::NextMonth));
 
         column = column.push(title.spacing(SPACE));
         column = column.push(row.spacing(SPACE));

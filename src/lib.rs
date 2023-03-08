@@ -76,8 +76,10 @@ mod cache;
 mod commands;
 mod component;
 mod comps;
+mod context;
 mod database;
 mod error;
+mod history;
 pub mod import;
 mod model;
 mod page;
@@ -102,10 +104,12 @@ mod prelude {
     pub(crate) use crate::commands::Commands;
     pub(crate) use crate::component::*;
     pub(crate) use crate::comps;
+    pub(crate) use crate::context::{Ctxt, CtxtRef};
     pub(crate) use crate::error::{ErrorId, ErrorInfo};
+    pub(crate) use crate::history::Page;
     pub(crate) use crate::model::*;
     pub(crate) use crate::params::*;
-    pub(crate) use crate::state::{Page, State};
+    pub(crate) use crate::state::State;
     pub(crate) use crate::style;
 }
 

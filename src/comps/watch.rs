@@ -54,18 +54,18 @@ impl Watch {
         self.confirm
     }
 
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
+    pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, message: Message) {
         match message {
             Message::RightNow => {
                 self.confirm = false;
                 let now = Utc::now();
-                s.service
+                cx.service
                     .watch(&now, &self.props.episode_id, RemainingSeason::Aired);
             }
             Message::AirDate => {
                 self.confirm = false;
                 let now = Utc::now();
-                s.service
+                cx.service
                     .watch(&now, &self.props.episode_id, RemainingSeason::AirDate);
             }
             Message::Cancel => {

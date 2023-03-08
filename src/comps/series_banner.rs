@@ -10,29 +10,29 @@ pub(crate) struct SeriesBanner;
 
 impl SeriesBanner {
     /// Prepare assets needed for banner.
-    pub(crate) fn prepare(&mut self, s: &mut State, series_id: &SeriesId) {
-        if let Some(series) = s.service.series(series_id) {
-            s.assets.mark_with_hint(series.banner(), BANNER);
+    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>, series_id: &SeriesId) {
+        if let Some(series) = cx.service.series(series_id) {
+            cx.assets.mark_with_hint(series.banner(), BANNER);
         }
     }
 
     /// Update message.
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
+    pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, message: Message) {
         match message {
             Message::Navigate(page) => {
-                s.push_history(page);
+                cx.push_history(page);
             }
         }
     }
 
     /// Generate buttons which perform actions on the given series.
-    pub(crate) fn view(&self, s: &State, series: &Series) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>, series: &Series) -> Element<'static, Message> {
         let handle = match series
             .banner()
-            .and_then(|i| s.assets.image_with_hint(&i, BANNER))
+            .and_then(|i| cx.assets.image_with_hint(&i, BANNER))
         {
             Some(handle) => handle,
-            None => s.assets.missing_banner(),
+            None => cx.assets.missing_banner(),
         };
 
         let banner = w::image(handle);

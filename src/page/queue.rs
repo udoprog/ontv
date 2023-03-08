@@ -33,17 +33,15 @@ impl Queue {
         this
     }
 
-    pub(crate) fn prepare(&mut self, _: &mut State) {}
-
     pub(crate) fn update(
         &mut self,
-        s: &mut State,
+        cx: &mut Ctxt<'_>,
         message: Message,
         mut commands: impl Commands<Message>,
     ) {
         match message {
             Message::Navigate(page) => {
-                s.push_history(page);
+                cx.push_history(page);
             }
             Message::Tick(..) => {
                 let future = self.timeout.set(Duration::from_secs(UPDATE_TIMER));
@@ -60,12 +58,12 @@ impl Queue {
         }
     }
 
-    pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
         let now = Utc::now();
 
         let mut running_col = w::Column::new();
 
-        let mut running = s.service.running_tasks().peekable();
+        let mut running = cx.service.running_tasks().peekable();
 
         running_col = running_col.push(
             w::Row::new()
@@ -90,7 +88,7 @@ impl Queue {
 
         while let Some(task) = running.next() {
             let mut row = w::Row::new();
-            let update = build_task_row(s, &task.kind);
+            let update = build_task_row(cx, &task.kind);
             row = row.push(update.width(Length::Fill).spacing(GAP));
 
             list = list.push(row.width(Length::Fill).spacing(GAP));
@@ -104,7 +102,7 @@ impl Queue {
 
         let mut tasks_col = w::Column::new();
 
-        let mut tasks = s.service.tasks().peekable();
+        let mut tasks = cx.service.tasks().peekable();
 
         tasks_col = tasks_col.push(
             w::Row::new()
@@ -128,7 +126,7 @@ impl Queue {
         let mut list = w::Column::new();
 
         while let Some(task) = tasks.next() {
-            let mut row = build_task_row(s, &task.kind.id());
+            let mut row = build_task_row(cx, &task.kind.id());
 
             let duration = match &task.scheduled {
                 Some(scheduled) => now.signed_duration_since(*scheduled),
@@ -162,7 +160,7 @@ impl Queue {
     }
 }
 
-fn build_task_row<'a>(s: &State, kind: &TaskId) -> w::Row<'a, Message> {
+fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskId) -> w::Row<'a, Message> {
     let mut update = w::Row::new();
 
     match kind {
@@ -172,11 +170,11 @@ fn build_task_row<'a>(s: &State, kind: &TaskId) -> w::Row<'a, Message> {
             ..
         } => {
             update = update.push(w::text("Updates").size(SMALL));
-            update = decorate_series(s, series_id, Some(remote_id), update);
+            update = decorate_series(cx, series_id, Some(remote_id), update);
         }
         TaskId::DownloadSeriesById { series_id, .. } => {
             update = update.push(w::text("Downloading").size(SMALL));
-            update = decorate_series(s, series_id, None, update);
+            update = decorate_series(cx, series_id, None, update);
         }
         TaskId::DownloadSeriesByRemoteId { remote_id, .. } => {
             update = update.push(w::text("Downloading").size(SMALL).width(Length::Fill));
@@ -202,12 +200,12 @@ fn build_task_row<'a>(s: &State, kind: &TaskId) -> w::Row<'a, Message> {
 }
 
 fn decorate_series<'a>(
-    state: &State,
+    cx: &CtxtRef<'_>,
     series_id: &SeriesId,
     remote_id: Option<&RemoteSeriesId>,
     mut row: w::Row<'a, Message>,
 ) -> w::Row<'a, Message> {
-    let remote_id = if let Some(series) = state.service.series(series_id) {
+    let remote_id = if let Some(series) = cx.service.series(series_id) {
         row = row.push(
             link(w::text(&series.title).size(SMALL))
                 .on_press(Message::Navigate(Page::Series(*series_id))),

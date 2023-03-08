@@ -27,18 +27,18 @@ impl Series {
         }
     }
 
-    pub(crate) fn prepare(&mut self, s: &mut State) {
+    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>) {
         self.seasons.init_from_iter(
-            s.service
+            cx.service
                 .seasons(&self.series_id)
                 .map(|s| (*s.series(), s.number)),
         );
 
-        self.banner.prepare(s, &self.series_id);
+        self.banner.prepare(cx, &self.series_id);
 
-        if let Some(series) = s.service.series(&self.series_id) {
-            s.assets.mark_with_hint(
-                s.service
+        if let Some(series) = cx.service.series(&self.series_id) {
+            cx.assets.mark_with_hint(
+                cx.service
                     .seasons(&self.series_id)
                     .flat_map(|season| season.into_season().poster().or(series.poster())),
                 POSTER_HINT,
@@ -46,37 +46,38 @@ impl Series {
         }
     }
 
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
+    pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, message: Message) {
         match message {
             Message::OpenRemote(remote_id) => {
                 let url = remote_id.url();
                 let _ = webbrowser::open_browser(webbrowser::Browser::Default, &url);
             }
             Message::SeriesActions(message) => {
-                self.series.update(s, message);
+                self.series.update(cx, message);
             }
             Message::Navigate(page) => {
-                s.push_history(page);
+                cx.push_history(page);
             }
             Message::SeasonInfo(index, message) => {
                 if let Some(season_info) = self.seasons.get_mut(index) {
-                    season_info.update(s, message);
+                    season_info.update(cx, message);
                 }
             }
             Message::SeriesBanner(message) => {
-                self.banner.update(s, message);
+                self.banner.update(cx, message);
             }
         }
     }
 
-    pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
-        let Some(series) = s.service.series(&self.series_id) else {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
+        let Some(series) = cx.service.series(&self.series_id) else {
             return w::Column::new().into();
         };
 
-        let mut top = w::Column::new().push(self.banner.view(s, series).map(Message::SeriesBanner));
+        let mut top =
+            w::Column::new().push(self.banner.view(cx, series).map(Message::SeriesBanner));
 
-        let remote_ids = s.service.remotes_by_series(&series.id);
+        let remote_ids = cx.service.remotes_by_series(&series.id);
 
         if remote_ids.len() > 0 {
             let mut remotes = w::Row::new();
@@ -94,16 +95,21 @@ impl Series {
 
         let mut cols = w::Column::new();
 
-        for (index, (season, c)) in s.service.seasons(&series.id).zip(&self.seasons).enumerate() {
+        for (index, (season, c)) in cx
+            .service
+            .seasons(&series.id)
+            .zip(&self.seasons)
+            .enumerate()
+        {
             let poster = match season
                 .graphics
                 .poster
                 .as_ref()
                 .or(series.graphics.poster.as_ref())
-                .and_then(|i| s.assets.image_with_hint(&i, POSTER_HINT))
+                .and_then(|i| cx.assets.image_with_hint(&i, POSTER_HINT))
             {
                 Some(poster) => poster,
-                None => s.missing_poster(),
+                None => cx.missing_poster(),
             };
 
             let graphic = link(w::image(poster).height(IMAGE_HEIGHT))
@@ -119,7 +125,7 @@ impl Series {
                         .push(
                             w::Column::new()
                                 .push(title)
-                                .push(c.view(s).map(move |m| Message::SeasonInfo(index, m)))
+                                .push(c.view(cx).map(move |m| Message::SeasonInfo(index, m)))
                                 .spacing(SPACE),
                         )
                         .spacing(GAP),
@@ -129,7 +135,7 @@ impl Series {
             );
         }
 
-        let info = match s.service.episodes(&series.id).len() {
+        let info = match cx.service.episodes(&series.id).len() {
             0 => w::text("No episodes"),
             1 => w::text("One episode"),
             count => w::text(format!("{count} episodes")),
@@ -137,7 +143,7 @@ impl Series {
 
         let mut header = w::Column::new()
             .push(top.align_items(Alignment::Center).spacing(GAP))
-            .push(self.series.view(s, series).map(Message::SeriesActions))
+            .push(self.series.view(cx, series).map(Message::SeriesActions))
             .push(info);
 
         if !series.overview.is_empty() {

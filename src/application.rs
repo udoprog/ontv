@@ -6,14 +6,37 @@ use iced_native::image::Handle;
 
 use crate::assets::{Assets, ImageKey};
 use crate::commands::{Commands, CommandsBuf};
+use crate::context::{Ctxt, CtxtRef};
 use crate::error::ErrorInfo;
+use crate::history::{History, Page};
 use crate::model::{ImageV2, Task, TaskKind};
 use crate::page;
 use crate::params::{GAP, SMALL, SPACE, SUB_MENU_SIZE};
 use crate::prelude::*;
 use crate::service::{NewSeries, Service};
-use crate::state::{Page, State};
+use crate::state::State;
 use crate::utils::{Singleton, TimedOut, Timeout};
+
+macro_rules! ctxt_mut {
+    ($self:expr) => {
+        &mut Ctxt {
+            state: &mut $self.state,
+            history: &mut $self.history,
+            service: &mut $self.service,
+            assets: &mut $self.assets,
+        }
+    };
+}
+
+macro_rules! ctxt_ref {
+    ($self:expr) => {
+        &CtxtRef {
+            state: &$self.state,
+            service: &$self.service,
+            assets: &$self.assets,
+        }
+    };
+}
 
 // Check for remote updates every 60 seconds.
 const UPDATE_TIMEOUT: u64 = 60;
@@ -76,6 +99,12 @@ pub(crate) struct Application {
     commands: CommandsBuf<Message>,
     /// Application state.
     state: State,
+    /// Application history.
+    history: History,
+    /// Backing service.
+    service: Service,
+    /// Assets manager.
+    assets: Assets,
     /// Current page state.
     current: Current,
     // Timeout before database changes are saved to the filesystem.
@@ -107,12 +136,15 @@ impl iced::Application for Application {
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
         let today = Utc::now().date_naive();
 
-        let state = State::new(flags.service, Assets::new(), today);
-        let current = Current::Dashboard(page::dashboard::Dashboard::new(&state));
+        let state = State::new(today);
+        let current = Current::Dashboard(page::dashboard::Dashboard::new(&state, &flags.service));
 
         let mut this = Application {
             commands: CommandsBuf::default(),
             state,
+            history: History::new(),
+            service: flags.service,
+            assets: Assets::new(),
             current,
             database_timeout: Timeout::default(),
             update_timeout: Timeout::default(),
@@ -136,12 +168,12 @@ impl iced::Application for Application {
     fn title(&self) -> String {
         const BASE: &str = "OnTV";
 
-        if let Some(page) = self.state.page() {
+        if let Some(page) = self.history.page() {
             match page {
                 Page::Dashboard => {
                     return format!("{BASE} - Dashboard");
                 }
-                Page::WatchNext => return format!("{BASE} - Watch next"),
+                Page::WatchNext(..) => return format!("{BASE} - Watch next"),
                 Page::Search => {
                     return format!("{BASE} - Search");
                 }
@@ -149,12 +181,12 @@ impl iced::Application for Application {
                     return format!("{BASE} - Series overview");
                 }
                 Page::Series(id) => {
-                    if let Some(series) = self.state.service.series(id) {
+                    if let Some(series) = self.service.series(id) {
                         return format!("{BASE} - {}", series.title);
                     }
                 }
                 Page::Movie(id) => {
-                    if let Some(movie) = self.state.service.movie(id) {
+                    if let Some(movie) = self.service.movie(id) {
                         return format!("{BASE} - {}", movie.title);
                     }
                 }
@@ -162,7 +194,7 @@ impl iced::Application for Application {
                     return format!("{BASE} - Settings");
                 }
                 Page::Season(series, season) => {
-                    if let Some(series) = self.state.service.series(series) {
+                    if let Some(series) = self.service.series(series) {
                         return format!("{BASE} - {} - {season}", series.title);
                     }
                 }
@@ -182,43 +214,47 @@ impl iced::Application for Application {
     fn update(&mut self, message: Message) -> Command<Message> {
         tracing::trace!("{message:?}");
 
-        match (message, &mut self.current) {
-            (Message::Settings(message), Current::Settings(page)) => {
-                page.update(&mut self.state, message);
+        match (message, &mut self.current, self.history.page_mut()) {
+            (Message::Settings(message), Current::Settings(page), _) => {
+                page.update(ctxt_mut!(self), message);
             }
-            (Message::Dashboard(message), Current::Dashboard(page)) => {
-                page.update(&mut self.state, message);
+            (Message::Dashboard(message), Current::Dashboard(page), _) => {
+                page.update(ctxt_mut!(self), message);
             }
-            (Message::WatchNext(message), Current::WatchNext(page)) => {
-                page.update(&mut self.state, message);
+            (
+                Message::WatchNext(message),
+                Current::WatchNext(page),
+                Some(Page::WatchNext(state)),
+            ) => {
+                page.update(ctxt_mut!(self), state, message);
             }
-            (Message::Search(message), Current::Search(page)) => {
+            (Message::Search(message), Current::Search(page), _) => {
                 page.update(
-                    &mut self.state,
+                    ctxt_mut!(self),
                     message,
                     self.commands.by_ref().map(Message::Search),
                 );
             }
-            (Message::SeriesList(message), Current::SeriesList(page)) => {
-                page.update(&mut self.state, message);
+            (Message::SeriesList(message), Current::SeriesList(page), _) => {
+                page.update(ctxt_mut!(self), message);
             }
-            (Message::Series(message), Current::Series(page)) => {
-                page.update(&mut self.state, message);
+            (Message::Series(message), Current::Series(page), _) => {
+                page.update(ctxt_mut!(self), message);
             }
-            (Message::Season(message), Current::Season(page)) => {
-                page.update(&mut self.state, message);
+            (Message::Season(message), Current::Season(page), _) => {
+                page.update(ctxt_mut!(self), message);
             }
-            (Message::Queue(message), Current::Queue(page)) => {
+            (Message::Queue(message), Current::Queue(page), _) => {
                 page.update(
-                    &mut self.state,
+                    ctxt_mut!(self),
                     message,
                     self.commands.by_ref().map(Message::Queue),
                 );
             }
-            (Message::Errors(message), Current::Errors(page)) => {
-                page.update(&mut self.state, message);
+            (Message::Errors(..), Current::Errors(page), _) => {
+                // do nothing
             }
-            (Message::CloseRequested, _) => {
+            (Message::CloseRequested, _, _) => {
                 tracing::debug!("Close requested");
 
                 self.exit_after_save = true;
@@ -231,7 +267,7 @@ impl iced::Application for Application {
 
                 return self.commands.build();
             }
-            (Message::Save(timed_out), _) => {
+            (Message::Save(timed_out), _, _) => {
                 // To avoid a cancellation loop we need to return here.
                 if !matches!(timed_out, TimedOut::TimedOut) && !self.exit_after_save {
                     return self.commands.build();
@@ -241,12 +277,12 @@ impl iced::Application for Application {
                 self.state.set_saving(true);
 
                 self.commands
-                    .perform(self.state.service.save_changes(), |result| match result {
+                    .perform(self.service.save_changes(), |result| match result {
                         Ok(()) => Message::Saved(Ok(())),
                         Err(error) => Message::Saved(Err(error.into())),
                     })
             }
-            (Message::Saved(result), _) => {
+            (Message::Saved(result), _, _) => {
                 if let Err(error) = result {
                     self.state.handle_error(error);
                 }
@@ -257,9 +293,9 @@ impl iced::Application for Application {
 
                 self.state.set_saving(false);
             }
-            (Message::CheckForUpdates(TimedOut::TimedOut), _) => {
+            (Message::CheckForUpdates(TimedOut::TimedOut), _, _) => {
                 let now = Utc::now();
-                self.state.service.find_updates(&now);
+                self.service.find_updates(&now);
 
                 let today = now.date_naive();
 
@@ -273,31 +309,31 @@ impl iced::Application for Application {
                     Message::CheckForUpdates,
                 );
             }
-            (Message::TaskUpdateDownloadQueue(result, task), _) => {
+            (Message::TaskUpdateDownloadQueue(result, task), _, _) => {
                 match result {
                     Ok(queue) => {
-                        self.state.service.push_tasks(queue);
+                        self.service.push_tasks(queue);
                     }
                     Err(error) => {
                         self.state.handle_error(error);
                     }
                 }
 
-                self.state.service.complete_task(task);
+                self.service.complete_task(task);
             }
-            (Message::Navigate(page), _) => {
-                self.state.push_history(page);
+            (Message::Navigate(page), _, _) => {
+                self.history.push_history(&mut self.assets, page);
             }
-            (Message::History(relative), _) => {
-                self.state.history(relative);
+            (Message::History(relative), _, _) => {
+                self.history.history(relative);
             }
-            (Message::Scroll(offset), _) => {
-                self.state.history_scroll(offset);
+            (Message::Scroll(offset), _, _) => {
+                self.history.history_scroll(offset);
             }
-            (Message::ImagesLoaded(loaded), _) => {
+            (Message::ImagesLoaded(loaded), _, _) => {
                 match loaded {
                     Ok(loaded) => {
-                        self.state.assets.insert_images(loaded);
+                        self.assets.insert_images(loaded);
                     }
                     Err(error) => {
                         tracing::error!("error loading images: {error}");
@@ -308,12 +344,12 @@ impl iced::Application for Application {
                 self.handle_image_loading();
                 return self.commands.build();
             }
-            (Message::TaskSeriesDownloaded(result, task), _) => {
+            (Message::TaskSeriesDownloaded(result, task), _, _) => {
                 match result {
                     Ok(new_series) => {
                         if let Some(new_series) = new_series {
                             let now = Utc::now();
-                            self.state.service.insert_new_series(&now, new_series);
+                            self.service.insert_new_series(&now, new_series);
                         }
                     }
                     Err(error) => {
@@ -321,32 +357,36 @@ impl iced::Application for Application {
                     }
                 }
 
-                self.state.service.complete_task(task);
+                self.service.complete_task(task);
             }
-            (Message::ProcessQueue(TimedOut::TimedOut, id), _) => {
+            (Message::ProcessQueue(TimedOut::TimedOut, id), _, _) => {
                 self.handle_process_queue(Some(id));
             }
             _ => {}
         };
 
-        if self.state.service.has_changes() && !self.exit_after_save {
+        if self.service.has_changes() && !self.exit_after_save {
             self.commands.perform(
                 self.database_timeout.set(Duration::from_secs(5)),
                 Message::Save,
             );
         }
 
-        if let Some((page, scroll)) = self.state.history_change() {
+        if let Some((page, scroll)) = self.history.history_change() {
             self.current = match page {
-                Page::Dashboard => Current::Dashboard(page::Dashboard::new(&self.state)),
-                Page::WatchNext => Current::WatchNext(page::WatchNext::new()),
+                Page::Dashboard => {
+                    Current::Dashboard(page::Dashboard::new(&self.state, &self.service))
+                }
+                Page::WatchNext(state) => {
+                    Current::WatchNext(page::WatchNext::new(ctxt_mut!(self), state))
+                }
                 Page::Search => Current::Search(page::Search::default()),
                 Page::SeriesList => Current::SeriesList(page::SeriesList::default()),
-                Page::Series(series_id) => Current::Series(page::Series::new(series_id)),
-                Page::Movie(movie_id) => Current::Movie(page::Movie::new(movie_id)),
+                Page::Series(series_id) => Current::Series(page::Series::new(*series_id)),
+                Page::Movie(movie_id) => Current::Movie(page::Movie::new(*movie_id)),
                 Page::Settings => Current::Settings(page::Settings::default()),
                 Page::Season(series_id, season) => {
-                    Current::Season(page::Season::new(series_id, season))
+                    Current::Season(page::Season::new(*series_id, *season))
                 }
                 Page::Queue => {
                     let page = page::Queue::new(self.commands.by_ref().map(Message::Queue));
@@ -356,7 +396,7 @@ impl iced::Application for Application {
             };
 
             self.commands
-                .command(w::scrollable::snap_to(self.scrollable_id.clone(), scroll));
+                .command(w::scrollable::snap_to(self.scrollable_id.clone(), *scroll));
         }
 
         self.prepare();
@@ -391,18 +431,18 @@ impl iced::Application for Application {
     fn view(&self) -> Element<Message> {
         let mut top_menu = w::Row::new().spacing(GAP).align_items(Alignment::Center);
 
-        let Some(&page) = self.state.page() else {
+        let Some(page) = self.history.page() else {
             return w::text("missing history entry").into();
         };
 
-        top_menu = top_menu.push(menu_item(&page, w::text("Dashboard"), Page::Dashboard));
-        top_menu = top_menu.push(menu_item(&page, w::text("Series"), Page::SeriesList));
-        top_menu = top_menu.push(menu_item(&page, w::text("Search"), Page::Search));
-        top_menu = top_menu.push(menu_item(&page, w::text("Settings"), Page::Settings));
+        top_menu = top_menu.push(menu_item(page, w::text("Dashboard"), Page::Dashboard));
+        top_menu = top_menu.push(menu_item(page, w::text("Series"), Page::SeriesList));
+        top_menu = top_menu.push(menu_item(page, w::text("Search"), Page::Search));
+        top_menu = top_menu.push(menu_item(page, w::text("Settings"), Page::Settings));
 
         // Build queue element.
         {
-            let count = self.state.service.tasks().len() + self.state.service.running_tasks().len();
+            let count = self.service.tasks().len() + self.service.running_tasks().len();
 
             let text = match count {
                 0 => w::text("Queue"),
@@ -417,21 +457,18 @@ impl iced::Application for Application {
         if let Page::Series(series_id) | Page::Season(series_id, _) = page {
             let mut sub_menu = w::Row::new();
 
-            if let Some(series) = self.state.service.series(&series_id) {
+            if let Some(series) = self.service.series(&series_id) {
                 sub_menu = sub_menu.push(menu_item(
                     &page,
                     w::text(&series.title).size(SUB_MENU_SIZE),
-                    Page::Series(series_id),
+                    Page::Series(*series_id),
                 ));
             }
 
-            for season in self.state.service.seasons(&series_id) {
+            for season in self.service.seasons(&series_id) {
                 let title = w::text(season.number);
 
-                let (watched, total) = self
-                    .state
-                    .service
-                    .season_watched(&series_id, &season.number);
+                let (watched, total) = self.service.season_watched(&series_id, &season.number);
 
                 let mut title = w::Row::new().push(title.size(SUB_MENU_SIZE));
 
@@ -442,7 +479,7 @@ impl iced::Application for Application {
                 sub_menu = sub_menu.push(menu_item(
                     &page,
                     title,
-                    Page::Season(series_id, season.number),
+                    Page::Season(*series_id, season.number),
                 ));
             }
 
@@ -457,17 +494,19 @@ impl iced::Application for Application {
                 .padding(GAP),
         );
 
-        let page: Element<'static, Message> = match &self.current {
-            Current::Dashboard(page) => page.view(&self.state).map(Message::Dashboard),
-            Current::WatchNext(page) => page.view(&self.state).map(Message::WatchNext),
-            Current::Search(page) => page.view(&self.state).map(Message::Search),
-            Current::SeriesList(page) => page.view(&self.state).map(Message::SeriesList),
-            Current::Series(page) => page.view(&self.state).map(Message::Series),
-            Current::Movie(page) => page.view(&self.state).map(Message::Movie),
-            Current::Settings(page) => page.view(&self.state).map(Message::Settings),
-            Current::Season(page) => page.view(&self.state).map(Message::Season),
-            Current::Queue(page) => page.view(&self.state).map(Message::Queue),
-            Current::Errors(page) => page.view(&self.state).map(Message::Errors),
+        let page: Element<'static, Message> = match (&self.current, self.history.page()) {
+            (Current::Dashboard(page), _) => page.view(ctxt_ref!(self)).map(Message::Dashboard),
+            (Current::WatchNext(page), Some(Page::WatchNext(state))) => {
+                page.view(ctxt_ref!(self), state).map(Message::WatchNext)
+            }
+            (Current::Search(page), _) => page.view(ctxt_ref!(self)).map(Message::Search),
+            (Current::SeriesList(page), _) => page.view(ctxt_ref!(self)).map(Message::SeriesList),
+            (Current::Series(page), _) => page.view(ctxt_ref!(self)).map(Message::Series),
+            (Current::Movie(page), _) => page.view().map(Message::Movie),
+            (Current::Settings(page), _) => page.view(ctxt_ref!(self)).map(Message::Settings),
+            (Current::Season(page), _) => page.view(ctxt_ref!(self)).map(Message::Season),
+            (Current::Queue(page), _) => page.view(ctxt_ref!(self)).map(Message::Queue),
+            (Current::Errors(page), _) => page.view(ctxt_ref!(self)).map(Message::Errors),
         };
 
         window = window.push(w::horizontal_rule(1));
@@ -521,51 +560,51 @@ impl iced::Application for Application {
 
     #[inline]
     fn theme(&self) -> Theme {
-        self.state.service.theme().clone()
+        self.service.theme().clone()
     }
 }
 
 impl Application {
     // Call prepare on the appropriate components to prepare asset loading.
     fn prepare(&mut self) {
-        match &mut self.current {
-            Current::Dashboard(page) => {
-                page.prepare(&mut self.state);
+        match (&mut self.current, self.history.page_mut()) {
+            (Current::Dashboard(page), Some(Page::Dashboard)) => {
+                page.prepare(ctxt_mut!(self));
             }
-            Current::WatchNext(page) => {
-                page.prepare(&mut self.state);
+            (Current::WatchNext(page), Some(Page::WatchNext(state))) => {
+                page.prepare(ctxt_mut!(self), state);
             }
-            Current::Search(page) => {
-                page.prepare(&mut self.state);
+            (Current::Search(page), Some(Page::Search)) => {
+                page.prepare(ctxt_mut!(self));
             }
-            Current::SeriesList(page) => {
-                page.prepare(&mut self.state);
+            (Current::SeriesList(page), Some(Page::SeriesList)) => {
+                page.prepare(ctxt_mut!(self));
             }
-            Current::Series(page) => {
-                page.prepare(&mut self.state);
+            (Current::Series(page), Some(Page::Series(..))) => {
+                page.prepare(ctxt_mut!(self));
             }
-            Current::Movie(page) => {
-                page.prepare(&mut self.state);
+            (Current::Movie(..), Some(Page::Movie(..))) => {
+                // noop
             }
-            Current::Settings(page) => {
-                page.prepare(&mut self.state);
+            (Current::Settings(..), Some(Page::Settings)) => {
+                // noop
             }
-            Current::Season(page) => {
-                page.prepare(&mut self.state);
+            (Current::Season(page), Some(Page::Season(..))) => {
+                page.prepare(ctxt_mut!(self));
             }
-            Current::Queue(page) => {
-                page.prepare(&mut self.state);
+            (Current::Queue(..), Some(Page::Queue)) => {
+                // noop
             }
-            Current::Errors(page) => {
-                page.prepare(&mut self.state);
+            (Current::Errors(..), Some(Page::Errors)) => {
+                // noop
             }
         }
 
-        if self.state.assets.is_cleared() {
+        if self.assets.is_cleared() {
             self.image_loader.clear();
         }
 
-        self.state.assets.commit();
+        self.assets.commit();
     }
 
     /// Handle image loading.
@@ -585,7 +624,7 @@ impl Application {
         self.images.clear();
 
         while self.images.len() < IMAGE_BATCH {
-            let Some((key, image)) = self.state.assets.next_image() else {
+            let Some((key, image)) = self.assets.next_image() else {
                 break;
             };
 
@@ -597,8 +636,7 @@ impl Application {
         }
 
         let future = self.image_loader.set(
-            self.state
-                .service
+            self.service
                 .load_images(self.images.drain(..).collect::<Vec<_>>()),
         );
         self.commands.perform(future, translate);
@@ -606,7 +644,7 @@ impl Application {
 
     /// Setup queue processing.
     fn handle_setup_queue(&mut self) {
-        if self.state.service.take_tasks_modified() {
+        if self.service.take_tasks_modified() {
             self.handle_process_queue(None)
         }
     }
@@ -615,7 +653,7 @@ impl Application {
     fn handle_process_queue(&mut self, timed_out: Option<Uuid>) {
         let now = Utc::now();
 
-        while let Some(task) = self.state.service.next_task(&now, timed_out) {
+        while let Some(task) = self.service.next_task(&now, timed_out) {
             tracing::trace!("running task {}", task.id);
 
             match &task.kind {
@@ -623,8 +661,7 @@ impl Application {
                     series_id,
                     remote_id,
                 } => {
-                    if let Some(future) = self.state.service.check_for_updates(series_id, remote_id)
-                    {
+                    if let Some(future) = self.service.check_for_updates(series_id, remote_id) {
                         self.commands.perform(future, move |result| {
                             Message::TaskUpdateDownloadQueue(
                                 result.map_err(Into::into),
@@ -632,7 +669,7 @@ impl Application {
                             )
                         });
                     } else {
-                        self.state.service.complete_task(task);
+                        self.service.complete_task(task);
                     }
                 }
                 TaskKind::DownloadSeriesById {
@@ -642,19 +679,18 @@ impl Application {
                     force,
                 } => {
                     self.commands.perform(
-                        self.state
-                            .download_series_by_id(series_id, remote_id, *force),
+                        ctxt_mut!(self).download_series_by_id(series_id, remote_id, *force),
                         move |result| {
                             Message::TaskSeriesDownloaded(result.map_err(Into::into), task.clone())
                         },
                     );
                 }
                 TaskKind::DownloadSeriesByRemoteId { remote_id } => {
-                    if self.state.service.set_series_tracked_by_remote(remote_id) {
-                        self.state.service.complete_task(task);
+                    if self.service.set_series_tracked_by_remote(remote_id) {
+                        self.service.complete_task(task);
                     } else {
                         self.commands.perform(
-                            self.state.service.download_series(remote_id, None),
+                            self.service.download_series(remote_id, None),
                             move |result| {
                                 Message::TaskSeriesDownloaded(
                                     result.map_err(Into::into),
@@ -666,14 +702,14 @@ impl Application {
                 }
                 TaskKind::DownloadMovieByRemoteId { .. } => {
                     // TODO: implement task
-                    self.state.service.complete_task(task);
+                    self.service.complete_task(task);
                 }
             }
         }
 
         let now = Utc::now();
 
-        if let Some((seconds, id)) = self.state.service.next_task_sleep(&now) {
+        if let Some((seconds, id)) = self.service.next_task_sleep(&now) {
             tracing::trace!("next queue sleep: {seconds}s");
 
             self.commands.perform(

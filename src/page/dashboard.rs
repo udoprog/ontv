@@ -1,6 +1,6 @@
-use crate::prelude::*;
 use crate::service::PendingRef;
 use crate::utils::Hoverable;
+use crate::{prelude::*, Service};
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -30,102 +30,99 @@ pub(crate) struct Dashboard {
 }
 
 impl Dashboard {
-    pub(crate) fn new(s: &State) -> Self {
+    pub(crate) fn new(state: &State, service: &Service) -> Self {
         let mut schedule_focus = None;
 
-        if let Some(scheduled) = s
-            .service
-            .schedule()
-            .first()
-            .and_then(|d| d.schedule.first())
-        {
-            if let Some(series) = s.service.series(&scheduled.series_id) {
+        if let Some(scheduled) = service.schedule().first().and_then(|d| d.schedule.first()) {
+            if let Some(series) = service.series(&scheduled.series_id) {
                 schedule_focus = Some((series.id, series.graphics.poster.clone()));
             }
         }
 
         Self {
-            calendar: comps::Calendar::new(*s.today(), chrono::Weekday::Sun),
+            calendar: comps::Calendar::new(*state.today(), chrono::Weekday::Sun),
             watch: Vec::new(),
             schedule_focus,
         }
     }
 
-    pub(crate) fn prepare(&mut self, s: &mut State) {
+    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>) {
         if let Some(id) = self.schedule_focus.as_ref().and_then(|d| d.1.as_ref()) {
-            s.assets.mark_with_hint([id], POSTER_HINT);
+            cx.assets.mark_with_hint([id], POSTER_HINT);
         }
 
-        let limit = s.service.config().dashboard_limit();
-        let today = *s.today();
+        let limit = cx.service.config().dashboard_limit();
+        let today = *cx.state.today();
 
-        let iter = s
+        let iter = cx
             .service
             .pending()
             .filter(|p| p.has_aired(&today))
             .rev()
             .take(limit);
 
-        s.assets
+        cx.assets
             .mark_with_hint(iter.clone().flat_map(|p| p.poster()), POSTER_HINT);
 
         self.watch
             .init_from_iter(iter.map(|p| comps::watch::Props::new(p.episode.id)));
     }
 
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
+    pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, message: Message) {
         match message {
             Message::Calendar(message) => {
                 self.calendar.update(message);
             }
             Message::HoverScheduled(series_id) => {
-                if let Some(series) = s.service.series(&series_id) {
+                if let Some(series) = cx.service.series(&series_id) {
                     self.schedule_focus = Some((series_id, series.poster().cloned()));
                 }
             }
             Message::Skip(series_id, episode_id) => {
                 let now = Utc::now();
-                s.service.skip(&now, &series_id, &episode_id);
+                cx.service.skip(&now, &series_id, &episode_id);
             }
             Message::Watch(index, message) => {
                 if let Some(w) = self.watch.get_mut(index) {
-                    w.update(s, message);
+                    w.update(cx, message);
                 }
             }
             Message::Navigate(page) => {
-                s.push_history(page);
+                cx.push_history(page);
             }
             Message::ResetPending => {
-                s.service.config_mut().dashboard_limit = 1;
-                s.service.config_mut().dashboard_page = 6;
+                cx.service.config_mut().dashboard_limit = 1;
+                cx.service.config_mut().dashboard_page = 6;
             }
             Message::ShowLessPending => {
-                let limit = s.service.config().dashboard_limit.saturating_sub(1).max(1);
-                s.service.config_mut().dashboard_limit = limit;
+                let limit = cx.service.config().dashboard_limit.saturating_sub(1).max(1);
+                cx.service.config_mut().dashboard_limit = limit;
             }
             Message::ShowMorePending => {
-                let limit = s.service.config().dashboard_limit + 1;
-                s.service.config_mut().dashboard_limit = limit;
+                let limit = cx.service.config().dashboard_limit + 1;
+                cx.service.config_mut().dashboard_limit = limit;
             }
             Message::DecrementPage => {
-                let page = s.service.config().dashboard_page.saturating_sub(1).max(1);
-                s.service.config_mut().dashboard_page = page;
+                let page = cx.service.config().dashboard_page.saturating_sub(1).max(1);
+                cx.service.config_mut().dashboard_page = page;
             }
             Message::IncrementPage => {
-                let page = s.service.config().dashboard_page + 1;
-                s.service.config_mut().dashboard_page = page;
+                let page = cx.service.config().dashboard_page + 1;
+                cx.service.config_mut().dashboard_page = page;
             }
         }
     }
 
-    pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
         let up_next_title = link(w::text("Watch next").size(SUBTITLE_SIZE))
-            .on_press(Message::Navigate(Page::WatchNext))
+            .on_press(Message::Navigate(Page::WatchNext(
+                crate::page::watch_next::PageState::default(),
+            )))
             .width(Length::Fill);
 
         let mut modify = w::Row::new().push(w::Space::new(Length::Fill, Length::Shrink));
 
-        if s.service.config().dashboard_page > 1 {
+        if cx.service.config().dashboard_page > 1 {
             modify = modify.push(
                 w::button(
                     w::text("-")
@@ -149,7 +146,7 @@ impl Dashboard {
             .on_press(Message::IncrementPage),
         );
 
-        if s.service.config().dashboard_limit > 1 {
+        if cx.service.config().dashboard_limit > 1 {
             modify = modify.push(
                 w::button(w::text("reset").size(SMALL))
                     .style(theme::Button::Secondary)
@@ -171,14 +168,14 @@ impl Dashboard {
 
         let pending = w::Column::new()
             .push(modify.spacing(SPACE).width(Length::Fill))
-            .push(self.render_pending(s));
+            .push(self.render_pending(cx));
 
         let scheduled_title = w::text("Upcoming")
             .horizontal_alignment(Horizontal::Left)
             .width(Length::Fill)
             .size(SUBTITLE_SIZE);
 
-        let scheduled = self.render_scheduled(s);
+        let scheduled = self.render_scheduled(cx);
 
         w::Column::new()
             // .push(self.calendar.view().map(Message::Calendar))
@@ -195,20 +192,20 @@ impl Dashboard {
             .into()
     }
 
-    fn render_pending(&self, s: &State) -> w::Column<'static, Message> {
+    fn render_pending(&self, cx: &CtxtRef<'_>) -> w::Column<'static, Message> {
         let mut cols = w::Column::new();
 
         let mut pending = w::Row::new();
         let mut count = 0;
 
-        let limit = s.service.config().dashboard_limit();
-        let page = s.service.config().dashboard_page();
+        let limit = cx.service.config().dashboard_limit();
+        let page = cx.service.config().dashboard_page();
 
-        let iter = s
+        let iter = cx
             .service
             .pending()
             .rev()
-            .filter(|p| p.has_aired(s.today()))
+            .filter(|p| p.has_aired(cx.state.today()))
             .take(limit);
 
         for (index, (watch, pending_ref)) in self.watch.iter().zip(iter).enumerate() {
@@ -226,10 +223,10 @@ impl Dashboard {
 
             let poster = match p
                 .poster()
-                .and_then(|i| s.assets.image_with_hint(&i, POSTER_HINT))
+                .and_then(|i| cx.assets.image_with_hint(&i, POSTER_HINT))
             {
                 Some(handle) => handle,
-                None => s.missing_poster(),
+                None => cx.missing_poster(),
             };
 
             let mut panel = w::Column::new();
@@ -266,7 +263,7 @@ impl Dashboard {
                     .width(Length::FillPortion(5)),
                 );
 
-                let len = s.service.watched(&episode.id).len();
+                let len = cx.service.watched(&episode.id).len();
 
                 let style = match len {
                     0 => theme::Button::Text,
@@ -319,15 +316,15 @@ impl Dashboard {
         cols.spacing(GAP)
     }
 
-    fn render_scheduled(&self, s: &State) -> w::Column<'static, Message> {
+    fn render_scheduled(&self, cx: &CtxtRef<'_>) -> w::Column<'static, Message> {
         let mut scheduled_rows = w::Column::new();
         let mut cols = w::Row::new();
         let mut count = 0;
         let mut first = true;
 
-        let page = s.service.config().schedule_page();
+        let page = cx.service.config().schedule_page();
 
-        for (n, day) in s.service.schedule().iter().enumerate() {
+        for (n, day) in cx.service.schedule().iter().enumerate() {
             if n % page == 0 && n > 0 {
                 scheduled_rows = scheduled_rows.push(cols.spacing(GAP));
                 cols = w::Row::new();
@@ -339,7 +336,7 @@ impl Dashboard {
             let mut column = w::Column::new();
 
             column = column.push(
-                match day.date.signed_duration_since(*s.service.now()).num_days() {
+                match day.date.signed_duration_since(*cx.service.now()).num_days() {
                     0 => w::text("Today"),
                     1 => w::text("Tomorrow"),
                     _ => w::text(day.date),
@@ -350,7 +347,7 @@ impl Dashboard {
                 .schedule
                 .iter()
                 .flat_map(|sched| {
-                    s.service
+                    cx.service
                         .series(&sched.series_id)
                         .into_iter()
                         .map(move |series| (series, sched))
@@ -360,10 +357,10 @@ impl Dashboard {
             if let Some((series_id, id)) = self.schedule_focus.as_ref().filter(|_| first) {
                 let poster = match id
                     .as_ref()
-                    .and_then(|id| s.assets.image_with_hint(&id, POSTER_HINT))
+                    .and_then(|id| cx.assets.image_with_hint(&id, POSTER_HINT))
                 {
                     Some(image) => image,
-                    None => s.missing_poster(),
+                    None => cx.missing_poster(),
                 };
 
                 cols = cols.push(
@@ -381,7 +378,7 @@ impl Dashboard {
                 let mut episodes = w::Column::new();
 
                 for episode_id in &schedule.episodes {
-                    let Some(episode) = s.service.episode(&episode_id) else {
+                    let Some(episode) = cx.service.episode(&episode_id) else {
                         continue;
                     };
 

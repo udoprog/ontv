@@ -37,8 +37,8 @@ pub(crate) struct Search {
 
 impl Search {
     /// Prepare data that is needed for the view.
-    pub(crate) fn prepare(&mut self, s: &mut State) {
-        s.assets.mark_with_hint(
+    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>) {
+        cx.assets.mark_with_hint(
             self.series
                 .iter()
                 .skip(self.series_page * PER_PAGE)
@@ -47,7 +47,7 @@ impl Search {
             POSTER_HINT,
         );
 
-        s.assets.mark_with_hint(
+        cx.assets.mark_with_hint(
             self.movies
                 .iter()
                 .skip(self.movies_page * PER_PAGE)
@@ -60,51 +60,51 @@ impl Search {
     /// Handle theme change.
     pub(crate) fn update(
         &mut self,
-        s: &mut State,
+        cx: &mut Ctxt<'_>,
         message: Message,
         commands: impl Commands<Message>,
     ) {
         match message {
             Message::Error(error) => {
-                s.handle_error(error);
+                cx.state.handle_error(error);
             }
             Message::Navigate(page) => {
-                s.push_history(page);
+                cx.push_history(page);
             }
             Message::Search => {
-                self.search(s, commands);
+                self.search(cx, commands);
             }
             Message::Change(text) => {
                 self.text = text;
             }
             Message::SeriesPage(page) => {
                 self.series_page = page;
-                s.assets.clear();
+                cx.assets.clear();
             }
             Message::MoviesPage(page) => {
                 self.movies_page = page;
-                s.assets.clear();
+                cx.assets.clear();
             }
             Message::Result(series, movies) => {
                 self.series = series;
                 self.movies = movies;
-                s.assets.clear();
+                cx.assets.clear();
             }
             Message::SearchKindChanged(kind) => {
-                s.service.config_mut().search_kind = kind;
-                self.search(s, commands);
+                cx.service.config_mut().search_kind = kind;
+                self.search(cx, commands);
             }
             Message::AddSeriesByRemote(remote_id) => {
-                s.service
+                cx.service
                     .push_task_without_delay(TaskKind::DownloadSeriesByRemoteId { remote_id });
             }
             Message::SwitchSeries(series_id, remote_id) => {
-                s.remove_series(&series_id);
-                s.service
+                cx.remove_series(&series_id);
+                cx.service
                     .push_task_without_delay(TaskKind::DownloadSeriesByRemoteId { remote_id });
             }
             Message::RemoveSeries(series_id) => {
-                s.remove_series(&series_id);
+                cx.remove_series(&series_id);
             }
             Message::AddMovieByRemote(_) => {}
             Message::SwitchMovie(_, _) => {}
@@ -112,7 +112,7 @@ impl Search {
         }
     }
 
-    fn search(&mut self, s: &mut State, mut commands: impl Commands<Message>) {
+    fn search(&mut self, cx: &mut Ctxt<'_>, mut commands: impl Commands<Message>) {
         if self.text.is_empty() {
             return;
         }
@@ -122,12 +122,12 @@ impl Search {
 
         let search_id = Uuid::new_v4();
         let query = self.text.clone();
-        let search_kind = s.service.config().search_kind;
+        let search_kind = cx.service.config().search_kind;
         self.search_id = search_id;
 
         match search_kind {
             SearchKind::Tvdb => {
-                let op = s.service.search_tvdb(&self.text);
+                let op = cx.service.search_tvdb(&self.text);
 
                 let translate = move |out: Result<_>| match out
                     .with_context(|| anyhow!("Searching {search_kind} for `{query}`"))
@@ -139,8 +139,8 @@ impl Search {
                 commands.perform(op, translate);
             }
             SearchKind::Tmdb => {
-                let series = s.service.search_series_tmdb(&self.text);
-                let movies = s.service.search_movies_tmdb(&self.text);
+                let series = cx.service.search_series_tmdb(&self.text);
+                let movies = cx.service.search_movies_tmdb(&self.text);
 
                 let op = async move {
                     match tokio::try_join!(series, movies) {
@@ -157,7 +157,7 @@ impl Search {
     }
 
     /// Generate the view for the settings page.
-    pub(crate) fn view(&self, st: &State) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
         let mut series = w::Column::new();
 
         for s in self
@@ -166,19 +166,19 @@ impl Search {
             .skip(self.series_page * PER_PAGE)
             .take(PER_PAGE)
         {
-            let local_series = st.service.get_series_by_remote(&s.id);
+            let local_series = cx.service.get_series_by_remote(&s.id);
 
             let handle = match s
                 .poster()
-                .and_then(|p| st.assets.image_with_hint(&p, POSTER_HINT))
+                .and_then(|p| cx.assets.image_with_hint(&p, POSTER_HINT))
             {
                 Some(handle) => handle,
-                None => st.missing_poster(),
+                None => cx.missing_poster(),
             };
 
             let mut actions = w::Row::new();
 
-            let status = st
+            let status = cx
                 .service
                 .task_status(&TaskId::DownloadSeriesByRemoteId { remote_id: s.id });
 
@@ -267,19 +267,19 @@ impl Search {
             .skip(self.movies_page * PER_PAGE)
             .take(PER_PAGE)
         {
-            let local_movie = st.service.get_movie_by_remote(&m.id);
+            let local_movie = cx.service.get_movie_by_remote(&m.id);
 
             let handle = match m
                 .poster()
-                .and_then(|p| st.assets.image_with_hint(&p, POSTER_HINT))
+                .and_then(|p| cx.assets.image_with_hint(&p, POSTER_HINT))
             {
                 Some(handle) => handle,
-                None => st.missing_poster(),
+                None => cx.missing_poster(),
             };
 
             let mut actions = w::Row::new();
 
-            let status = st
+            let status = cx
                 .service
                 .task_status(&TaskId::DownloadMovieByRemoteId { remote_id: m.id });
 
@@ -384,7 +384,7 @@ impl Search {
                         w::radio(
                             kind.to_string(),
                             *kind,
-                            Some(st.service.config().search_kind),
+                            Some(cx.service.config().search_kind),
                             Message::SearchKindChanged,
                         )
                         .size(SMALL),
@@ -396,7 +396,7 @@ impl Search {
         page = page.push(w::text("Search").size(TITLE_SIZE));
         page = page.push(w::Row::new().push(query).push(submit));
 
-        if let Some(e) = st.get_error(ErrorId::Search(self.search_id)) {
+        if let Some(e) = cx.state.get_error(ErrorId::Search(self.search_id)) {
             page = page.push(
                 w::button(w::text(format!("Error: {}", e.message)))
                     .width(Length::Fill)

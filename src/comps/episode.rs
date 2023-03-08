@@ -3,7 +3,6 @@ use crate::comps;
 use crate::model::{EpisodeId, Watched};
 use crate::params::{GAP, SCREENCAP_HINT, SMALL, SPACE};
 use crate::prelude::*;
-use crate::state::State;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -93,53 +92,53 @@ where
 }
 
 impl Episode {
-    pub(crate) fn prepare(&mut self, s: &mut State) {
-        if let Some(e) = s.service.episode(&self.episode_id) {
+    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>) {
+        if let Some(e) = cx.service.episode(&self.episode_id) {
             if self.pending_series {
-                if let Some(p) = s.service.pending_by_series(e.series()) {
-                    s.assets.mark_with_hint(p.poster(), POSTER_HINT);
+                if let Some(p) = cx.service.pending_by_series(e.series()) {
+                    cx.assets.mark_with_hint(p.poster(), POSTER_HINT);
                 }
             } else {
-                s.assets.mark_with_hint(e.filename(), SCREENCAP_HINT);
+                cx.assets.mark_with_hint(e.filename(), SCREENCAP_HINT);
             }
         }
     }
 
-    pub(crate) fn update(&mut self, s: &mut State, m: Message) {
+    pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, m: Message) {
         match m {
             Message::RemoveLastWatch(message) => {
                 if let Some(c) = &mut self.remove_last_watch {
-                    c.update(s, message);
+                    c.update(cx, message);
                 }
             }
             Message::RemoveWatch(index, message) => {
                 if let Some(c) = self.remove_watches.get_mut(index) {
-                    c.update(s, message);
+                    c.update(cx, message);
                 }
             }
             Message::Watch(message) => {
-                self.watch.update(s, message);
+                self.watch.update(cx, message);
             }
             Message::SelectPending(episode) => {
                 let now = Utc::now();
-                s.service.select_pending(&now, &episode);
+                cx.service.select_pending(&now, &episode);
             }
             Message::ClearPending(episode) => {
-                s.service.clear_pending(&episode);
+                cx.service.clear_pending(&episode);
             }
             Message::Navigate(page) => {
-                s.push_history(page);
+                cx.push_history(page);
             }
         }
     }
 
-    pub(crate) fn view(&self, s: &State, pending: bool) -> Element<'static, Message> {
-        let Some(e) = s.service.episode(&self.episode_id) else {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>, pending: bool) -> Element<'static, Message> {
+        let Some(e) = cx.service.episode(&self.episode_id) else {
             return w::Column::new().into();
         };
 
         let pending_series = if self.pending_series {
-            s.service.pending_by_series(e.series())
+            cx.service.pending_by_series(e.series())
         } else {
             None
         };
@@ -147,10 +146,10 @@ impl Episode {
         let (image, (image_fill, rest_fill)) = if let Some(p) = pending_series {
             let poster = match p
                 .poster()
-                .and_then(|image| s.assets.image_with_hint(&image, POSTER_HINT))
+                .and_then(|image| cx.assets.image_with_hint(&image, POSTER_HINT))
             {
                 Some(handle) => handle,
-                None => s.missing_poster(),
+                None => cx.missing_poster(),
             };
 
             (
@@ -160,10 +159,10 @@ impl Episode {
         } else {
             let screencap = match e
                 .filename()
-                .and_then(|image| s.assets.image_with_hint(&image, SCREENCAP_HINT))
+                .and_then(|image| cx.assets.image_with_hint(&image, SCREENCAP_HINT))
             {
                 Some(handle) => handle,
-                None => s.assets.missing_screencap(),
+                None => cx.assets.missing_screencap(),
             };
 
             (
@@ -180,7 +179,7 @@ impl Episode {
             name = name.push(w::text(string));
         }
 
-        let watched = s.service.watched(&e.id);
+        let watched = cx.service.watched(&e.id);
 
         let mut actions = w::Row::new().spacing(SPACE);
 
@@ -245,7 +244,7 @@ impl Episode {
         let mut show_info = w::Column::new();
 
         if let Some(air_date) = &e.aired {
-            if air_date > s.today() {
+            if air_date > cx.state.today() {
                 show_info = show_info.push(w::text(format_args!("Airs: {air_date}")).size(SMALL));
             } else {
                 show_info = show_info.push(w::text(format_args!("Aired: {air_date}")).size(SMALL));
@@ -266,7 +265,7 @@ impl Episode {
                     len,
                     last.timestamp.date_naive()
                 )),
-                _ => w::text("Never watched").style(s.warning_text()),
+                _ => w::text("Never watched").style(cx.warning_text()),
             }
         };
 

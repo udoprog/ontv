@@ -28,64 +28,64 @@ impl Season {
         }
     }
 
-    pub(crate) fn prepare(&mut self, s: &mut State) {
+    pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>) {
         self.episodes.init_from_iter(
-            s.service
+            cx.service
                 .episodes(&self.series_id)
                 .filter(|e| e.season == self.season)
                 .map(|e| comps::episode::Props {
                     include_series: false,
                     episode_id: e.id,
-                    watched: s.service.watched(&e.id),
+                    watched: cx.service.watched(&e.id),
                 }),
         );
 
         for e in &mut self.episodes {
-            e.prepare(s);
+            e.prepare(cx);
         }
 
-        self.banner.prepare(s, &self.series_id);
+        self.banner.prepare(cx, &self.series_id);
     }
 
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
+    pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, message: Message) {
         match message {
             Message::OpenRemote(remote) => {
                 let url = remote.url();
                 let _ = webbrowser::open_browser(webbrowser::Browser::Default, &url);
             }
             Message::SeasonInfo(message) => {
-                self.season_info.update(s, message);
+                self.season_info.update(cx, message);
             }
             Message::SeriesBanner(message) => {
-                self.banner.update(s, message);
+                self.banner.update(cx, message);
             }
             Message::Episode(index, m) => {
                 if let Some(c) = self.episodes.get_mut(index) {
-                    c.update(s, m);
+                    c.update(cx, m);
                 }
             }
         }
     }
 
     /// Render season view.
-    pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
-        let Some(series) = s.service.series(&self.series_id) else {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
+        let Some(series) = cx.service.series(&self.series_id) else {
             return w::Column::new().into();
         };
 
-        let Some(season) = s.service.season(&series.id, &self.season) else {
+        let Some(season) = cx.service.season(&series.id, &self.season) else {
             return w::Column::new().into();
         };
 
         let mut episodes = w::Column::new();
 
-        let pending = s.service.get_pending(&series.id).map(|p| &p.episode);
+        let pending = cx.service.get_pending(&series.id).map(|p| &p.episode);
 
         for (index, episode) in self.episodes.iter().enumerate() {
             episodes = episodes.push(
                 centered(
                     episode
-                        .view(s, pending == Some(episode.episode_id()))
+                        .view(cx, pending == Some(episode.episode_id()))
                         .map(move |m| Message::Episode(index, m)),
                     Some(style::weak),
                 )
@@ -96,12 +96,12 @@ impl Season {
         let season_title = w::text(season.number).size(SUBTITLE_SIZE);
 
         let mut banner = w::Column::new()
-            .push(self.banner.view(s, series).map(Message::SeriesBanner))
+            .push(self.banner.view(cx, series).map(Message::SeriesBanner))
             .push(season_title)
             .align_items(Alignment::Center)
             .spacing(GAP);
 
-        let mut remote_ids = s
+        let mut remote_ids = cx
             .service
             .remotes_by_series(&series.id)
             .flat_map(|remote_id| remote_id.into_season(season.number))
@@ -123,7 +123,7 @@ impl Season {
 
         let top = w::Column::new()
             .push(banner)
-            .push(self.season_info.view(s).map(Message::SeasonInfo))
+            .push(self.season_info.view(cx).map(Message::SeasonInfo))
             .spacing(GAP)
             .width(Length::Fill);
 

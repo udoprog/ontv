@@ -43,19 +43,19 @@ impl Component<(SeriesId, SeasonNumber)> for SeasonInfo {
 }
 
 impl SeasonInfo {
-    pub(crate) fn update(&mut self, s: &mut State, message: Message) {
+    pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, message: Message) {
         match message {
             Message::WatchRemaining(m) => {
-                self.watch_remaining.update(s, m);
+                self.watch_remaining.update(cx, m);
             }
             Message::RemoveWatches(m) => {
-                self.remove_watches.update(s, m);
+                self.remove_watches.update(cx, m);
             }
         }
     }
 
-    pub(crate) fn view(&self, s: &State) -> Element<'static, Message> {
-        let (watched, total) = s.service.season_watched(&self.series_id, &self.season);
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
+        let (watched, total) = cx.service.season_watched(&self.series_id, &self.season);
         let mut actions = w::Row::new().spacing(SPACE);
 
         let any_confirm = self.watch_remaining.is_confirm() || self.remove_watches.is_confirm();
