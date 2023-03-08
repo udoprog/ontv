@@ -3,8 +3,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
-use bytes::Bytes;
+use anyhow::{anyhow, bail, Context, Result};
 use chrono::{DateTime, NaiveDate, Utc};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
@@ -12,6 +11,7 @@ use relative_path::RelativePath;
 use reqwest::header;
 use reqwest::StatusCode;
 use reqwest::{Method, RequestBuilder, Response, Url};
+use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
 use crate::api::common;
@@ -99,16 +99,8 @@ impl Client {
             .send()
             .await?;
 
-        let bytes: Bytes = handle_res(res).await?;
-
-        if tracing::enabled!(tracing::Level::TRACE) {
-            let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
-            tracing::trace!("search_by_name: {raw}");
-        }
-
-        let mut output = Vec::new();
-
-        let data: Data<Vec<Row>> = serde_json::from_slice(&bytes)?;
+        let data: Data<Vec<Row>> = response("search/tv", res).await?;
+        let mut output = Vec::with_capacity(data.results.len());
 
         for row in data.results {
             let first_aired = match row.first_air_date {
@@ -151,16 +143,8 @@ impl Client {
             .send()
             .await?;
 
-        let bytes: Bytes = handle_res(res).await?;
-
-        if tracing::enabled!(tracing::Level::TRACE) {
-            let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
-            tracing::trace!("search/movie: {raw}");
-        }
-
-        let mut output = Vec::new();
-
-        let data: Data<Vec<Row>> = serde_json::from_slice(&bytes)?;
+        let data: Data<Vec<Row>> = response("search/movie", res).await?;
+        let mut output = Vec::with_capacity(data.results.len());
 
         for row in data.results {
             let poster = row.poster_path.as_deref().and_then(ImageV2::tmdb);
@@ -236,24 +220,10 @@ impl Client {
         let last_etag = common::parse_etag(&details);
 
         let (external_ids, details, images) = tokio::try_join!(
-            handle_res(external_ids),
-            handle_res(details),
-            handle_res(images)
+            response::<ExternalIds>("tv/{id}/external_ids", external_ids),
+            response::<Details>("tv/{id}/details", details),
+            response::<Images>("tv/{id}/images", images)
         )?;
-
-        if tracing::enabled!(tracing::Level::TRACE) {
-            let details = serde_json::from_slice::<serde_json::Value>(&details)?;
-            tracing::trace!("details: {details}");
-            let external_ids = serde_json::from_slice::<serde_json::Value>(&external_ids)?;
-            tracing::trace!("external_ids: {external_ids}");
-            let images = serde_json::from_slice::<serde_json::Value>(&images)?;
-            tracing::trace!("images: {images}");
-        }
-
-        let details: Details = serde_json::from_slice(&details).context("details response")?;
-        let external_ids: ExternalIds =
-            serde_json::from_slice(&external_ids).context("remote ids")?;
-        let images: Images = serde_json::from_slice(&images).context("remote ids")?;
 
         let remote_id = RemoteSeriesId::Tmdb { id: details.id };
 
@@ -380,14 +350,7 @@ impl Client {
             .send()
             .await?;
 
-        let details = handle_res(details).await?;
-
-        if tracing::enabled!(tracing::Level::TRACE) {
-            let details = serde_json::from_slice::<serde_json::Value>(&details)?;
-            tracing::trace!("details: {details}");
-        }
-
-        let details: Details = serde_json::from_slice(&details).context("details response")?;
+        let details: Details = response("tv/{id}/season/{number}", details).await?;
 
         let mut episodes = Vec::new();
         let mut output = Vec::with_capacity(details.episodes.len());
@@ -534,8 +497,11 @@ impl Client {
             return Ok(None);
         }
 
-        let external_ids = handle_res(external_ids).await?;
-        let external_ids: ExternalIds = serde_json::from_slice(&external_ids)?;
+        let external_ids = response::<ExternalIds>(
+            "tv/{id}/season/{season}/episode/{episode}/external_ids",
+            external_ids,
+        )
+        .await?;
         Ok(Some(external_ids))
     }
 
@@ -561,13 +527,30 @@ impl Client {
     }
 }
 
-/// Handle converting response to JSON.
-async fn handle_res(res: Response) -> Result<Bytes> {
-    if !res.status().is_success() {
-        bail!("{}: {}", res.status(), res.text().await?);
+/// Converting a response from JSON.
+async fn response<T>(what: &'static str, res: Response) -> Result<T>
+where
+    T: DeserializeOwned,
+{
+    async fn inner<T>(what: &'static str, res: Response) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
+        if !res.status().is_success() {
+            bail!("{}: {}", res.status(), res.text().await?);
+        }
+
+        let output = res.bytes().await?;
+
+        if tracing::enabled!(tracing::Level::TRACE) {
+            let text = String::from_utf8_lossy(&output);
+            tracing::trace!("{what}: {text}");
+        }
+
+        Ok(serde_json::from_slice(&output)?)
     }
 
-    Ok(res.bytes().await?)
+    inner(what, res).await.with_context(|| anyhow!("{what}"))
 }
 
 #[derive(Default, Deserialize)]

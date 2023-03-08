@@ -3,8 +3,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{bail, Context, Result};
-use bytes::Bytes;
+use anyhow::{anyhow, bail, Context, Result};
 use chrono::{DateTime, NaiveDate, Utc};
 use relative_path::RelativePath;
 use reqwest::{Method, RequestBuilder, Response, Url};
@@ -94,6 +93,16 @@ impl Client {
 
     /// Login with the current API key.
     async fn login(&self) -> Result<Box<str>> {
+        #[derive(Serialize)]
+        struct Body<'a> {
+            apikey: &'a str,
+        }
+
+        #[derive(Deserialize)]
+        struct Response {
+            token: String,
+        }
+
         let mut cached = self.state.cached.lock().await;
 
         if let Some(c) = &*cached {
@@ -111,8 +120,7 @@ impl Client {
             .build()?;
 
         let res = self.client.execute(req).await?;
-        let res: Bytes = handle_res(res).await?;
-        let res: Response = serde_json::from_slice(&res)?;
+        let res: Response = response("login", res).await?;
 
         let expires_at = Instant::now()
             .checked_add(Duration::from_secs(EXPIRATION_SECONDS))
@@ -123,20 +131,11 @@ impl Client {
             expires_at,
         });
 
-        return Ok(res.token.into());
-
-        #[derive(Serialize)]
-        struct Body<'a> {
-            apikey: &'a str,
-        }
-
-        #[derive(Deserialize)]
-        struct Response {
-            token: String,
-        }
+        Ok(res.token.into())
     }
 
     /// Request with (hopefully cached) authorization.
+    #[inline]
     async fn request_with_auth<I>(&self, method: Method, segments: I) -> Result<RequestBuilder>
     where
         I: IntoIterator,
@@ -168,6 +167,29 @@ impl Client {
         Option<Etag>,
         Option<DateTime<Utc>>,
     )> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        #[allow(unused)]
+        struct Value {
+            id: u32,
+            #[serde(default)]
+            banner: Option<String>,
+            #[serde(default)]
+            fanart: Option<String>,
+            #[serde(default)]
+            overview: Option<String>,
+            #[serde(default)]
+            poster: Option<String>,
+            #[serde(default)]
+            series_name: String,
+            #[serde(default)]
+            airs_day_of_week: Option<String>,
+            #[serde(default)]
+            airs_time: Option<String>,
+            #[serde(default)]
+            imdb_id: Option<String>,
+        }
+
         let res = self
             .request_with_auth(Method::GET, &["series", &id.to_string()])
             .await?
@@ -176,14 +198,7 @@ impl Client {
 
         let last_etag = common::parse_etag(&res);
         let last_modified = common::parse_last_modified(&res).context("last-modified header")?;
-        let bytes: Bytes = handle_res(res).await?;
-
-        if tracing::enabled!(tracing::Level::TRACE) {
-            let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
-            tracing::trace!("series: {raw}");
-        }
-
-        let value: Value = serde_json::from_slice::<Data<_>>(&bytes)?.data;
+        let value = response::<Data<Value>>("series/{id}", res).await?.data;
 
         let mut graphics = SeriesGraphics::default();
         graphics.banner = value.banner.as_deref().and_then(ImageV2::tvdb);
@@ -221,30 +236,7 @@ impl Client {
             compat_last_sync: BTreeMap::new(),
         };
 
-        return Ok((series, remote_ids, last_etag, last_modified));
-
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        #[allow(unused)]
-        struct Value {
-            id: u32,
-            #[serde(default)]
-            banner: Option<String>,
-            #[serde(default)]
-            fanart: Option<String>,
-            #[serde(default)]
-            overview: Option<String>,
-            #[serde(default)]
-            poster: Option<String>,
-            #[serde(default)]
-            series_name: String,
-            #[serde(default)]
-            airs_day_of_week: Option<String>,
-            #[serde(default)]
-            airs_time: Option<String>,
-            #[serde(default)]
-            imdb_id: Option<String>,
-        }
+        Ok((series, remote_ids, last_etag, last_modified))
     }
 
     /// Download all series episodes.
@@ -333,21 +325,25 @@ impl Client {
         I: Copy + IntoIterator,
         I::Item: AsRef<str>,
     {
+        #[derive(Deserialize)]
+        struct Links {
+            #[serde(default)]
+            next: Option<u32>,
+        }
+
+        #[derive(Deserialize)]
+        struct DataLinks<T> {
+            data: T,
+            links: Links,
+        }
+
         let res = self
             .request_with_auth(Method::GET, path)
             .await?
             .send()
             .await?;
 
-        let bytes: Bytes = handle_res(res).await?;
-
-        if tracing::enabled!(tracing::Level::TRACE) {
-            let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
-            tracing::trace!("paged: {raw}");
-        }
-
-        let mut data: DataLinks<Vec<serde_json::Value>> = serde_json::from_slice(&bytes)?;
-
+        let mut data = response::<DataLinks<Vec<serde_json::Value>>>("paged", res).await?;
         let mut output = Vec::new();
 
         loop {
@@ -379,14 +375,7 @@ impl Client {
                 .send()
                 .await?;
 
-            let bytes: Bytes = handle_res(res).await?;
-
-            if tracing::enabled!(tracing::Level::TRACE) {
-                let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
-                tracing::trace!("{raw}");
-            }
-
-            data = serde_json::from_slice(&bytes)?;
+            data = response("paged", res).await?;
         }
 
         Ok(output)
@@ -394,6 +383,20 @@ impl Client {
 
     /// Search series result.
     pub(crate) async fn search_by_name(&self, name: &str) -> Result<Vec<SearchSeries>> {
+        #[derive(Debug, Clone, Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub(crate) struct Row {
+            pub(crate) id: u32,
+            #[serde(default)]
+            pub(crate) series_name: String,
+            #[serde(default)]
+            pub(crate) poster: Option<String>,
+            #[serde(default)]
+            pub(crate) overview: Option<String>,
+            #[serde(default)]
+            pub(crate) first_aired: Option<NaiveDate>,
+        }
+
         let res = self
             .request_with_auth(Method::GET, &["search", "series"])
             .await?
@@ -401,18 +404,12 @@ impl Client {
             .send()
             .await?;
 
-        let bytes: Bytes = handle_res(res).await?;
+        let data = response::<Data<Vec<serde_json::Value>>>("search/series", res)
+            .await?
+            .data;
+        let mut output = Vec::with_capacity(data.len());
 
-        if tracing::enabled!(tracing::Level::TRACE) {
-            let raw = serde_json::from_slice::<serde_json::Value>(&bytes)?;
-            tracing::trace!("search_by_name: {raw}");
-        }
-
-        let data: Data<Vec<serde_json::Value>> = serde_json::from_slice(&bytes)?;
-
-        let mut output = Vec::with_capacity(data.data.len());
-
-        for (index, row) in data.data.into_iter().enumerate() {
+        for (index, row) in data.into_iter().enumerate() {
             let row: Row = match serde_json::from_value(row) {
                 Ok(row) => row,
                 Err(error) => {
@@ -432,21 +429,7 @@ impl Client {
             });
         }
 
-        return Ok(output);
-
-        #[derive(Debug, Clone, Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub(crate) struct Row {
-            pub(crate) id: u32,
-            #[serde(default)]
-            pub(crate) series_name: String,
-            #[serde(default)]
-            pub(crate) poster: Option<String>,
-            #[serde(default)]
-            pub(crate) overview: Option<String>,
-            #[serde(default)]
-            pub(crate) first_aired: Option<NaiveDate>,
-        }
+        Ok(output)
     }
 
     /// Load image data from image path.
@@ -471,30 +454,30 @@ impl Client {
     }
 }
 
-/// Handle converting response to JSON.
-async fn handle_res(res: Response) -> Result<Bytes> {
-    if !res.status().is_success() {
-        bail!("{}: {}", res.status(), res.text().await?);
+/// Converting a response from JSON.
+async fn response<T>(what: &'static str, res: Response) -> Result<T>
+where
+    T: DeserializeOwned,
+{
+    async fn inner<T>(what: &'static str, res: Response) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
+        if !res.status().is_success() {
+            bail!("{}: {}", res.status(), res.text().await?);
+        }
+
+        let output = res.bytes().await?;
+
+        if tracing::enabled!(tracing::Level::TRACE) {
+            let text = String::from_utf8_lossy(&output);
+            tracing::trace!("{what}: {text}");
+        }
+
+        Ok(serde_json::from_slice(&output)?)
     }
 
-    Ok(res.bytes().await?)
-}
-
-#[derive(Deserialize)]
-#[allow(unused)]
-struct Links {
-    first: u32,
-    last: u32,
-    #[serde(default)]
-    next: Option<u32>,
-    #[serde(default)]
-    prev: Option<u32>,
-}
-
-#[derive(Deserialize)]
-struct DataLinks<T> {
-    data: T,
-    links: Links,
+    inner(what, res).await.with_context(|| anyhow!("{what}"))
 }
 
 #[derive(Deserialize)]
