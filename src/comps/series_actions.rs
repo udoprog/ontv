@@ -44,7 +44,7 @@ impl SeriesActions {
             }
             Message::RefreshSeries(remote_id) => {
                 cx.service
-                    .push_task_without_delay(TaskKind::DownloadSeriesById {
+                    .push_task_without_delay(TaskKind::DownloadSeries {
                         series_id: self.series_id,
                         remote_id,
                         last_modified: None,
@@ -74,16 +74,14 @@ impl SeriesActions {
             );
         }
 
-        let status = cx.service.task_status(&TaskId::DownloadSeriesById {
+        let status = cx.service.task_status(TaskId::SeriesId {
             series_id: series.id,
         });
 
         match status {
             Some(TaskStatus::Pending) => {
-                row = row.push(
-                    w::button(w::text("Refresh in queue").size(SMALL))
-                        .style(theme::Button::Positive),
-                );
+                row = row
+                    .push(w::button(w::text("Refresh").size(SMALL)).style(theme::Button::Positive));
             }
             Some(TaskStatus::Running) => {
                 row = row.push(

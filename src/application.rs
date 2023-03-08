@@ -709,7 +709,7 @@ impl Application {
                         self.service.complete_task(task);
                     }
                 }
-                TaskKind::DownloadSeriesById {
+                TaskKind::DownloadSeries {
                     series_id,
                     remote_id,
                     last_modified: _last_modified,
@@ -727,7 +727,7 @@ impl Application {
                         self.service.complete_task(task);
                     } else {
                         self.commands.perform(
-                            self.service.download_series(remote_id, None),
+                            self.service.download_series(remote_id, None, None),
                             move |result| {
                                 Message::TaskSeriesDownloaded(
                                     result.map_err(Into::into),

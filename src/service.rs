@@ -25,7 +25,7 @@ use crate::model::{
     Season, SeasonNumber, Series, SeriesId, Task, TaskId, TaskKind, ThemeType, Watched,
     WatchedKind,
 };
-use crate::queue::{TaskRunning, TaskStatus};
+use crate::queue::TaskStatus;
 
 /// Data encapsulating a newly added series.
 #[derive(Clone)]
@@ -208,7 +208,7 @@ impl Service {
     }
 
     /// Get task queue.
-    pub(crate) fn running_tasks(&self) -> impl ExactSizeIterator<Item = &TaskRunning> {
+    pub(crate) fn running_tasks(&self) -> impl ExactSizeIterator<Item = &Task> {
         self.db.tasks.running()
     }
 
@@ -302,7 +302,7 @@ impl Service {
                     series_id: s.id,
                     remote_id,
                 },
-                RemoteSeriesId::Tmdb { .. } => TaskKind::DownloadSeriesById {
+                RemoteSeriesId::Tmdb { .. } => TaskKind::DownloadSeries {
                     series_id: s.id,
                     remote_id,
                     last_modified: None,
@@ -329,7 +329,7 @@ impl Service {
         };
 
         if let Some(RemoteSeriesId::Tmdb { .. }) = &s.remote_id {
-            let kind = TaskKind::DownloadSeriesById {
+            let kind = TaskKind::DownloadSeries {
                 series_id: s.id,
                 remote_id: *remote_id,
                 last_modified: None,
@@ -370,7 +370,7 @@ impl Service {
                 remote_id => bail!("{remote_id}: not supported for checking for updates"),
             };
 
-            let kind = TaskKind::DownloadSeriesById {
+            let kind = TaskKind::DownloadSeries {
                 series_id,
                 remote_id,
                 last_modified,
@@ -768,15 +768,24 @@ impl Service {
         &self,
         remote_id: &RemoteSeriesId,
         if_none_match: Option<&Etag>,
+        series_id: Option<&SeriesId>,
     ) -> impl Future<Output = Result<Option<NewSeries>>> {
         let tvdb = self.tvdb.clone();
         let tmdb = self.tmdb.clone();
         let proxy = self.db.remotes.proxy();
         let remote_id = *remote_id;
         let if_none_match = if_none_match.cloned();
+        let series_id = series_id.copied();
 
         async move {
-            let lookup_series = |q| proxy.find_series_by_remote(q);
+            let lookup_series = |q| {
+                if let Some(series_id) = series_id {
+                    return Some(series_id);
+                }
+
+                proxy.find_series_by_remote(q)
+            };
+
             let lookup_episode = |q| proxy.find_episode_by_remote(q);
 
             let data = match remote_id {
@@ -1129,15 +1138,26 @@ impl Service {
 
     /// Check if the given task is pending.
     #[inline]
-    pub(crate) fn task_status(&self, id: &TaskId) -> Option<TaskStatus> {
+    pub(crate) fn task_status(&self, id: TaskId) -> Option<TaskStatus> {
         self.db.tasks.status(id)
+    }
+
+    /// Check if the given task is pending.
+    #[inline]
+    pub(crate) fn task_status_any(
+        &self,
+        ids: impl IntoIterator<Item = TaskId>,
+    ) -> Option<TaskStatus> {
+        ids.into_iter()
+            .flat_map(|id| self.db.tasks.status(id))
+            .next()
     }
 
     /// Mark task as completed.
     #[inline]
     pub(crate) fn complete_task(&mut self, task: Task) -> Option<TaskStatus> {
         match &task.kind {
-            TaskKind::DownloadSeriesById {
+            TaskKind::DownloadSeries {
                 series_id,
                 remote_id,
                 last_modified,

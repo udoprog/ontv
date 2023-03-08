@@ -10,12 +10,6 @@ const DELAY_MILLIS: i64 = 250;
 // Soft capacity, that some processes which might add a lot of stuff can check.
 const CAPACITY: usize = 50;
 
-#[derive(Debug, Clone)]
-pub(crate) struct TaskRunning {
-    pub(crate) id: Uuid,
-    pub(crate) kind: TaskId,
-}
-
 /// The current task status.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum TaskStatus {
@@ -29,11 +23,13 @@ pub(crate) enum TaskStatus {
 #[derive(Default)]
 pub(crate) struct Queue {
     /// Pending tasks.
-    status: HashMap<TaskId, TaskStatus>,
+    status: HashMap<Uuid, TaskStatus>,
+    /// Blocked tasks.
+    task_ids: HashMap<TaskId, Uuid>,
     /// Items in the download queue.
     data: VecDeque<Task>,
     /// Collection of running tasks.
-    running: Vec<TaskRunning>,
+    running: Vec<Task>,
     /// Test if queue has been locally modified.
     modified: bool,
 }
@@ -41,8 +37,9 @@ pub(crate) struct Queue {
 impl Queue {
     /// Test if queue contains a task of the given kind.
     #[inline]
-    pub(crate) fn status(&self, id: &TaskId) -> Option<TaskStatus> {
-        self.status.get(id).copied()
+    pub(crate) fn status(&self, id: TaskId) -> Option<TaskStatus> {
+        let id = self.task_ids.get(&id)?;
+        self.status.get(&id).copied()
     }
 
     /// Mark the given task kind as completed, returns `true` if the task was
@@ -50,12 +47,18 @@ impl Queue {
     #[inline]
     pub(crate) fn complete(&mut self, task: &Task) -> Option<TaskStatus> {
         self.running.retain(|t| t.id != task.id);
-        self.status.remove(&task.kind.id())
+        let status = self.status.remove(&task.id)?;
+
+        for id in task.kind.task_ids() {
+            let _ = self.task_ids.remove(&id);
+        }
+
+        Some(status)
     }
 
     /// Running tasks.
     #[inline]
-    pub(crate) fn running(&self) -> impl ExactSizeIterator<Item = &TaskRunning> {
+    pub(crate) fn running(&self) -> impl ExactSizeIterator<Item = &Task> {
         self.running.iter()
     }
 
@@ -74,7 +77,12 @@ impl Queue {
 
         for data in &self.data {
             if predicate(data) {
-                let _ = self.status.remove(&data.kind.id());
+                let _ = self.status.remove(&data.id);
+
+                for task_id in data.kind.task_ids() {
+                    let _ = self.task_ids.remove(&task_id);
+                }
+
                 removed += 1;
             }
         }
@@ -105,13 +113,8 @@ impl Queue {
         }
 
         let task = self.data.pop_front()?;
-        self.status.insert(task.kind.id(), TaskStatus::Running);
-
-        self.running.push(TaskRunning {
-            id: task.id,
-            kind: task.kind.id(),
-        });
-
+        self.status.insert(task.id, TaskStatus::Running);
+        self.running.push(task.clone());
         Some(task)
     }
 
@@ -132,16 +135,23 @@ impl Queue {
 
     /// Push without delay.
     pub(crate) fn push_without_delay(&mut self, kind: TaskKind) -> bool {
-        let id = kind.id();
+        let task_ids = kind.task_ids();
 
-        if self.status.contains_key(&id) {
-            return false;
+        for task_id in &task_ids {
+            if self.task_ids.contains_key(task_id) {
+                return false;
+            }
         }
 
+        let id = Uuid::new_v4();
         self.status.insert(id, TaskStatus::Pending);
 
+        for task_id in task_ids {
+            self.task_ids.insert(task_id, id);
+        }
+
         self.data.push_back(Task {
-            id: Uuid::new_v4(),
+            id,
             kind,
             scheduled: None,
         });
@@ -152,11 +162,21 @@ impl Queue {
 
     /// Push a task onto the queue.
     pub(crate) fn push(&mut self, kind: TaskKind) -> bool {
-        let id = kind.id();
+        let task_ids = kind.task_ids();
 
-        if self.status.contains_key(&id) {
-            return false;
+        for task_id in &task_ids {
+            if self.task_ids.contains_key(task_id) {
+                return false;
+            }
         }
+
+        let id = Uuid::new_v4();
+
+        for task_id in task_ids {
+            self.task_ids.insert(task_id, id);
+        }
+
+        self.status.insert(id, TaskStatus::Pending);
 
         let scheduled = self
             .data
@@ -166,10 +186,8 @@ impl Queue {
             .unwrap_or_else(Utc::now)
             + Duration::milliseconds(DELAY_MILLIS);
 
-        self.status.insert(id, TaskStatus::Pending);
-
         self.data.push_back(Task {
-            id: Uuid::new_v4(),
+            id,
             kind,
             scheduled: Some(scheduled),
         });

@@ -126,7 +126,7 @@ async fn download_series(
 ) -> Result<Option<SeriesId>> {
     tracing::info!("downloading `{}`", entry.show.title);
 
-    let new_series = match service.download_series(remote_id, None).await {
+    let new_series = match service.download_series(remote_id, None, None).await {
         Ok(Some(new_series)) => new_series,
         Ok(None) => {
             anyhow::bail!("empty response")

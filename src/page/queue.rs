@@ -126,7 +126,7 @@ impl Queue {
         let mut list = w::Column::new();
 
         while let Some(task) = tasks.next() {
-            let mut row = build_task_row(cx, &task.kind.id());
+            let mut row = build_task_row(cx, &task.kind);
 
             let duration = match &task.scheduled {
                 Some(scheduled) => now.signed_duration_since(*scheduled),
@@ -160,11 +160,11 @@ impl Queue {
     }
 }
 
-fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskId) -> w::Row<'a, Message> {
+fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind) -> w::Row<'a, Message> {
     let mut update = w::Row::new();
 
     match kind {
-        TaskId::CheckForUpdates {
+        TaskKind::CheckForUpdates {
             series_id,
             remote_id,
             ..
@@ -172,12 +172,16 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskId) -> w::Row<'a, Message> {
             update = update.push(w::text("Updates").size(SMALL));
             update = decorate_series(cx, series_id, Some(remote_id), update);
         }
-        TaskId::DownloadSeriesById { series_id, .. } => {
-            update = update.push(w::text("Downloading").size(SMALL));
-            update = decorate_series(cx, series_id, None, update);
+        TaskKind::DownloadSeries {
+            series_id,
+            remote_id,
+            ..
+        } => {
+            update = update.push(w::text("Download series").size(SMALL));
+            update = decorate_series(cx, series_id, Some(remote_id), update);
         }
-        TaskId::DownloadSeriesByRemoteId { remote_id, .. } => {
-            update = update.push(w::text("Downloading").size(SMALL).width(Length::Fill));
+        TaskKind::DownloadSeriesByRemoteId { remote_id, .. } => {
+            update = update.push(w::text("Download series").size(SMALL).width(Length::Fill));
 
             update = update.push(
                 link(w::text(remote_id).size(SMALL))
@@ -185,8 +189,8 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskId) -> w::Row<'a, Message> {
                     .on_press(Message::OpenRemoteSeries(*remote_id)),
             );
         }
-        TaskId::DownloadMovieByRemoteId { remote_id } => {
-            update = update.push(w::text("Downloading").size(SMALL).width(Length::Fill));
+        TaskKind::DownloadMovieByRemoteId { remote_id } => {
+            update = update.push(w::text("Download movie").size(SMALL).width(Length::Fill));
 
             update = update.push(
                 link(w::text(remote_id).size(SMALL))

@@ -96,9 +96,10 @@ pub use self::service::Service;
 mod prelude {
     pub(crate) use anyhow::{anyhow, Context, Result};
     pub(crate) use chrono::Utc;
-    pub(crate) use iced::alignment::Horizontal;
+    pub(crate) use iced::alignment::*;
+    pub(crate) use iced::theme;
     pub(crate) use iced::widget as w;
-    pub(crate) use iced::{theme, Alignment, Element, Length};
+    pub(crate) use iced::{Element, Length};
     pub(crate) use uuid::Uuid;
 
     pub(crate) use crate::commands::Commands;

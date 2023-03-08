@@ -226,7 +226,7 @@ impl Search {
 
             let status = cx
                 .service
-                .task_status(&TaskId::DownloadSeriesByRemoteId { remote_id: s.id });
+                .task_status(TaskId::RemoteSeriesId { remote_id: s.id });
 
             match status {
                 Some(TaskStatus::Pending) => {
@@ -328,7 +328,7 @@ impl Search {
 
             let status = cx
                 .service
-                .task_status(&TaskId::DownloadMovieByRemoteId { remote_id: m.id });
+                .task_status(TaskId::RemoteMovieId { remote_id: m.id });
 
             match status {
                 Some(TaskStatus::Pending) => {

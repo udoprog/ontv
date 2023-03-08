@@ -7,6 +7,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use anyhow::Result;
+use arrayvec::ArrayVec;
 use chrono::{DateTime, NaiveDate, Utc};
 use relative_path::{RelativePath, RelativePathBuf};
 use serde::de::IntoDeserializer;
@@ -245,6 +246,14 @@ impl RemoteSeriesId {
                 format!("https://www.imdb.com/title/{id}/")
             }
         }
+    }
+
+    /// Test if the remote is supported for syncing.
+    pub(crate) fn is_supported(&self) -> bool {
+        matches!(
+            self,
+            RemoteSeriesId::Tmdb { .. } | RemoteSeriesId::Tvdb { .. }
+        )
     }
 }
 
@@ -1221,17 +1230,12 @@ impl<'de> Deserialize<'de> for ImageV2 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum TaskId {
-    /// Check for updates.
-    CheckForUpdates {
-        series_id: SeriesId,
-        remote_id: RemoteSeriesId,
-    },
     /// Task to download series data.
-    DownloadSeriesById { series_id: SeriesId },
+    SeriesId { series_id: SeriesId },
     /// Task to add a series by a remote identifier.
-    DownloadSeriesByRemoteId { remote_id: RemoteSeriesId },
+    RemoteSeriesId { remote_id: RemoteSeriesId },
     /// Task to add download a movie by a remote identifier.
-    DownloadMovieByRemoteId { remote_id: RemoteMovieId },
+    RemoteMovieId { remote_id: RemoteMovieId },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -1242,7 +1246,7 @@ pub(crate) enum TaskKind {
         remote_id: RemoteSeriesId,
     },
     /// Task to download series data.
-    DownloadSeriesById {
+    DownloadSeries {
         series_id: SeriesId,
         remote_id: RemoteSeriesId,
         last_modified: Option<DateTime<Utc>>,
@@ -1256,26 +1260,35 @@ pub(crate) enum TaskKind {
 }
 
 impl TaskKind {
-    pub(crate) fn id(&self) -> TaskId {
+    pub(crate) fn task_ids(&self) -> ArrayVec<TaskId, 2> {
+        let mut ids = ArrayVec::new();
+
         match *self {
             TaskKind::CheckForUpdates {
                 series_id,
                 remote_id,
                 ..
-            } => TaskId::CheckForUpdates {
+            } => {
+                ids.push(TaskId::SeriesId { series_id });
+                ids.push(TaskId::RemoteSeriesId { remote_id });
+            }
+            TaskKind::DownloadSeries {
                 series_id,
                 remote_id,
-            },
-            TaskKind::DownloadSeriesById { series_id, .. } => {
-                TaskId::DownloadSeriesById { series_id }
+                ..
+            } => {
+                ids.push(TaskId::SeriesId { series_id });
+                ids.push(TaskId::RemoteSeriesId { remote_id });
             }
             TaskKind::DownloadSeriesByRemoteId { remote_id, .. } => {
-                TaskId::DownloadSeriesByRemoteId { remote_id }
+                ids.push(TaskId::RemoteSeriesId { remote_id });
             }
             TaskKind::DownloadMovieByRemoteId { remote_id } => {
-                TaskId::DownloadMovieByRemoteId { remote_id }
+                ids.push(TaskId::RemoteMovieId { remote_id });
             }
         }
+
+        ids
     }
 }
 
@@ -1295,7 +1308,7 @@ impl Task {
     /// Test if task involves the given series.
     pub(crate) fn is_series(&self, id: &SeriesId) -> bool {
         match &self.kind {
-            TaskKind::DownloadSeriesById { series_id, .. } => *series_id == *id,
+            TaskKind::DownloadSeries { series_id, .. } => *series_id == *id,
             TaskKind::CheckForUpdates { series_id, .. } => *series_id == *id,
             TaskKind::DownloadSeriesByRemoteId { .. } => false,
             TaskKind::DownloadMovieByRemoteId { .. } => false,

@@ -19,6 +19,7 @@ pub(crate) enum Message {
     Navigate(Page),
     SeasonInfo(usize, comps::season_info::Message),
     SeriesBanner(comps::series_banner::Message),
+    SwitchSeries(SeriesId, RemoteSeriesId),
 }
 
 pub(crate) struct Series {
@@ -76,6 +77,15 @@ impl Series {
             Message::SeriesBanner(message) => {
                 self.banner.update(cx, message);
             }
+            Message::SwitchSeries(series_id, remote_id) => {
+                cx.service
+                    .push_task_without_delay(TaskKind::DownloadSeries {
+                        series_id,
+                        remote_id,
+                        last_modified: None,
+                        force: true,
+                    });
+            }
         }
     }
 
@@ -93,14 +103,38 @@ impl Series {
             let mut remotes = w::Row::new();
 
             for remote_id in remote_ids {
-                remotes = remotes.push(
-                    w::button(w::text(remote_id.to_string()))
-                        .style(theme::Button::Text)
+                let mut row = w::Row::new().push(
+                    w::button(w::text(&remote_id).size(SMALL))
+                        .style(theme::Button::Primary)
                         .on_press(Message::OpenRemote(remote_id)),
                 );
+
+                if series.remote_id.as_ref() == Some(&remote_id) {
+                    row = row.push(w::button(w::text("Current").size(SMALL)));
+                } else if remote_id.is_supported() {
+                    let button =
+                        w::button(w::text("Switch").size(SMALL)).style(theme::Button::Positive);
+
+                    let status = cx.service.task_status_any([
+                        TaskId::RemoteSeriesId { remote_id },
+                        TaskId::SeriesId {
+                            series_id: series.id,
+                        },
+                    ]);
+
+                    let button = if status.is_none() {
+                        button.on_press(Message::SwitchSeries(series.id, remote_id))
+                    } else {
+                        button
+                    };
+
+                    row = row.push(button);
+                }
+
+                remotes = remotes.push(row);
             }
 
-            top = top.push(remotes.spacing(SPACE));
+            top = top.push(remotes.spacing(GAP));
         }
 
         let mut cols = w::Column::new();
