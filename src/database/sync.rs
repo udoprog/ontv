@@ -158,21 +158,8 @@ impl Database {
         entry.etag.as_ref()
     }
 
-    /// Clear last sync for the given time series.
-    pub(crate) fn clear_last_sync(&mut self, id: &SeriesId, remote_id: &RemoteSeriesId) -> bool {
-        match self.data.entry((*id.id(), *remote_id)) {
-            btree_map::Entry::Vacant(..) => false,
-            btree_map::Entry::Occupied(mut e) => {
-                let non_empty = !e.get().last_sync.is_none();
-                e.get_mut().last_sync = None;
-
-                if e.get().is_empty() {
-                    e.remove();
-                    true
-                } else {
-                    non_empty
-                }
-            }
-        }
+    /// Clear all sync data.
+    pub(crate) fn clear(&mut self) {
+        self.data.clear();
     }
 }

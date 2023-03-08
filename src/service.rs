@@ -1189,14 +1189,8 @@ impl Service {
     }
 
     /// Clear last sync.
-    pub(crate) fn clear_last_sync(&mut self) {
-        for s in self.db.series.iter() {
-            if let Some(remote_id) = &s.remote_id {
-                if self.db.sync.clear_last_sync(&s.id, remote_id) {
-                    self.db.changes.change(Change::Sync);
-                }
-            }
-        }
+    pub(crate) fn clear_sync(&mut self) {
+        self.db.sync.clear();
     }
 
     /// Get last etag for the given series id.

@@ -5,7 +5,7 @@ pub(crate) enum Message {
     ThemeChanged(ThemeType),
     TvdbLegacyApiKeyChange(String),
     TmdbApiKeyChange(String),
-    ClearLastSync,
+    ClearSync,
 }
 
 #[derive(Default)]
@@ -24,8 +24,8 @@ impl Settings {
             Message::TmdbApiKeyChange(string) => {
                 cx.service.set_tmdb_api_key(string);
             }
-            Message::ClearLastSync => {
-                cx.service.clear_last_sync();
+            Message::ClearSync => {
+                cx.service.clear_sync();
             }
         }
     }
@@ -69,10 +69,7 @@ impl Settings {
         );
 
         page = page.push(w::horizontal_rule(1));
-
-        page = page.push("Clear last sync times in database:");
-        page = page.push(w::button("Clear last sync").on_press(Message::ClearLastSync));
-
+        page = page.push(w::button("Clear sync information").on_press(Message::ClearSync));
         default_container(page.spacing(GAP).padding(GAP)).into()
     }
 }
