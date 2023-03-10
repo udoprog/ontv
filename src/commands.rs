@@ -9,7 +9,8 @@ use iced_futures::MaybeSend;
 use iced_native::Command;
 
 /// Send commands to an iced application.
-pub(crate) trait Commands<T> {
+#[doc(hidden)]
+pub trait Commands<T> {
     /// Type of the reborrowed command buffer.
     ///
     /// See [`Commands::by_ref`].
@@ -33,7 +34,7 @@ pub(crate) trait Commands<T> {
     /// # Examples
     ///
     /// ```
-    /// # use iced_native::Commands;
+    /// # use ontv::commands::Commands;
     /// enum Message {
     ///     Component1(component1::Message),
     ///     Component2(component2::Message),
@@ -45,7 +46,7 @@ pub(crate) trait Commands<T> {
     /// }
     ///
     /// mod component1 {
-    ///     # use iced_native::Commands;
+    ///     # use ontv::commands::Commands;
     ///     pub(crate) enum Message {
     ///         Tick,
     ///     }
@@ -56,7 +57,7 @@ pub(crate) trait Commands<T> {
     /// }
     ///
     /// mod component2 {
-    ///     #    use iced_native::Commands;
+    ///     #    use ontv::commands::Commands;
     ///     pub(crate) enum Message {
     ///         Tick,
     ///     }
@@ -71,19 +72,19 @@ pub(crate) trait Commands<T> {
     /// potentially constructing another reference that you don't really need:
     ///
     /// ```
-    /// # use iced_native::Commands;
+    /// # use ontv::commands::Commands;
     /// # enum Message { Component1(component1::Message), Component2(component2::Message) }
     /// fn update(mut commands: impl Commands<Message>) {
     ///     component1::update((&mut commands).map(Message::Component1));
     ///     component2::update((&mut commands).map(Message::Component2));
     /// }
     /// # mod component1 {
-    /// # use iced_native::Commands;
+    /// # use ontv::commands::Commands;
     /// # pub(crate) enum Message { Tick }
     /// # pub(crate) fn update(mut commands: impl Commands<Message>) { }
     /// # }
     /// # mod component2 {
-    /// # use iced_native::Commands;
+    /// # use ontv::commands::Commands;
     /// # pub(crate) enum Message { Tick }
     /// # pub(crate) fn update(mut commands: impl Commands<Message>) { }
     /// # }
@@ -96,7 +97,7 @@ pub(crate) trait Commands<T> {
     /// # Examples
     ///
     /// ```
-    /// # use iced_native::Commands;
+    /// # use ontv::commands::Commands;
     /// enum Message {
     ///     Greeting(String),
     /// }
@@ -122,7 +123,7 @@ pub(crate) trait Commands<T> {
     /// ```
     /// # // NB: we don't have access to iced here so faking it.
     /// # mod iced { pub(crate) mod window { pub(crate) fn close<Message>() -> iced_native::Command<Message> { todo!() } } }
-    /// # use iced_native::Commands;
+    /// # use ontv::commands::Commands;
     /// enum Message {
     ///     /* snip */
     /// }
@@ -150,7 +151,7 @@ pub(crate) trait Commands<T> {
     /// # Examples
     ///
     /// ```
-    /// # use iced_native::Commands;
+    /// # use ontv::commands::Commands;
     /// enum Message {
     ///     Component1(component1::Message),
     ///     Component2(component2::Message),
@@ -162,7 +163,7 @@ pub(crate) trait Commands<T> {
     /// }
     ///
     /// mod component1 {
-    ///     # use iced_native::Commands;
+    ///     # use ontv::commands::Commands;
     ///     pub(crate) enum Message {
     ///         Tick,
     ///     }
@@ -173,7 +174,7 @@ pub(crate) trait Commands<T> {
     /// }
     ///
     /// mod component2 {
-    ///     #    use iced_native::Commands;
+    ///     # use ontv::commands::Commands;
     ///     pub(crate) enum Message {
     ///         Tick,
     ///     }

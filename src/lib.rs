@@ -16,7 +16,7 @@
 //! with the `--test` switch. I personally use this during development to make
 //! sure I don't accidentally save bad data to my local database.
 //!
-//! ```
+//! ```text
 //! $ RUST_LOG=ontv=debug ontv --test
 //! ```
 //!
@@ -34,7 +34,7 @@
 //! After you've unpacked the file, import the history by starting `ontv` like
 //! this:
 //!
-//! ```
+//! ```text
 //! $ RUST_LOG=ontv=debug ontv --import-trakt-watched C:\Downloads\watched_shows.txt --import-missing
 //! ```
 //!
@@ -64,7 +64,7 @@
 //! `sync.json` and `queue.json`, unless you want to be plagued by frequent
 //! changes:
 //!
-//! ```
+//! ```text
 //! /sync.json
 //! /queue.json
 //! ```
@@ -73,7 +73,8 @@ mod api;
 mod application;
 mod assets;
 mod cache;
-mod commands;
+#[doc(hidden)]
+pub mod commands;
 mod compat;
 mod component;
 mod comps;
