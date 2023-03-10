@@ -168,6 +168,16 @@ impl Service {
         self.db.episodes.by_series(id)
     }
 
+    /// Iterator over all episodes in a given season.
+    #[inline]
+    pub(crate) fn episodes_by_season(
+        &self,
+        id: &SeriesId,
+        season: &SeasonNumber,
+    ) -> impl DoubleEndedIterator<Item = EpisodeRef<'_>> + ExactSizeIterator {
+        self.db.episodes.by_season(id, season)
+    }
+
     /// Get reference to an episode.
     #[inline]
     pub(crate) fn episode(&self, id: &EpisodeId) -> Option<EpisodeRef<'_>> {
