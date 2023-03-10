@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 
 use crate::model::{Episode, EpisodeId, SeriesId};
+use crate::prelude::SeasonNumber;
 
 struct EpisodeData {
     episode: Episode,
@@ -81,6 +82,8 @@ pub(crate) struct Database {
     data: HashMap<EpisodeId, EpisodeData>,
     /// By series index.
     by_series: HashMap<SeriesId, SeriesData>,
+    /// Link to first episode in season.
+    by_season: HashMap<(SeriesId, SeasonNumber), Vec<EpisodeId>>,
 }
 
 impl Database {
@@ -98,6 +101,11 @@ impl Database {
         while let Some(episode) = it.next() {
             let next = it.peek().map(|e| e.id);
             let id = episode.id;
+
+            self.by_season
+                .entry((series, episode.season))
+                .or_default()
+                .push(episode.id);
 
             let links = EpisodeData {
                 episode,
@@ -125,15 +133,18 @@ impl Database {
     }
 
     /// Remove a series by id.
-    pub(crate) fn remove(&mut self, id: &SeriesId) {
-        let Some(data) = self.by_series.remove(id) else {
+    pub(crate) fn remove(&mut self, series_id: &SeriesId) {
+        let Some(data) = self.by_series.remove(series_id) else {
             return;
         };
 
         let mut cur = data.first;
 
         while let Some(id) = cur.take() {
-            cur = self.data.remove(&id).and_then(|data| data.next);
+            if let Some(e) = self.data.remove(&id) {
+                let _ = self.by_season.remove(&(*series_id, e.episode.season));
+                cur = e.next;
+            }
         }
     }
 
@@ -153,6 +164,22 @@ impl Database {
             len: state.len,
             data: &self.data,
         }
+    }
+
+    /// Get episodes by season.
+    pub(crate) fn by_season(
+        &self,
+        id: &SeriesId,
+        season: &SeasonNumber,
+    ) -> impl DoubleEndedIterator<Item = EpisodeRef<'_>> + ExactSizeIterator {
+        let iter = self
+            .by_season
+            .get(&(*id, *season))
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+
+        crate::database::iter::Iter::new(iter.into_iter(), &self.data)
+            .map(|e| e.into_ref(&self.data))
     }
 }
 

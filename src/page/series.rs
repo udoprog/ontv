@@ -164,16 +164,27 @@ impl Series {
                 Message::Navigate(page::season::page(series.id, season.number)),
             );
 
+            let mut column = w::Column::new().spacing(SPACE).push(title);
+
+            let mut iter = cx.service.episodes_by_season(&series.id, &season.number);
+            let first = iter.next();
+            let last = iter.next_back().or(first);
+
+            if let (Some(start), end) = (first.and_then(|e| e.aired), last.and_then(|e| e.aired)) {
+                let text = if let Some(end) = end {
+                    w::text(format_args!("{start} - {end}")).size(SMALL)
+                } else {
+                    w::text(format_args!("{start} -")).size(SMALL)
+                };
+
+                column = column.push(text);
+            }
+
             cols = cols.push(
                 centered(
                     w::Row::new()
                         .push(graphic)
-                        .push(
-                            w::Column::new()
-                                .push(title)
-                                .push(c.view(cx).map(move |m| Message::SeasonInfo(index, m)))
-                                .spacing(SPACE),
-                        )
+                        .push(column.push(c.view(cx).map(move |m| Message::SeasonInfo(index, m))))
                         .spacing(GAP),
                     Some(style::weak),
                 )
