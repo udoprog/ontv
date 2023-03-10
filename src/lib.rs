@@ -10,6 +10,52 @@
 //!
 //! <br>
 //!
+//! ## Features
+//!
+//! <br>
+//!
+//! <div align="center">
+//! <table>
+//! <tr>
+//! <td align="center">
+//!   <a href="https://raw.githubusercontent.com/udoprog/ontv/main/images/watchnext.png">
+//!     <img src="https://raw.githubusercontent.com/udoprog/ontv/main/images/watchnext.png"/>
+//!   </a>
+//!   <br>
+//!   A friendly dashboard of what's next
+//! </td>
+//!
+//! <td align="center">
+//!   <a href="https://raw.githubusercontent.com/udoprog/ontv/main/images/scheduled.png">
+//!     <img src="https://raw.githubusercontent.com/udoprog/ontv/main/images/scheduled.png"/>
+//!   </a>
+//!   <br>
+//!   Schedule of upcoming shows
+//! </td>
+//! </tr>
+//!
+//! <tr>
+//! <td align="center">
+//!   <a href="https://raw.githubusercontent.com/udoprog/ontv/main/images/history.png">
+//!     <img src="https://raw.githubusercontent.com/udoprog/ontv/main/images/history.png"/>
+//!   </a>
+//!   <br>
+//!   Detailed watch history
+//! </td>
+//!
+//! <td align="center">
+//!   <a href="https://raw.githubusercontent.com/udoprog/ontv/main/images/git.png">
+//!     <img src="https://raw.githubusercontent.com/udoprog/ontv/main/images/git.png"/>
+//!   </a>
+//!   <br>
+//!   <code>git</code> friendly database, based on <code>yaml</code> for easy to read diffs.
+//! </td>
+//! </tr>
+//! </table>
+//! </div>
+//!
+//! <br>
+//!
 //! ## Running ontv in read-only mode
 //!
 //! If you for some reason want to run ontv in read-only mode you can do that
