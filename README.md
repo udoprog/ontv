@@ -18,7 +18,7 @@ If you for some reason want to run ontv in read-only mode you can do that
 with the `--test` switch. I personally use this during development to make
 sure I don't accidentally save bad data to my local database.
 
-```rust
+```text
 $ RUST_LOG=ontv=debug ontv --test
 ```
 
@@ -36,7 +36,7 @@ service by Darek Kay](https://darekkay.com/blog/trakt-tv-backup/).
 After you've unpacked the file, import the history by starting `ontv` like
 this:
 
-```rust
+```text
 $ RUST_LOG=ontv=debug ontv --import-trakt-watched C:\Downloads\watched_shows.txt --import-missing
 ```
 
@@ -50,7 +50,7 @@ This will take a while, so go get a ☕.
 ## Storing your database in git
 
 > **Make sure that whatever repository you're using is private**, since
-> `config.json` will contain your API keys.
+> `config.yaml` will contain your API keys.
 
 OnTV is designed to store its state in a human-readable, filesystem-friendly
 text format, and will probably continue to do so until it turns out to not
@@ -63,10 +63,10 @@ them first:
 * Linux: `~/.config/ontv` (I think).
 
 After this, you'll want to use a `.gitignore` file which excludes
-`sync.json` and `queue.json`, unless you want to be plagued by frequent
+`sync.yaml` and `queue.yaml`, unless you want to be plagued by frequent
 changes:
 
-```rust
-/sync.json
-/queue.json
+```text
+/sync.yaml
+/queue.yaml
 ```

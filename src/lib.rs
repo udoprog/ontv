@@ -48,7 +48,7 @@
 //! ## Storing your database in git
 //!
 //! > **Make sure that whatever repository you're using is private**, since
-//! > `config.json` will contain your API keys.
+//! > `config.yaml` will contain your API keys.
 //!
 //! OnTV is designed to store its state in a human-readable, filesystem-friendly
 //! text format, and will probably continue to do so until it turns out to not
@@ -61,12 +61,12 @@
 //! * Linux: `~/.config/ontv` (I think).
 //!
 //! After this, you'll want to use a `.gitignore` file which excludes
-//! `sync.json` and `queue.json`, unless you want to be plagued by frequent
+//! `sync.yaml` and `queue.yaml`, unless you want to be plagued by frequent
 //! changes:
 //!
 //! ```text
-//! /sync.json
-//! /queue.json
+//! /sync.yaml
+//! /queue.yaml
 //! ```
 
 mod api;

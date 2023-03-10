@@ -7,6 +7,22 @@ on:
       - main
 
 jobs:
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - run: rustup toolchain install 1.65 --profile minimal
+    - run: rustup default 1.65
+    - run: cargo build
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - run: rustup toolchain install stable --profile minimal
+    - run: rustup default stable
+    - run: cargo test
+
   build:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -17,4 +33,3 @@ jobs:
     - run: rustup toolchain install stable --profile minimal
     - run: rustup default stable
     - run: cargo build
-    - run: cargo test
