@@ -1,6 +1,8 @@
 use std::fmt;
+use std::future::Future;
 use std::io;
 use std::path::Path;
+use std::pin::Pin;
 
 use anyhow::{bail, Result};
 use iced_native::image::Handle;
@@ -32,20 +34,33 @@ impl fmt::Display for ImageHint {
 }
 
 pub(crate) trait CacheClient<T: ?Sized> {
-    async fn download_image(&self, id: &T) -> Result<Vec<u8>>;
+    fn download_image(
+        &self,
+        id: &T,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>>> + Send + 'static>>;
 }
 
 impl CacheClient<RelativePath> for themoviedb::Client {
     #[inline]
-    async fn download_image(&self, path: &RelativePath) -> Result<Vec<u8>> {
-        themoviedb::Client::download_image_path(self, path).await
+    fn download_image(
+        &self,
+        path: &RelativePath,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>>> + Send + 'static>> {
+        let client = self.clone();
+        let path: Box<RelativePath> = path.into();
+        Box::pin(async move { themoviedb::Client::download_image_path(&client, &path).await })
     }
 }
 
 impl CacheClient<RelativePath> for thetvdb::Client {
     #[inline]
-    async fn download_image(&self, path: &RelativePath) -> Result<Vec<u8>> {
-        thetvdb::Client::download_image_path(self, path).await
+    fn download_image(
+        &self,
+        path: &RelativePath,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>>> + Send + 'static>> {
+        let client = self.clone();
+        let path: Box<RelativePath> = path.into();
+        Box::pin(async move { thetvdb::Client::download_image_path(&client, &path).await })
     }
 }
 
