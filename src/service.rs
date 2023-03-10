@@ -11,6 +11,7 @@ use chrono::{DateTime, Days, Local, NaiveDate, Utc};
 use futures::stream::FuturesUnordered;
 use iced::Theme;
 use iced_native::image::Handle;
+use tracing_futures::Instrument;
 
 use crate::api::themoviedb;
 use crate::api::thetvdb;
@@ -350,7 +351,7 @@ impl Service {
         let series_id = s.id;
         let remote_id = *remote_id;
 
-        Some(async move {
+        let future = async move {
             let last_modified = match remote_id {
                 RemoteSeriesId::Tvdb { id } => {
                     let Some(update) = tvdb.series_last_modified(id).await? else {
@@ -379,7 +380,9 @@ impl Service {
             };
 
             Ok(Some(kind))
-        })
+        };
+
+        Some(future.in_current_span())
     }
 
     /// Push a single task to the queue.
@@ -751,7 +754,10 @@ impl Service {
     }
 
     /// Remove the given series by ID.
+    #[tracing::instrument(skip(self))]
     pub(crate) fn remove_series(&mut self, series_id: &SeriesId) {
+        tracing::info!("removing series");
+
         let _ = self.db.series.remove(series_id);
         let _ = self.db.episodes.remove(series_id);
         let _ = self.db.seasons.remove(series_id);
@@ -778,7 +784,9 @@ impl Service {
         let if_none_match = if_none_match.cloned();
         let series_id = series_id.copied();
 
-        async move {
+        let future = async move {
+            tracing::info!("downloading series");
+
             let lookup_series = |q| {
                 if let Some(series_id) = series_id {
                     return Some(series_id);
@@ -836,7 +844,9 @@ impl Service {
             };
 
             Ok::<_, Error>(Some(data))
-        }
+        };
+
+        future.in_current_span()
     }
 
     /// If the series is already loaded in the local database, simply mark it as tracked.
@@ -941,7 +951,7 @@ impl Service {
         let tvdb = self.tvdb.clone();
         let tmdb = self.tmdb.clone();
 
-        async move {
+        let future = async move {
             let mut output = Vec::with_capacity(images.len());
             let mut futures = FuturesUnordered::new();
 
@@ -972,7 +982,9 @@ impl Service {
             }
 
             Ok(output)
-        }
+        };
+
+        future.in_current_span()
     }
 
     /// Prevents the service from saving anything to the filesystem.
@@ -1038,7 +1050,7 @@ impl Service {
     ) -> impl Future<Output = Result<Vec<SearchSeries>>> {
         let tvdb = self.tvdb.clone();
         let query = query.to_owned();
-        async move { tvdb.search_by_name(&query).await }
+        async move { tvdb.search_by_name(&query).await }.in_current_span()
     }
 
     /// Search series from tmdb.
@@ -1048,7 +1060,7 @@ impl Service {
     ) -> impl Future<Output = Result<Vec<SearchSeries>>> {
         let tmdb = self.tmdb.clone();
         let query = query.to_owned();
-        async move { tmdb.search_series(&query).await }
+        async move { tmdb.search_series(&query).await }.in_current_span()
     }
 
     /// Search movies from tmdb.
@@ -1058,7 +1070,7 @@ impl Service {
     ) -> impl Future<Output = Result<Vec<SearchMovie>>> {
         let tmdb = self.tmdb.clone();
         let query = query.to_owned();
-        async move { tmdb.search_movies(&query).await }
+        async move { tmdb.search_movies(&query).await }.in_current_span()
     }
 
     /// Build schedule information.

@@ -14,6 +14,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
+use tracing_futures::Instrument;
 
 pub(crate) use self::episodes::EpisodeRef;
 pub(crate) use self::seasons::SeasonRef;
@@ -195,10 +196,12 @@ impl Database {
 
         let paths = paths.clone();
 
-        async move {
+        let future = async move {
             if do_not_save {
                 return Ok(());
             }
+
+            tracing::info!("saving database");
 
             let guard = paths.lock.lock().await;
 
@@ -250,7 +253,9 @@ impl Database {
 
             drop(guard);
             Ok(())
-        }
+        };
+
+        future.in_current_span()
     }
 }
 
