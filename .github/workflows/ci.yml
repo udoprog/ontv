@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  pull_request: {}
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+    - uses: actions/checkout@v3
+    - run: rustup toolchain install nightly --profile minimal
+    - run: rustup default nightly
+    - run: cargo build
+    - run: cargo test
