@@ -150,7 +150,7 @@ impl Series {
                 .graphics
                 .poster
                 .as_ref()
-                .or(series.graphics.poster.as_ref())
+                .or(series.poster())
                 .and_then(|i| cx.assets.image_with_hint(&i, POSTER_HINT))
             {
                 Some(poster) => poster,

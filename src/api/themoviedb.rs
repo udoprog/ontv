@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,12 +14,8 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
 use crate::api::common;
-use crate::model::{
-    Episode, EpisodeGraphics, EpisodeId, Etag, ImageV2, Raw, RemoteEpisodeId, RemoteMovieId,
-    RemoteSeriesId, SearchMovie, SearchSeries, Season, SeasonGraphics, SeasonNumber, Series,
-    SeriesGraphics, SeriesId,
-};
-use crate::service::NewEpisode;
+use crate::model::*;
+use crate::service::{NewEpisode, UpdateSeries};
 
 const BASE_URL: &str = "https://api.themoviedb.org/3";
 const IMAGE_URL: &str = "https://image.tmdb.org";
@@ -187,7 +182,7 @@ impl Client {
         if_none_match: Option<&Etag>,
     ) -> Result<
         Option<(
-            Series,
+            UpdateSeries,
             BTreeSet<RemoteSeriesId>,
             Option<Etag>,
             Option<DateTime<Utc>>,
@@ -251,20 +246,13 @@ impl Client {
             graphics.banners.extend(ImageV2::tmdb(&image.file_path));
         }
 
-        let series = Series {
+        let series = UpdateSeries {
             id,
             title: details.name.unwrap_or_default(),
             first_air_date: details.first_air_date,
             overview: details.overview.unwrap_or_default(),
-            compat_poster: None,
-            compat_banner: None,
-            compat_fanart: None,
             graphics,
-            tracked: true,
-            compat_last_modified: None,
-            compat_last_etag: None,
-            compat_last_sync: BTreeMap::new(),
-            remote_id: Some(remote_id),
+            remote_id,
         };
 
         let mut seasons = Vec::with_capacity(details.seasons.len());

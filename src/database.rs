@@ -89,46 +89,7 @@ impl Database {
 
         if let Some((format, series)) = format::load_array::<Series>(&paths.series)? {
             for mut s in series {
-                if let Some(image) = s.compat_poster.take() {
-                    s.graphics.poster = Some(image.into_v2());
-                    db.changes.change(Change::Series);
-                }
-
-                if let Some(image) = s.compat_banner.take() {
-                    s.graphics.banner = Some(image.into_v2());
-                    db.changes.change(Change::Series);
-                }
-
-                if let Some(image) = s.compat_fanart.take() {
-                    s.graphics.fanart = Some(image.into_v2());
-                    db.changes.change(Change::Series);
-                }
-
-                if let Some(remote_id) = &s.remote_id {
-                    if let Some(etag) = s.compat_last_etag.take() {
-                        if db.sync.update_last_etag(&s.id, remote_id, etag) {
-                            db.changes.change(Change::Sync);
-                        }
-                    }
-
-                    let last_modified = s.compat_last_modified.take();
-
-                    if let Some(last_modified) = &last_modified {
-                        if db
-                            .sync
-                            .update_last_modified(&s.id, remote_id, Some(last_modified))
-                        {
-                            db.changes.change(Change::Sync);
-                        }
-                    }
-                }
-
-                for (remote_id, last_sync) in std::mem::take(&mut s.compat_last_sync) {
-                    if db.sync.import_last_sync(&s.id, &remote_id, &last_sync) {
-                        db.changes.change(Change::Sync);
-                    }
-                }
-
+                migrate_series(&mut db, &mut s);
                 db.series.insert(s);
             }
 
@@ -367,4 +328,48 @@ async fn remove_all<const N: usize>(what: &'static str, paths: [&Path; N]) -> Re
     }
 
     Ok(())
+}
+
+/// Migrate series from old unsupported formats.
+#[allow(deprecated)]
+fn migrate_series(db: &mut Database, s: &mut Series) {
+    if let Some(image) = s.compat_poster.take() {
+        s.graphics.poster = Some(image.into_v2());
+        db.changes.change(Change::Series);
+    }
+
+    if let Some(image) = s.compat_banner.take() {
+        s.graphics.banner = Some(image.into_v2());
+        db.changes.change(Change::Series);
+    }
+
+    if let Some(image) = s.compat_fanart.take() {
+        s.graphics.fanart = Some(image.into_v2());
+        db.changes.change(Change::Series);
+    }
+
+    if let Some(remote_id) = &s.remote_id {
+        if let Some(etag) = s.compat_last_etag.take() {
+            if db.sync.update_last_etag(&s.id, remote_id, etag) {
+                db.changes.change(Change::Sync);
+            }
+        }
+
+        let last_modified = s.compat_last_modified.take();
+
+        if let Some(last_modified) = &last_modified {
+            if db
+                .sync
+                .update_last_modified(&s.id, remote_id, Some(last_modified))
+            {
+                db.changes.change(Change::Sync);
+            }
+        }
+    }
+
+    for (remote_id, last_sync) in std::mem::take(&mut s.compat_last_sync) {
+        if db.sync.import_last_sync(&s.id, &remote_id, &last_sync) {
+            db.changes.change(Change::Sync);
+        }
+    }
 }

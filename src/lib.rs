@@ -74,6 +74,7 @@ mod application;
 mod assets;
 mod cache;
 mod commands;
+mod compat;
 mod component;
 mod comps;
 mod context;

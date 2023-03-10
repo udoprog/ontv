@@ -355,7 +355,7 @@ impl iced::Application for Application {
                     Ok(new_series) => {
                         if let Some(new_series) = new_series {
                             let now = Utc::now();
-                            self.service.insert_new_series(&now, new_series);
+                            self.service.insert_series(&now, new_series);
                         }
                     }
                     Err(error) => {

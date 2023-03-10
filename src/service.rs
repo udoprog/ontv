@@ -2,7 +2,6 @@ pub(crate) mod paths;
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::fmt;
 use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
@@ -21,15 +20,15 @@ use crate::database::{Change, Database, EpisodeRef, SeasonRef};
 use crate::model::*;
 use crate::queue::{Task, TaskKind, TaskRef, TaskStatus};
 
-/// Data encapsulating a newly added series.
-#[derive(Clone)]
-pub(crate) struct NewSeries {
-    series: Series,
-    remote_ids: BTreeSet<RemoteSeriesId>,
-    last_etag: Option<Etag>,
-    last_modified: Option<DateTime<Utc>>,
-    episodes: Vec<NewEpisode>,
-    seasons: Vec<Season>,
+/// A series update as produced by an API.
+#[derive(Debug, Clone)]
+pub(crate) struct UpdateSeries {
+    pub(crate) id: SeriesId,
+    pub(crate) title: String,
+    pub(crate) first_air_date: Option<NaiveDate>,
+    pub(crate) overview: String,
+    pub(crate) graphics: SeriesGraphics,
+    pub(crate) remote_id: RemoteSeriesId,
 }
 
 /// New episode.
@@ -39,17 +38,15 @@ pub(crate) struct NewEpisode {
     pub(crate) remote_ids: BTreeSet<RemoteEpisodeId>,
 }
 
-impl NewSeries {
-    /// Return the identifier of the newly downloaded series.
-    pub(crate) fn series_id(&self) -> &SeriesId {
-        &self.series.id
-    }
-}
-
-impl fmt::Debug for NewSeries {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("NewSeries").finish_non_exhaustive()
-    }
+/// Data encapsulating a newly added series.
+#[derive(Debug, Clone)]
+pub(crate) struct NewSeries {
+    pub(crate) series: UpdateSeries,
+    pub(crate) remote_ids: BTreeSet<RemoteSeriesId>,
+    pub(crate) last_etag: Option<Etag>,
+    pub(crate) last_modified: Option<DateTime<Utc>>,
+    pub(crate) episodes: Vec<NewEpisode>,
+    pub(crate) seasons: Vec<Season>,
 }
 
 /// A pending thing to watch.
@@ -872,7 +869,9 @@ impl Service {
 
     /// Insert a new tracked song.
     #[tracing::instrument(skip(self))]
-    pub(crate) fn insert_new_series(&mut self, now: &DateTime<Utc>, data: NewSeries) {
+    pub(crate) fn insert_series(&mut self, now: &DateTime<Utc>, data: NewSeries) {
+        tracing::info!("inserting new series");
+
         let series_id = data.series.id;
 
         for &remote_id in &data.remote_ids {
@@ -881,21 +880,23 @@ impl Service {
             }
         }
 
-        if let Some(remote_id) = &data.series.remote_id {
-            if let Some(etag) = data.last_etag {
-                if self.db.sync.update_last_etag(&series_id, remote_id, etag) {
-                    self.db.changes.change(Change::Sync);
-                }
+        if let Some(etag) = data.last_etag {
+            if self
+                .db
+                .sync
+                .update_last_etag(&series_id, &data.series.remote_id, etag)
+            {
+                self.db.changes.change(Change::Sync);
             }
+        }
 
-            if let Some(last_modified) = &data.last_modified {
-                if self
-                    .db
-                    .sync
-                    .update_last_modified(&series_id, remote_id, Some(&last_modified))
-                {
-                    self.db.changes.change(Change::Sync);
-                }
+        if let Some(last_modified) = &data.last_modified {
+            if self.db.sync.update_last_modified(
+                &series_id,
+                &data.series.remote_id,
+                Some(&last_modified),
+            ) {
+                self.db.changes.change(Change::Sync);
             }
         }
 
@@ -921,7 +922,7 @@ impl Service {
         if let Some(current) = self.db.series.get_mut(&series_id) {
             current.merge_from(data.series);
         } else {
-            self.db.series.insert(data.series);
+            self.db.series.insert(Series::new_series(data.series));
         }
 
         // Remove any pending episodes for the given series.

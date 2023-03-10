@@ -22,15 +22,13 @@ impl SeriesList {
             let series = filtered.iter().flat_map(|id| cx.service.series(id));
             self.actions.init_from_iter(series.clone().map(|s| s.id));
             cx.assets
-                .mark_with_hint(series.flat_map(|s| s.graphics.poster.as_ref()), POSTER_HINT);
+                .mark_with_hint(series.flat_map(|s| s.poster()), POSTER_HINT);
         } else {
             self.actions
                 .init_from_iter(cx.service.series_by_name().map(|s| s.id));
 
             cx.assets.mark_with_hint(
-                cx.service
-                    .series_by_name()
-                    .flat_map(|s| s.graphics.poster.as_ref()),
+                cx.service.series_by_name().flat_map(|s| s.poster()),
                 POSTER_HINT,
             );
         }

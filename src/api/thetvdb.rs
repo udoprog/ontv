@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -11,11 +11,8 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::api::common;
-use crate::model::{
-    Episode, EpisodeGraphics, EpisodeId, Etag, ImageV2, Raw, RemoteEpisodeId, RemoteSeriesId,
-    SearchSeries, SeasonNumber, Series, SeriesGraphics, SeriesId,
-};
-use crate::service::NewEpisode;
+use crate::model::*;
+use crate::service::{NewEpisode, UpdateSeries};
 
 const BASE_URL: &str = "https://api.thetvdb.com";
 const ARTWORKS_URL: &str = "https://artworks.thetvdb.com";
@@ -162,7 +159,7 @@ impl Client {
         id: u32,
         lookup: impl common::LookupSeriesId,
     ) -> Result<(
-        Series,
+        UpdateSeries,
         BTreeSet<RemoteSeriesId>,
         Option<Etag>,
         Option<DateTime<Utc>>,
@@ -220,20 +217,13 @@ impl Client {
             .lookup(remote_ids.iter().copied())
             .unwrap_or_else(SeriesId::random);
 
-        let series = Series {
+        let series = UpdateSeries {
             id,
             title: value.series_name.to_owned(),
             first_air_date: None,
             overview: value.overview.unwrap_or_default(),
-            compat_banner: None,
-            compat_poster: None,
-            compat_fanart: None,
             graphics,
-            remote_id: Some(remote_id),
-            tracked: true,
-            compat_last_modified: None,
-            compat_last_etag: None,
-            compat_last_sync: BTreeMap::new(),
+            remote_id,
         };
 
         Ok((series, remote_ids, last_etag, last_modified))

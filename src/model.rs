@@ -1,5 +1,4 @@
 mod etag;
-mod hex;
 mod raw;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -8,13 +7,12 @@ use std::str::FromStr;
 
 use anyhow::Result;
 use chrono::{DateTime, NaiveDate, Utc};
-use relative_path::{RelativePath, RelativePathBuf};
+use relative_path::RelativePath;
 use serde::de::IntoDeserializer;
 use serde::{de, ser, Deserialize, Serialize};
 use uuid::Uuid;
 
 pub(crate) use self::etag::Etag;
-pub(crate) use self::hex::Hex;
 pub(crate) use self::raw::Raw;
 
 macro_rules! id {
@@ -592,43 +590,69 @@ pub(crate) struct Series {
     /// Overview of the series.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub(crate) overview: String,
-    /// Poster image.
-    #[serde(default, rename = "poster", skip_serializing)]
-    pub(crate) compat_poster: Option<Image>,
-    /// Banner image.
-    #[serde(default, rename = "banner", skip_serializing)]
-    pub(crate) compat_banner: Option<Image>,
-    /// Fanart image.
-    #[serde(default, rename = "fanart", skip_serializing)]
-    pub(crate) compat_fanart: Option<Image>,
     /// Series graphics.
     #[serde(default, skip_serializing_if = "SeriesGraphics::is_empty")]
     pub(crate) graphics: SeriesGraphics,
     /// Indicates if the series is tracked or not, in that it will receive updates.
     #[serde(default)]
     pub(crate) tracked: bool,
-    /// Locally known last modified timestamp.
-    #[serde(rename = "last_modified", default, skip_serializing)]
-    pub(crate) compat_last_modified: Option<DateTime<Utc>>,
-    /// Locally known last etag.
-    #[serde(rename = "last_etag", default, skip_serializing)]
-    pub(crate) compat_last_etag: Option<Etag>,
-    /// Last sync time for each remote.
-    #[serde(rename = "last_sync", default, skip_serializing, with = "btree_as_vec")]
-    pub(crate) compat_last_sync: BTreeMap<RemoteSeriesId, DateTime<Utc>>,
     /// The remote identifier that is used to synchronize this series.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) remote_id: Option<RemoteSeriesId>,
+    /// Inline poster image.
+    #[serde(default, rename = "poster", skip_serializing)]
+    #[deprecated = "replaced by .graphics"]
+    pub(crate) compat_poster: Option<crate::compat::Image>,
+    /// Inline banner image.
+    #[serde(default, rename = "banner", skip_serializing)]
+    #[deprecated = "replaced by .graphics"]
+    pub(crate) compat_banner: Option<crate::compat::Image>,
+    /// Inline fanart image.
+    #[serde(default, rename = "fanart", skip_serializing)]
+    #[deprecated = "replaced by .graphics"]
+    pub(crate) compat_fanart: Option<crate::compat::Image>,
+    /// Locally known last modified timestamp.
+    #[serde(rename = "last_modified", default, skip_serializing)]
+    #[deprecated = "deprecated for storing separately in sync database"]
+    pub(crate) compat_last_modified: Option<DateTime<Utc>>,
+    /// Locally known last etag.
+    #[serde(rename = "last_etag", default, skip_serializing)]
+    #[deprecated = "deprecated for storing separately in sync database"]
+    pub(crate) compat_last_etag: Option<Etag>,
+    /// Last sync time for each remote.
+    #[serde(rename = "last_sync", default, skip_serializing, with = "btree_as_vec")]
+    #[deprecated = "deprecated for storing separately in sync database"]
+    pub(crate) compat_last_sync: BTreeMap<RemoteSeriesId, DateTime<Utc>>,
 }
 
 impl Series {
+    /// Construct a new series from a series update.
+    #[allow(deprecated)]
+    pub(crate) fn new_series(update: crate::service::UpdateSeries) -> Self {
+        Self {
+            id: update.id,
+            title: update.title,
+            first_air_date: update.first_air_date,
+            overview: update.overview,
+            graphics: update.graphics,
+            remote_id: Some(update.remote_id),
+            tracked: true,
+            compat_poster: None,
+            compat_banner: None,
+            compat_fanart: None,
+            compat_last_modified: None,
+            compat_last_etag: None,
+            compat_last_sync: BTreeMap::new(),
+        }
+    }
+
     /// Merge this series from another.
-    pub(crate) fn merge_from(&mut self, other: Self) {
+    pub(crate) fn merge_from(&mut self, other: crate::service::UpdateSeries) {
         self.title = other.title;
         self.first_air_date = other.first_air_date;
         self.overview = other.overview;
         self.graphics.merge_from(other.graphics);
-        self.remote_id = other.remote_id;
+        self.remote_id = Some(other.remote_id);
     }
 
     /// Get the poster of the series.
@@ -822,7 +846,7 @@ pub(crate) struct Season {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub(crate) overview: String,
     #[serde(default, rename = "poster", skip_serializing_if = "Option::is_none")]
-    pub(crate) compat_poster: Option<Image>,
+    pub(crate) compat_poster: Option<crate::compat::Image>,
     #[serde(default, skip_serializing_if = "SeasonGraphics::is_empty")]
     pub(crate) graphics: SeasonGraphics,
 }
@@ -874,7 +898,7 @@ pub(crate) struct Episode {
     pub(crate) aired: Option<NaiveDate>,
     /// Episode image.
     #[serde(default, rename = "filename", skip_serializing_if = "Option::is_none")]
-    pub(crate) compat_filename: Option<Image>,
+    pub(crate) compat_filename: Option<crate::compat::Image>,
     /// Episode graphics.
     #[serde(default, skip_serializing_if = "EpisodeGraphics::is_empty")]
     pub(crate) graphics: EpisodeGraphics,
@@ -946,183 +970,6 @@ impl fmt::Display for ImageExt {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum ArtKind {
-    /// Poster art.
-    Posters,
-    /// Banner art.
-    Banners,
-    /// Background art.
-    Backgrounds,
-    /// Episodes art.
-    Episodes,
-}
-
-impl fmt::Display for ArtKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ArtKind::Posters => write!(f, "posters"),
-            ArtKind::Banners => write!(f, "banners"),
-            ArtKind::Backgrounds => write!(f, "backgrounds"),
-            ArtKind::Episodes => write!(f, "episodes"),
-        }
-    }
-}
-
-/// The identifier of an image.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", tag = "type", content = "data")]
-pub(crate) enum TvdbImageKind {
-    Legacy(u64, ArtKind, Hex<16>),
-    V4(u64, ArtKind, Hex<16>),
-    Banner(Hex<16>),
-    BannerSuffixed(u64, Raw<16>),
-    Graphical(Hex<16>),
-    GraphicalSuffixed(u64, Raw<16>),
-    Fanart(Hex<16>),
-    FanartSuffixed(u64, Raw<16>),
-    ScreenCap(u64, Hex<16>),
-    Episodes(u32, u32),
-    Blank(u32),
-    Text(u32),
-    Missing,
-}
-
-/// An image from thetvdb.com.org
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct TvdbImage {
-    #[serde(flatten)]
-    pub(crate) kind: TvdbImageKind,
-    pub(crate) ext: ImageExt,
-}
-
-impl fmt::Display for TvdbImage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let ext = &self.ext;
-
-        match &self.kind {
-            TvdbImageKind::Legacy(series_id, kind, id) => {
-                write!(f, "series/{series_id}/{kind}/{id}.{ext}")
-            }
-            TvdbImageKind::V4(series_id, kind, id) => {
-                write!(f, "v4/series/{series_id}/{kind}/{id}.{ext}")
-            }
-            TvdbImageKind::Banner(id) => {
-                write!(f, "posters/{id}.{ext}")
-            }
-            TvdbImageKind::BannerSuffixed(series_id, suffix) => {
-                write!(f, "posters/{series_id}-{suffix}.{ext}")
-            }
-            TvdbImageKind::Graphical(id) => {
-                write!(f, "graphical/{id}.{ext}")
-            }
-            TvdbImageKind::GraphicalSuffixed(series_id, suffix) => {
-                write!(f, "graphical/{series_id}-{suffix}.{ext}")
-            }
-            TvdbImageKind::Fanart(id) => {
-                write!(f, "fanart/original/{id}.{ext}")
-            }
-            TvdbImageKind::FanartSuffixed(series_id, suffix) => {
-                write!(f, "fanart/original/{series_id}-{suffix}.{ext}")
-            }
-            TvdbImageKind::ScreenCap(episode_id, id) => {
-                write!(f, "v4/episode/{episode_id}/screencap/{id}.{ext}")
-            }
-            TvdbImageKind::Episodes(episode_id, image_id) => {
-                write!(f, "episodes/{episode_id}/{image_id}.{ext}")
-            }
-            TvdbImageKind::Blank(series_id) => {
-                write!(f, "blank/{series_id}.{ext}")
-            }
-            TvdbImageKind::Text(series_id) => {
-                write!(f, "text/{series_id}.{ext}")
-            }
-            TvdbImageKind::Missing => {
-                write!(f, "images/missing/series.{ext}")
-            }
-        }
-    }
-}
-
-/// The identifier of an image.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", tag = "type", content = "data")]
-pub(crate) enum TmdbImageKind {
-    Base64(Raw<32>),
-}
-
-/// An image from themoviedb.org
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct TmdbImage {
-    #[serde(flatten)]
-    pub(crate) kind: TmdbImageKind,
-    pub(crate) ext: ImageExt,
-}
-
-impl fmt::Display for TmdbImage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let ext = &self.ext;
-
-        match self.kind {
-            TmdbImageKind::Base64(id) => {
-                write!(f, "{id}.{ext}")?;
-            }
-        }
-
-        Ok(())
-    }
-}
-
-/// The identifier of an image.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", tag = "from")]
-pub(crate) enum Image {
-    /// An image from thetvdb.com
-    Tvdb(TvdbImage),
-    /// An image from themoviedb.org
-    Tmdb(TmdbImage),
-}
-
-impl Image {
-    /// Convert into a V2 image.
-    pub(crate) fn into_v2(self) -> ImageV2 {
-        match self {
-            Image::Tvdb(image) => ImageV2::Tvdb {
-                uri: RelativePathBuf::from(image.to_string()).into(),
-            },
-            Image::Tmdb(image) => ImageV2::Tmdb {
-                uri: RelativePathBuf::from(image.to_string()).into(),
-            },
-        }
-    }
-}
-
-impl fmt::Display for Image {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Image::Tvdb(image) => write!(f, "tvdb:{image}"),
-            Image::Tmdb(image) => write!(f, "tmdb:{image}"),
-        }
-    }
-}
-
-impl From<TvdbImage> for Image {
-    #[inline]
-    fn from(image: TvdbImage) -> Self {
-        Image::Tvdb(image)
-    }
-}
-
-impl From<TmdbImage> for Image {
-    #[inline]
-    fn from(image: TmdbImage) -> Self {
-        Image::Tmdb(image)
-    }
-}
-
 /// The hash of an image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
@@ -1136,6 +983,7 @@ impl ImageHash {
 
 /// The identifier of an image.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub(crate) enum ImageV2 {
     /// An image from thetvdb.com
     Tvdb { uri: Box<RelativePath> },
