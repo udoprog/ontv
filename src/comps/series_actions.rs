@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::queue::TaskStatus;
+use crate::queue::{TaskKind, TaskRef, TaskStatus};
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -74,7 +74,7 @@ impl SeriesActions {
             );
         }
 
-        let status = cx.service.task_status(TaskId::SeriesId {
+        let status = cx.service.task_status(TaskRef::SeriesId {
             series_id: series.id,
         });
 

@@ -9,10 +9,11 @@ use crate::commands::{Commands, CommandsBuf};
 use crate::context::{Ctxt, CtxtRef};
 use crate::error::ErrorInfo;
 use crate::history::{History, HistoryMutations, Page};
-use crate::model::{ImageV2, Task, TaskKind};
+use crate::model::ImageV2;
 use crate::page;
 use crate::params::{GAP, SMALL, SPACE, SUB_MENU_SIZE};
 use crate::prelude::*;
+use crate::queue::{Task, TaskKind};
 use crate::service::{NewSeries, Service};
 use crate::state::State;
 use crate::utils::{Singleton, TimedOut, Timeout};
@@ -76,7 +77,7 @@ pub(crate) enum Message {
     /// Task output of add series by remote.
     TaskSeriesDownloaded(Result<Option<NewSeries>, ErrorInfo>, Task),
     /// Queue processing.
-    ProcessQueue(TimedOut, Uuid),
+    ProcessQueue(TimedOut, TaskId),
 }
 
 /// Current page state.
@@ -687,7 +688,7 @@ impl Application {
     }
 
     /// Handle process queue.
-    fn handle_process_queue(&mut self, timed_out: Option<Uuid>) {
+    fn handle_process_queue(&mut self, timed_out: Option<TaskId>) {
         let now = Utc::now();
 
         while let Some(task) = self.service.next_task(&now, timed_out) {

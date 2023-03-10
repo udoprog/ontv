@@ -6,7 +6,7 @@ use crate::comps::ordering::Ordering;
 pub(crate) enum Kind {
     RemoveWatch {
         episode_id: EpisodeId,
-        watch_id: Uuid,
+        watch_id: WatchedId,
     },
     RemoveSeason {
         series_id: SeriesId,

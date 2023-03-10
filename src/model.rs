@@ -7,7 +7,6 @@ use std::fmt;
 use std::str::FromStr;
 
 use anyhow::Result;
-use arrayvec::ArrayVec;
 use chrono::{DateTime, NaiveDate, Utc};
 use relative_path::{RelativePath, RelativePathBuf};
 use serde::de::IntoDeserializer;
@@ -57,6 +56,8 @@ macro_rules! id {
 id!(SeriesId);
 id!(EpisodeId);
 id!(MovieId);
+id!(WatchedId);
+id!(TaskId);
 
 impl SeriesId {
     /// Get underlying uuid.
@@ -736,7 +737,7 @@ pub(crate) enum WatchedKind {
 #[serde(rename_all = "snake_case")]
 pub(crate) struct Watched {
     /// Unique identifier for this watch.
-    pub(crate) id: Uuid,
+    pub(crate) id: WatchedId,
     /// Timestamp when it was watched.
     pub(crate) timestamp: DateTime<Utc>,
     /// Watched kind.
@@ -1225,94 +1226,6 @@ impl<'de> Deserialize<'de> for ImageV2 {
         }
 
         deserializer.deserialize_str(ImageV2Visitor)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum TaskId {
-    /// Task to download series data.
-    SeriesId { series_id: SeriesId },
-    /// Task to add a series by a remote identifier.
-    RemoteSeriesId { remote_id: RemoteSeriesId },
-    /// Task to add download a movie by a remote identifier.
-    RemoteMovieId { remote_id: RemoteMovieId },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) enum TaskKind {
-    /// Check for updates.
-    CheckForUpdates {
-        series_id: SeriesId,
-        remote_id: RemoteSeriesId,
-    },
-    /// Task to download series data.
-    DownloadSeries {
-        series_id: SeriesId,
-        remote_id: RemoteSeriesId,
-        last_modified: Option<DateTime<Utc>>,
-        force: bool,
-    },
-    /// Task to add a series by a remote identifier.
-    DownloadSeriesByRemoteId { remote_id: RemoteSeriesId },
-    /// Task to add download a movie by a remote identifier.
-    #[allow(unused)]
-    DownloadMovieByRemoteId { remote_id: RemoteMovieId },
-}
-
-impl TaskKind {
-    pub(crate) fn task_ids(&self) -> ArrayVec<TaskId, 2> {
-        let mut ids = ArrayVec::new();
-
-        match *self {
-            TaskKind::CheckForUpdates {
-                series_id,
-                remote_id,
-                ..
-            } => {
-                ids.push(TaskId::SeriesId { series_id });
-                ids.push(TaskId::RemoteSeriesId { remote_id });
-            }
-            TaskKind::DownloadSeries {
-                series_id,
-                remote_id,
-                ..
-            } => {
-                ids.push(TaskId::SeriesId { series_id });
-                ids.push(TaskId::RemoteSeriesId { remote_id });
-            }
-            TaskKind::DownloadSeriesByRemoteId { remote_id, .. } => {
-                ids.push(TaskId::RemoteSeriesId { remote_id });
-            }
-            TaskKind::DownloadMovieByRemoteId { remote_id } => {
-                ids.push(TaskId::RemoteMovieId { remote_id });
-            }
-        }
-
-        ids
-    }
-}
-
-/// A task in a queue.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[must_use]
-pub(crate) struct Task {
-    /// The identifier of the task.
-    pub(crate) id: Uuid,
-    /// The kind of the task.
-    pub(crate) kind: TaskKind,
-    /// When the task is scheduled for.
-    pub(crate) scheduled: Option<DateTime<Utc>>,
-}
-
-impl Task {
-    /// Test if task involves the given series.
-    pub(crate) fn is_series(&self, id: &SeriesId) -> bool {
-        match &self.kind {
-            TaskKind::DownloadSeries { series_id, .. } => *series_id == *id,
-            TaskKind::CheckForUpdates { series_id, .. } => *series_id == *id,
-            TaskKind::DownloadSeriesByRemoteId { .. } => false,
-            TaskKind::DownloadMovieByRemoteId { .. } => false,
-        }
     }
 }
 

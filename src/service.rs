@@ -12,20 +12,14 @@ use chrono::{DateTime, Days, Local, NaiveDate, Utc};
 use futures::stream::FuturesUnordered;
 use iced::Theme;
 use iced_native::image::Handle;
-use uuid::Uuid;
 
 use crate::api::themoviedb;
 use crate::api::thetvdb;
 use crate::assets::ImageKey;
 use crate::cache::{self};
 use crate::database::{Change, Database, EpisodeRef, SeasonRef};
-use crate::model::{
-    Config, Episode, EpisodeId, Etag, ImageV2, Movie, MovieId, Pending, RemoteEpisodeId,
-    RemoteMovieId, RemoteSeriesId, ScheduledDay, ScheduledSeries, SearchMovie, SearchSeries,
-    Season, SeasonNumber, Series, SeriesId, Task, TaskId, TaskKind, ThemeType, Watched,
-    WatchedKind,
-};
-use crate::queue::TaskStatus;
+use crate::model::*;
+use crate::queue::{Task, TaskKind, TaskRef, TaskStatus};
 
 /// Data encapsulating a newly added series.
 #[derive(Clone)]
@@ -455,7 +449,7 @@ impl Service {
             };
 
             self.db.watched.insert(Watched {
-                id: Uuid::new_v4(),
+                id: WatchedId::random(),
                 timestamp,
                 kind: WatchedKind::Series {
                     series: *series_id,
@@ -500,7 +494,7 @@ impl Service {
         let episode = episode.id;
 
         self.db.watched.insert(Watched {
-            id: Uuid::new_v4(),
+            id: WatchedId::random(),
             timestamp,
             kind: WatchedKind::Series { series, episode },
         });
@@ -570,7 +564,7 @@ impl Service {
     }
 
     /// Remove all watches of the given episode.
-    pub(crate) fn remove_episode_watch(&mut self, episode_id: &EpisodeId, watch_id: &Uuid) {
+    pub(crate) fn remove_episode_watch(&mut self, episode_id: &EpisodeId, watch_id: &WatchedId) {
         tracing::trace!(?episode_id, ?watch_id,);
 
         let (Some(w), Some(episode)) = (self.db.watched.remove_watch(watch_id), self.db.episodes.get(episode_id)) else {
@@ -1007,7 +1001,7 @@ impl Service {
         timestamp: DateTime<Utc>,
     ) {
         self.db.watched.insert(Watched {
-            id: Uuid::new_v4(),
+            id: WatchedId::random(),
             timestamp,
             kind: WatchedKind::Series {
                 series: series_id,
@@ -1135,20 +1129,20 @@ impl Service {
     pub(crate) fn next_task(
         &mut self,
         now: &DateTime<Utc>,
-        timed_out: Option<Uuid>,
+        timed_out: Option<TaskId>,
     ) -> Option<Task> {
         self.db.tasks.next_task(now, timed_out)
     }
 
     /// Next duration to sleep.
     #[inline]
-    pub(crate) fn next_task_sleep(&self, now: &DateTime<Utc>) -> Option<(u64, Uuid)> {
+    pub(crate) fn next_task_sleep(&self, now: &DateTime<Utc>) -> Option<(u64, TaskId)> {
         self.db.tasks.next_sleep(now)
     }
 
     /// Check if the given task is pending.
     #[inline]
-    pub(crate) fn task_status(&self, id: TaskId) -> Option<TaskStatus> {
+    pub(crate) fn task_status(&self, id: TaskRef) -> Option<TaskStatus> {
         self.db.tasks.status(id)
     }
 
@@ -1156,7 +1150,7 @@ impl Service {
     #[inline]
     pub(crate) fn task_status_any(
         &self,
-        ids: impl IntoIterator<Item = TaskId>,
+        ids: impl IntoIterator<Item = TaskRef>,
     ) -> Option<TaskStatus> {
         ids.into_iter()
             .flat_map(|id| self.db.tasks.status(id))

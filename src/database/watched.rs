@@ -2,11 +2,10 @@ use std::collections::btree_map::BTreeMap;
 use std::collections::hash_map::{self, HashMap};
 
 use serde::Serialize;
-use uuid::Uuid;
 
 use crate::database::episodes;
 use crate::database::iter::Iter;
-use crate::model::{EpisodeId, SeasonNumber, SeriesId, Watched, WatchedKind};
+use crate::model::{EpisodeId, SeasonNumber, SeriesId, Watched, WatchedId, WatchedKind};
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub(crate) enum Place {
@@ -37,9 +36,9 @@ pub(crate) struct Export {
 
 #[derive(Default)]
 pub(crate) struct Database {
-    data: HashMap<Uuid, Watched>,
-    by_episode: HashMap<EpisodeId, Vec<Uuid>>,
-    by_series: HashMap<SeriesId, Vec<Uuid>>,
+    data: HashMap<WatchedId, Watched>,
+    by_episode: HashMap<EpisodeId, Vec<WatchedId>>,
+    by_series: HashMap<SeriesId, Vec<WatchedId>>,
 }
 
 impl Database {
@@ -136,7 +135,7 @@ impl Database {
     }
 
     /// Remove a single watch by id.
-    pub(crate) fn remove_watch(&mut self, id: &Uuid) -> Option<Watched> {
+    pub(crate) fn remove_watch(&mut self, id: &WatchedId) -> Option<Watched> {
         let w = self.data.remove(id)?;
 
         match w.kind {
@@ -173,7 +172,7 @@ impl Database {
         export.into_values()
     }
 
-    fn clear_series_by_id(&mut self, series_id: &SeriesId, id: &Uuid) {
+    fn clear_series_by_id(&mut self, series_id: &SeriesId, id: &WatchedId) {
         let hash_map::Entry::Occupied(mut e) = self.by_series.entry(*series_id) else {
             return;
         };
@@ -185,7 +184,7 @@ impl Database {
         }
     }
 
-    fn clear_episode_by_id(&mut self, episode_id: &EpisodeId, id: &Uuid) {
+    fn clear_episode_by_id(&mut self, episode_id: &EpisodeId, id: &WatchedId) {
         let hash_map::Entry::Occupied(mut e) = self.by_episode.entry(*episode_id) else {
             return;
         };

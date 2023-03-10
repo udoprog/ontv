@@ -1,9 +1,9 @@
 use std::collections::{HashMap, VecDeque};
 
+use arrayvec::ArrayVec;
 use chrono::{DateTime, Duration, Utc};
-use uuid::Uuid;
 
-use crate::model::{Task, TaskId, TaskKind};
+use crate::prelude::{RemoteMovieId, RemoteSeriesId, SeriesId, TaskId};
 
 /// Number of milliseconds of delay to add by default to scheduled tasks.
 const DELAY_MILLIS: i64 = 250;
@@ -19,13 +19,101 @@ pub(crate) enum TaskStatus {
     Running,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum TaskRef {
+    /// Task to download series data.
+    SeriesId { series_id: SeriesId },
+    /// Task to add a series by a remote identifier.
+    RemoteSeriesId { remote_id: RemoteSeriesId },
+    /// Task to add download a movie by a remote identifier.
+    RemoteMovieId { remote_id: RemoteMovieId },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum TaskKind {
+    /// Check for updates.
+    CheckForUpdates {
+        series_id: SeriesId,
+        remote_id: RemoteSeriesId,
+    },
+    /// Task to download series data.
+    DownloadSeries {
+        series_id: SeriesId,
+        remote_id: RemoteSeriesId,
+        last_modified: Option<DateTime<Utc>>,
+        force: bool,
+    },
+    /// Task to add a series by a remote identifier.
+    DownloadSeriesByRemoteId { remote_id: RemoteSeriesId },
+    /// Task to add download a movie by a remote identifier.
+    #[allow(unused)]
+    DownloadMovieByRemoteId { remote_id: RemoteMovieId },
+}
+
+impl TaskKind {
+    pub(crate) fn task_ids(&self) -> ArrayVec<TaskRef, 2> {
+        let mut ids = ArrayVec::new();
+
+        match *self {
+            TaskKind::CheckForUpdates {
+                series_id,
+                remote_id,
+                ..
+            } => {
+                ids.push(TaskRef::SeriesId { series_id });
+                ids.push(TaskRef::RemoteSeriesId { remote_id });
+            }
+            TaskKind::DownloadSeries {
+                series_id,
+                remote_id,
+                ..
+            } => {
+                ids.push(TaskRef::SeriesId { series_id });
+                ids.push(TaskRef::RemoteSeriesId { remote_id });
+            }
+            TaskKind::DownloadSeriesByRemoteId { remote_id, .. } => {
+                ids.push(TaskRef::RemoteSeriesId { remote_id });
+            }
+            TaskKind::DownloadMovieByRemoteId { remote_id } => {
+                ids.push(TaskRef::RemoteMovieId { remote_id });
+            }
+        }
+
+        ids
+    }
+}
+
+/// A task in a queue.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[must_use]
+pub(crate) struct Task {
+    /// The identifier of the task.
+    pub(crate) id: TaskId,
+    /// The kind of the task.
+    pub(crate) kind: TaskKind,
+    /// When the task is scheduled for.
+    pub(crate) scheduled: Option<DateTime<Utc>>,
+}
+
+impl Task {
+    /// Test if task involves the given series.
+    pub(crate) fn is_series(&self, id: &SeriesId) -> bool {
+        match &self.kind {
+            TaskKind::DownloadSeries { series_id, .. } => *series_id == *id,
+            TaskKind::CheckForUpdates { series_id, .. } => *series_id == *id,
+            TaskKind::DownloadSeriesByRemoteId { .. } => false,
+            TaskKind::DownloadMovieByRemoteId { .. } => false,
+        }
+    }
+}
+
 /// Queue of scheduled actions.
 #[derive(Default)]
 pub(crate) struct Queue {
     /// Pending tasks.
-    status: HashMap<Uuid, TaskStatus>,
+    status: HashMap<TaskId, TaskStatus>,
     /// Blocked tasks.
-    task_ids: HashMap<TaskId, Uuid>,
+    task_ids: HashMap<TaskRef, TaskId>,
     /// Items in the download queue.
     data: VecDeque<Task>,
     /// Collection of running tasks.
@@ -37,7 +125,7 @@ pub(crate) struct Queue {
 impl Queue {
     /// Test if queue contains a task of the given kind.
     #[inline]
-    pub(crate) fn status(&self, id: TaskId) -> Option<TaskStatus> {
+    pub(crate) fn status(&self, id: TaskRef) -> Option<TaskStatus> {
         let id = self.task_ids.get(&id)?;
         self.status.get(&id).copied()
     }
@@ -102,7 +190,7 @@ impl Queue {
     pub(crate) fn next_task(
         &mut self,
         now: &DateTime<Utc>,
-        timed_out: Option<Uuid>,
+        timed_out: Option<TaskId>,
     ) -> Option<Task> {
         let task = self.data.front()?;
 
@@ -119,7 +207,7 @@ impl Queue {
     }
 
     /// Next sleep.
-    pub(crate) fn next_sleep(&self, now: &DateTime<Utc>) -> Option<(u64, Uuid)> {
+    pub(crate) fn next_sleep(&self, now: &DateTime<Utc>) -> Option<(u64, TaskId)> {
         let task = self.data.front()?;
         let id = task.id;
 
@@ -143,7 +231,7 @@ impl Queue {
             }
         }
 
-        let id = Uuid::new_v4();
+        let id = TaskId::random();
         self.status.insert(id, TaskStatus::Pending);
 
         for task_id in task_ids {
@@ -170,7 +258,7 @@ impl Queue {
             }
         }
 
-        let id = Uuid::new_v4();
+        let id = TaskId::random();
 
         for task_id in task_ids {
             self.task_ids.insert(task_id, id);

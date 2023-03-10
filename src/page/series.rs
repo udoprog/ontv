@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
+use crate::queue::{TaskKind, TaskRef};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -116,8 +117,8 @@ impl Series {
                         w::button(w::text("Switch").size(SMALL)).style(theme::Button::Positive);
 
                     let status = cx.service.task_status_any([
-                        TaskId::RemoteSeriesId { remote_id },
-                        TaskId::SeriesId {
+                        TaskRef::RemoteSeriesId { remote_id },
+                        TaskRef::SeriesId {
                             series_id: series.id,
                         },
                     ]);

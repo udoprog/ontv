@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use crate::prelude::*;
+use crate::queue::TaskKind;
 use crate::utils::{TimedOut, Timeout};
 
 const UPDATE_TIMER: u64 = 10;

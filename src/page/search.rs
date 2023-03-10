@@ -3,7 +3,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
-use crate::queue::TaskStatus;
+use crate::queue::{TaskKind, TaskRef, TaskStatus};
 
 /// Number of results per page.
 const PER_PAGE: usize = 5;
@@ -226,7 +226,7 @@ impl Search {
 
             let status = cx
                 .service
-                .task_status(TaskId::RemoteSeriesId { remote_id: s.id });
+                .task_status(TaskRef::RemoteSeriesId { remote_id: s.id });
 
             match status {
                 Some(TaskStatus::Pending) => {
@@ -328,7 +328,7 @@ impl Search {
 
             let status = cx
                 .service
-                .task_status(TaskId::RemoteMovieId { remote_id: m.id });
+                .task_status(TaskRef::RemoteMovieId { remote_id: m.id });
 
             match status {
                 Some(TaskStatus::Pending) => {
