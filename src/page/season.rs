@@ -119,15 +119,15 @@ impl Season {
         if remote_ids.peek().is_some() {
             let mut remotes = w::Row::new();
 
-            for remote_season in remote_ids {
+            for remote_id in remote_ids {
                 remotes = remotes.push(
-                    w::button(w::text(&remote_season))
-                        .style(theme::Button::Text)
-                        .on_press(Message::OpenRemote(remote_season)),
+                    w::button(w::text(&remote_id).size(SMALL))
+                        .style(theme::Button::Primary)
+                        .on_press(Message::OpenRemote(remote_id)),
                 );
             }
 
-            banner = banner.push(remotes.spacing(SPACE));
+            banner = banner.push(remotes.spacing(GAP));
         }
 
         let top = w::Column::new()
