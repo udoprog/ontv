@@ -10,12 +10,11 @@ readme = "README.md"
 homepage = "https://github.com/udoprog/ontv"
 repository = "https://github.com/udoprog/ontv"
 license = "MIT/Apache-2.0"
-keywords = ["api", "client", "gui", "iced", "thetvdb", "tmdb"]
+keywords = ["gui", "iced", "tvdb", "tmdb"]
 categories = ["gui"]
 
 exclude = [
     "assets/*.xcf",
-    "assets/*.ico",
     "images/",
 ]
 
