@@ -50,7 +50,7 @@ Still in the experimental stage. Users beware!
     <img src="https://raw.githubusercontent.com/udoprog/ontv/main/images/git.png"/>
   </a>
   <br>
-  <code>git</code> friendly database, based on <code>yaml</code> for easy to read diffs.
+  Git friendly storage
 </td>
 </tr>
 </table>
