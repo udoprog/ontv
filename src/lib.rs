@@ -142,7 +142,7 @@ mod utils;
 pub use self::service::Service;
 
 mod prelude {
-    pub(crate) use anyhow::{anyhow, Context, Result};
+    pub(crate) use anyhow::{anyhow, bail, Context, Result};
     pub(crate) use chrono::Utc;
     pub(crate) use iced::alignment::*;
     pub(crate) use iced::theme;

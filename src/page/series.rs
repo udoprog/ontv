@@ -90,9 +90,13 @@ impl Series {
         }
     }
 
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>, state: &State) -> Element<'static, Message> {
+    pub(crate) fn view(
+        &self,
+        cx: &mut CtxtRef<'_>,
+        state: &State,
+    ) -> Result<Element<'static, Message>> {
         let Some(series) = cx.service.series(&state.id) else {
-            return w::Column::new().into();
+            bail!("missing series {}", state.id);
         };
 
         let mut top =
@@ -210,11 +214,11 @@ impl Series {
 
         let header = centered(header.spacing(GAP), None).padding(GAP);
 
-        w::Column::new()
+        Ok(w::Column::new()
             .push(header)
             .push(cols.spacing(GAP2))
             .width(Length::Fill)
             .spacing(GAP2)
-            .into()
+            .into())
     }
 }

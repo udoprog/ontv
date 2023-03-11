@@ -31,7 +31,7 @@ impl Settings {
     }
 
     /// Generate the view for the settings page.
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &mut CtxtRef<'_>) -> Element<'static, Message> {
         let config = cx.service.config();
 
         let mut page = w::Column::new();

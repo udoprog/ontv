@@ -132,9 +132,13 @@ impl Episode {
         }
     }
 
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>, pending: bool) -> Element<'static, Message> {
+    pub(crate) fn view(
+        &self,
+        cx: &mut CtxtRef<'_>,
+        pending: bool,
+    ) -> Result<Element<'static, Message>> {
         let Some(e) = cx.service.episode(&self.episode_id) else {
-            return w::Column::new().into();
+            bail!("missing episode {}", self.episode_id);
         };
 
         let pending_series = if self.pending_series {
@@ -329,10 +333,10 @@ impl Episode {
             info = info.push(history.width(Length::Fill).spacing(SPACE));
         }
 
-        w::Row::new()
+        Ok(w::Row::new()
             .push(image.width(Length::FillPortion(image_fill)))
             .push(info.width(Length::FillPortion(rest_fill)).spacing(GAP))
             .spacing(GAP)
-            .into()
+            .into())
     }
 }

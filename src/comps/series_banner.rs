@@ -26,7 +26,7 @@ impl SeriesBanner {
     }
 
     /// Generate buttons which perform actions on the given series.
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>, series: &Series) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &mut CtxtRef<'_>, series: &Series) -> Element<'static, Message> {
         let handle = match series
             .banner()
             .and_then(|i| cx.assets.image_with_hint(&i, BANNER))
