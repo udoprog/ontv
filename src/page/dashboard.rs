@@ -113,7 +113,7 @@ impl Dashboard {
         }
     }
 
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &mut CtxtRef<'_>) -> Element<'static, Message> {
         let up_next_title = link(w::text("Watch next").size(SUBTITLE_SIZE))
             .on_press(Message::Navigate(Page::WatchNext(
                 crate::page::watch_next::State::default(),
@@ -192,7 +192,7 @@ impl Dashboard {
             .into()
     }
 
-    fn render_pending(&self, cx: &CtxtRef<'_>) -> w::Column<'static, Message> {
+    fn render_pending(&self, cx: &mut CtxtRef<'_>) -> w::Column<'static, Message> {
         let mut cols = w::Column::new();
 
         let mut pending = w::Row::new();
@@ -319,7 +319,7 @@ impl Dashboard {
         cols.spacing(GAP)
     }
 
-    fn render_scheduled(&self, cx: &CtxtRef<'_>) -> w::Column<'static, Message> {
+    fn render_scheduled(&self, cx: &mut CtxtRef<'_>) -> w::Column<'static, Message> {
         let mut scheduled_rows = w::Column::new();
         let mut cols = w::Row::new();
         let mut count = 0;

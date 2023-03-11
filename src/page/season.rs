@@ -77,13 +77,17 @@ impl Season {
     }
 
     /// Render season view.
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>, state: &State) -> Element<'static, Message> {
+    pub(crate) fn view(
+        &self,
+        cx: &mut CtxtRef<'_>,
+        state: &State,
+    ) -> Result<Element<'static, Message>> {
         let Some(series) = cx.service.series(&state.series_id) else {
-            return w::Column::new().into();
+            bail!("missing series {}", state.series_id);
         };
 
         let Some(season) = cx.service.season(&series.id, &state.season) else {
-            return w::Column::new().into();
+            bail!("missing series {} season {}", series.id, state.season);
         };
 
         let mut episodes = w::Column::new();
@@ -94,7 +98,7 @@ impl Season {
             episodes = episodes.push(
                 centered(
                     episode
-                        .view(cx, pending == Some(episode.episode_id()))
+                        .view(cx, pending == Some(episode.episode_id()))?
                         .map(move |m| Message::Episode(index, m)),
                     Some(style::weak),
                 )
@@ -138,11 +142,11 @@ impl Season {
 
         let header = centered(top, None).padding(GAP);
 
-        w::Column::new()
+        Ok(w::Column::new()
             .push(header)
             .push(episodes.spacing(GAP2))
             .width(Length::Fill)
             .spacing(GAP)
-            .into()
+            .into())
     }
 }

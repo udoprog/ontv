@@ -7,6 +7,7 @@ use iced_native::image::Handle;
 use crate::assets::{Assets, ImageKey};
 use crate::commands::{Commands, CommandsBuf};
 use crate::context::{Ctxt, CtxtRef};
+use crate::database::SeasonRef;
 use crate::error::ErrorInfo;
 use crate::history::{History, HistoryMutations, Page};
 use crate::model::ImageV2;
@@ -31,7 +32,7 @@ macro_rules! ctxt_mut {
 
 macro_rules! ctxt_ref {
     ($self:expr) => {
-        &CtxtRef {
+        &mut CtxtRef {
             state: &$self.state,
             service: &$self.service,
             assets: &$self.assets,
@@ -484,40 +485,51 @@ impl iced::Application for Application {
 
         let mut menu = w::Column::new().push(top_menu);
 
-        if let Page::Series(page::series::State { id: series_id })
-        | Page::Season(page::season::State { series_id, .. }) = page
-        {
-            let mut sub_menu = w::Row::new();
+        match page {
+            Page::Series(page::series::State { id: series_id }) => {
+                let mut sub_menu = w::Row::new();
 
-            if let Some(series) = self.service.series(&series_id) {
-                sub_menu = sub_menu.push(menu_item(
-                    &page,
-                    w::text(&series.title).size(SUB_MENU_SIZE),
-                    |p| matches!(p, Page::Series(page::series::State { id }) if *id == *series_id),
-                    || page::series::page(*series_id),
-                ));
-            }
-
-            for season in self.service.seasons(&series_id) {
-                let title = w::text(season.number);
-
-                let (watched, total) = self.service.season_watched(&series_id, &season.number);
-
-                let mut title = w::Row::new().push(title.size(SUB_MENU_SIZE));
-
-                if let Some(p) = watched.saturating_mul(100).checked_div(total) {
-                    title = title.push(w::text(format_args!(" ({p}%)")).size(SUB_MENU_SIZE));
+                if let Some(series) = self.service.series(&series_id) {
+                    sub_menu = sub_menu.push(render_series(page, series, series_id));
                 }
 
-                sub_menu = sub_menu.push(menu_item(
-                    &page,
-                    title,
-                    |p| matches!(p, Page::Season(page::season::State { series_id: a, season: b }) if *a == *series_id && *b == season.number),
-                    || page::season::page(*series_id, season.number)
-                ));
+                menu = menu.push(sub_menu.spacing(GAP));
             }
+            Page::Season(page::season::State { series_id, season }) => {
+                let mut sub_menu = w::Row::new();
 
-            menu = menu.push(sub_menu.spacing(GAP));
+                if let Some(series) = self.service.series(&series_id) {
+                    sub_menu = sub_menu.push(render_series(page, series, series_id));
+                }
+
+                let mut seasons = self.service.seasons(&series_id);
+
+                if seasons.len() > 5 {
+                    if let Some(season) = seasons.next() {
+                        sub_menu = sub_menu.push(self.render_season(season, series_id, page));
+                    }
+
+                    let last = seasons.next_back();
+
+                    sub_menu = sub_menu.push(w::text("--"));
+
+                    if let Some(season) = seasons.find(|s| s.number == *season) {
+                        sub_menu = sub_menu.push(self.render_season(season, series_id, page));
+                        sub_menu = sub_menu.push(w::text("--"));
+                    }
+
+                    if let Some(season) = last {
+                        sub_menu = sub_menu.push(self.render_season(season, series_id, page));
+                    }
+                } else {
+                    for season in seasons {
+                        sub_menu = sub_menu.push(self.render_season(season, series_id, page));
+                    }
+                }
+
+                menu = menu.push(sub_menu.spacing(GAP));
+            }
+            _ => {}
         }
 
         let mut window = w::Column::new();
@@ -528,28 +540,14 @@ impl iced::Application for Application {
                 .padding(GAP),
         );
 
-        let page: Element<'static, Message> = match (&self.current, self.history.page()) {
-            (Current::Dashboard(page), _) => page.view(ctxt_ref!(self)).map(Message::Dashboard),
-            (Current::WatchNext(page), Some(Page::WatchNext(state))) => {
-                page.view(ctxt_ref!(self), state).map(Message::WatchNext)
+        let page = match self.render_page() {
+            Ok(page) => page,
+            Err(e) => {
+                return w::text(format_args!("{e}"))
+                    .width(Length::Fill)
+                    .horizontal_alignment(Horizontal::Center)
+                    .into();
             }
-            (Current::Search(page), Some(Page::Search(state))) => {
-                page.view(ctxt_ref!(self), state).map(Message::Search)
-            }
-            (Current::SeriesList(page), _) => page.view(ctxt_ref!(self)).map(Message::SeriesList),
-            (Current::Series(page), Some(Page::Series(series_id))) => {
-                page.view(ctxt_ref!(self), series_id).map(Message::Series)
-            }
-            (Current::Movie(page), Some(Page::Movie(state))) => {
-                page.view(state).map(Message::Movie)
-            }
-            (Current::Settings(page), _) => page.view(ctxt_ref!(self)).map(Message::Settings),
-            (Current::Season(page), Some(Page::Season(state))) => {
-                page.view(ctxt_ref!(self), state).map(Message::Season)
-            }
-            (Current::Queue(page), _) => page.view(ctxt_ref!(self)).map(Message::Queue),
-            (Current::Errors(page), _) => page.view(ctxt_ref!(self)).map(Message::Errors),
-            _ => return w::text("invalid page state").into(),
         };
 
         window = window.push(w::horizontal_rule(1));
@@ -605,6 +603,19 @@ impl iced::Application for Application {
     fn theme(&self) -> Theme {
         self.service.theme().clone()
     }
+}
+
+fn render_series(
+    page: &Page,
+    series: &Series,
+    series_id: &SeriesId,
+) -> w::Button<'static, Message> {
+    menu_item(
+        &page,
+        w::text(&series.title).size(SUB_MENU_SIZE),
+        |p| matches!(p, Page::Series(page::series::State { id }) if *id == *series_id),
+        || page::series::page(*series_id),
+    )
 }
 
 impl Application {
@@ -755,6 +766,57 @@ impl Application {
                 move |timed_out| Message::ProcessQueue(timed_out, id),
             );
         }
+    }
+
+    fn render_page(&self) -> Result<Element<'static, Message>> {
+        let page = match (&self.current, self.history.page()) {
+            (Current::Dashboard(page), _) => page.view(ctxt_ref!(self)).map(Message::Dashboard),
+            (Current::WatchNext(page), Some(Page::WatchNext(state))) => {
+                page.view(ctxt_ref!(self), state)?.map(Message::WatchNext)
+            }
+            (Current::Search(page), Some(Page::Search(state))) => {
+                page.view(ctxt_ref!(self), state).map(Message::Search)
+            }
+            (Current::SeriesList(page), _) => page.view(ctxt_ref!(self)).map(Message::SeriesList),
+            (Current::Series(page), Some(Page::Series(series_id))) => {
+                page.view(ctxt_ref!(self), series_id)?.map(Message::Series)
+            }
+            (Current::Movie(page), Some(Page::Movie(state))) => {
+                page.view(state).map(Message::Movie)
+            }
+            (Current::Settings(page), _) => page.view(ctxt_ref!(self)).map(Message::Settings),
+            (Current::Season(page), Some(Page::Season(state))) => {
+                page.view(ctxt_ref!(self), state)?.map(Message::Season)
+            }
+            (Current::Queue(page), _) => page.view(ctxt_ref!(self)).map(Message::Queue),
+            (Current::Errors(page), _) => page.view(ctxt_ref!(self)).map(Message::Errors),
+            _ => return Err(anyhow!("illegal page state")),
+        };
+
+        Ok(page)
+    }
+
+    fn render_season(
+        &self,
+        season: SeasonRef<'_>,
+        series_id: &SeriesId,
+        page: &Page,
+    ) -> w::Button<'static, Message> {
+        let title = w::text(season.number);
+        let (watched, total) = self.service.season_watched(&series_id, &season.number);
+
+        let mut title = w::Row::new().push(title.size(SUB_MENU_SIZE));
+
+        if let Some(p) = watched.saturating_mul(100).checked_div(total) {
+            title = title.push(w::text(format_args!(" ({p}%)")).size(SUB_MENU_SIZE));
+        }
+
+        menu_item(
+            &page,
+            title,
+            |p| matches!(p, Page::Season(page::season::State { series_id: a, season: b }) if *a == *series_id && *b == season.number),
+            || page::season::page(*series_id, season.number),
+        )
     }
 }
 

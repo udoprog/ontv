@@ -203,7 +203,7 @@ impl Search {
     }
 
     /// Generate the view for the settings page.
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>, state: &State) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &mut CtxtRef<'_>, state: &State) -> Element<'static, Message> {
         let mut series = w::Column::new();
 
         for s in self

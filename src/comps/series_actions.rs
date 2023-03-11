@@ -57,7 +57,7 @@ impl SeriesActions {
         }
     }
 
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>, series: &Series) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &mut CtxtRef<'_>, series: &Series) -> Element<'static, Message> {
         let mut row = w::Row::new();
 
         if series.tracked {

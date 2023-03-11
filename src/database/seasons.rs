@@ -185,10 +185,11 @@ impl<'a> Iterator for Iter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let id = self.head.take()?;
         let data = self.data.get(&id)?;
-        self.head = data.next;
 
         if self.tail == Some(id) {
             self.tail = None;
+        } else {
+            self.head = data.next;
         }
 
         self.len = self.len.saturating_sub(1);
@@ -206,10 +207,11 @@ impl<'a> DoubleEndedIterator for Iter<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
         let id = self.tail.take()?;
         let data = self.data.get(&id)?;
-        self.tail = data.prev;
 
         if self.head == Some(id) {
             self.head = None;
+        } else {
+            self.tail = data.prev;
         }
 
         self.len = self.len.saturating_sub(1);

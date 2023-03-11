@@ -70,7 +70,11 @@ impl WatchNext {
         }
     }
 
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>, state: &State) -> Element<'static, Message> {
+    pub(crate) fn view(
+        &self,
+        cx: &mut CtxtRef<'_>,
+        state: &State,
+    ) -> Result<Element<'static, Message>> {
         let mut list = w::Column::new();
 
         list = list.push(w::vertical_space(Length::Shrink));
@@ -107,7 +111,7 @@ impl WatchNext {
                 list = list.push(
                     centered(
                         episode
-                            .view(cx, true)
+                            .view(cx, true)?
                             .map(move |m| Message::Future(index, m)),
                         Some(style::weak),
                     )
@@ -128,7 +132,7 @@ impl WatchNext {
                 list = list.push(
                     centered(
                         episode
-                            .view(cx, true)
+                            .view(cx, true)?
                             .map(move |m| Message::Episode(index, m)),
                         Some(style::weak),
                     )
@@ -137,10 +141,10 @@ impl WatchNext {
             }
         }
 
-        w::Column::new()
+        Ok(w::Column::new()
             .push(list.spacing(GAP2))
             .width(Length::Fill)
             .spacing(GAP2)
-            .into()
+            .into())
     }
 }
