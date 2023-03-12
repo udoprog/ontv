@@ -14,6 +14,7 @@ jobs:
     - uses: dtolnay/rust-toolchain@1.65
     - uses: Swatinem/rust-cache@v2
     - run: cargo test --workspace --all-targets
+    - run: cargo test --workspace --doc
 
   test:
     runs-on: ${{matrix.os}}
@@ -27,6 +28,8 @@ jobs:
     - run: cargo build --workspace --all-targets
       if: matrix.os != 'ubuntu-latest'
     - run: cargo test --workspace --all-targets
+      if: matrix.os == 'ubuntu-latest'
+    - run: cargo test --workspace --doc
       if: matrix.os == 'ubuntu-latest'
 
   clippy:
