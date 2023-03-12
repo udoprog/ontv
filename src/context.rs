@@ -25,6 +25,24 @@ impl<'a> CtxtRef<'a> {
     pub(crate) fn missing_poster(&self) -> iced_native::image::Handle {
         self.assets.missing_poster(self.service.theme())
     }
+
+    /// Refresh series data.
+    #[tracing::instrument(skip(self))]
+    pub(crate) fn download_series_by_id(
+        &self,
+        series_id: &SeriesId,
+        remote_id: &RemoteSeriesId,
+        force: bool,
+    ) -> impl Future<Output = Result<Option<NewSeries>>> {
+        let none_if_match = if force {
+            None
+        } else {
+            self.service.last_etag(series_id, remote_id).cloned()
+        };
+
+        self.service
+            .download_series(remote_id, none_if_match.as_ref(), Some(series_id))
+    }
 }
 
 /// Mutable context passed down across pages.
@@ -52,23 +70,5 @@ impl<'a> Ctxt<'a> {
         }*/
 
         self.service.remove_series(series_id);
-    }
-
-    /// Refresh series data.
-    #[tracing::instrument(skip(self))]
-    pub(crate) fn download_series_by_id(
-        &self,
-        series_id: &SeriesId,
-        remote_id: &RemoteSeriesId,
-        force: bool,
-    ) -> impl Future<Output = Result<Option<NewSeries>>> {
-        let none_if_match = if force {
-            None
-        } else {
-            self.service.last_etag(series_id, remote_id).cloned()
-        };
-
-        self.service
-            .download_series(&remote_id, none_if_match.as_ref(), Some(series_id))
     }
 }

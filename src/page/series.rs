@@ -92,7 +92,7 @@ impl Series {
 
     pub(crate) fn view(
         &self,
-        cx: &mut CtxtRef<'_>,
+        cx: &CtxtRef<'_>,
         state: &State,
     ) -> Result<Element<'static, Message>> {
         let Some(series) = cx.service.series(&state.id) else {
@@ -121,8 +121,8 @@ impl Series {
                         w::button(w::text("Switch").size(SMALL)).style(theme::Button::Positive);
 
                     let status = cx.service.task_status_any([
-                        TaskRef::RemoteSeriesId { remote_id },
-                        TaskRef::SeriesId {
+                        TaskRef::RemoteSeries { remote_id },
+                        TaskRef::Series {
                             series_id: series.id,
                         },
                     ]);
@@ -155,7 +155,7 @@ impl Series {
                 .poster
                 .as_ref()
                 .or(series.poster())
-                .and_then(|i| cx.assets.image_with_hint(&i, POSTER_HINT))
+                .and_then(|i| cx.assets.image_with_hint(i, POSTER_HINT))
             {
                 Some(poster) => poster,
                 None => cx.missing_poster(),

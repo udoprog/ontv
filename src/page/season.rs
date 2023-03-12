@@ -79,7 +79,7 @@ impl Season {
     /// Render season view.
     pub(crate) fn view(
         &self,
-        cx: &mut CtxtRef<'_>,
+        cx: &CtxtRef<'_>,
         state: &State,
     ) -> Result<Element<'static, Message>> {
         let Some(series) = cx.service.series(&state.series_id) else {

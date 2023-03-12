@@ -24,7 +24,7 @@ struct SeasonData {
 }
 
 impl SeasonData {
-    fn into_ref<'a>(&'a self) -> SeasonRef<'a> {
+    fn as_season_ref(&self) -> SeasonRef<'_> {
         SeasonRef {
             season: &self.season,
             series: self.series,
@@ -92,7 +92,7 @@ impl Database {
         let mut first = None;
         let mut prev = None;
 
-        let _ = self.remove(&series);
+        self.remove(&series);
 
         let mut it = seasons.into_iter().peekable();
 
@@ -141,7 +141,7 @@ impl Database {
     /// Get an season.
     pub(crate) fn get(&self, series_id: &SeriesId, season: &SeasonNumber) -> Option<SeasonRef<'_>> {
         let data = self.data.get(&Pointer::new(*series_id, *season))?;
-        Some(data.into_ref())
+        Some(data.as_season_ref())
     }
 
     /// Get seasons by series.
@@ -193,7 +193,7 @@ impl<'a> Iterator for Iter<'a> {
         }
 
         self.len = self.len.saturating_sub(1);
-        Some(data.into_ref())
+        Some(data.as_season_ref())
     }
 
     #[inline]
@@ -215,7 +215,7 @@ impl<'a> DoubleEndedIterator for Iter<'a> {
         }
 
         self.len = self.len.saturating_sub(1);
-        Some(data.into_ref())
+        Some(data.as_season_ref())
     }
 }
 

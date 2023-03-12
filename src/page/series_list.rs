@@ -65,7 +65,7 @@ impl SeriesList {
         }
     }
 
-    pub(crate) fn view(&self, cx: &mut CtxtRef<'_>) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
         let mut rows = w::Column::new();
 
         let mut it;

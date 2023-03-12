@@ -31,7 +31,7 @@ impl Settings {
     }
 
     /// Generate the view for the settings page.
-    pub(crate) fn view(&self, cx: &mut CtxtRef<'_>) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
         let config = cx.service.config();
 
         let mut page = w::Column::new();
@@ -54,7 +54,7 @@ impl Settings {
                 .push(w::text_input(
                     "Key...",
                     &config.tvdb_legacy_apikey,
-                    |value| Message::TvdbLegacyApiKeyChange(value),
+                    Message::TvdbLegacyApiKeyChange,
                 ))
                 .spacing(SPACE),
         );

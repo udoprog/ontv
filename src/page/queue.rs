@@ -59,7 +59,7 @@ impl Queue {
         }
     }
 
-    pub(crate) fn view(&self, cx: &mut CtxtRef<'_>) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
         let now = Utc::now();
 
         let mut running_col = w::Column::new();
@@ -161,7 +161,7 @@ impl Queue {
     }
 }
 
-fn build_task_row<'a>(cx: &mut CtxtRef<'_>, kind: &TaskKind) -> w::Row<'a, Message> {
+fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind) -> w::Row<'a, Message> {
     let mut update = w::Row::new();
 
     match kind {
@@ -205,7 +205,7 @@ fn build_task_row<'a>(cx: &mut CtxtRef<'_>, kind: &TaskKind) -> w::Row<'a, Messa
 }
 
 fn decorate_series<'a>(
-    cx: &mut CtxtRef<'_>,
+    cx: &CtxtRef<'_>,
     series_id: &SeriesId,
     remote_id: Option<&RemoteSeriesId>,
     mut row: w::Row<'a, Message>,

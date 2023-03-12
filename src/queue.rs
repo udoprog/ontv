@@ -22,11 +22,11 @@ pub(crate) enum TaskStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum TaskRef {
     /// Task to download series data.
-    SeriesId { series_id: SeriesId },
+    Series { series_id: SeriesId },
     /// Task to add a series by a remote identifier.
-    RemoteSeriesId { remote_id: RemoteSeriesId },
+    RemoteSeries { remote_id: RemoteSeriesId },
     /// Task to add download a movie by a remote identifier.
-    RemoteMovieId { remote_id: RemoteMovieId },
+    RemoteMovie { remote_id: RemoteMovieId },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -60,22 +60,22 @@ impl TaskKind {
                 remote_id,
                 ..
             } => {
-                ids.push(TaskRef::SeriesId { series_id });
-                ids.push(TaskRef::RemoteSeriesId { remote_id });
+                ids.push(TaskRef::Series { series_id });
+                ids.push(TaskRef::RemoteSeries { remote_id });
             }
             TaskKind::DownloadSeries {
                 series_id,
                 remote_id,
                 ..
             } => {
-                ids.push(TaskRef::SeriesId { series_id });
-                ids.push(TaskRef::RemoteSeriesId { remote_id });
+                ids.push(TaskRef::Series { series_id });
+                ids.push(TaskRef::RemoteSeries { remote_id });
             }
             TaskKind::DownloadSeriesByRemoteId { remote_id, .. } => {
-                ids.push(TaskRef::RemoteSeriesId { remote_id });
+                ids.push(TaskRef::RemoteSeries { remote_id });
             }
             TaskKind::DownloadMovieByRemoteId { remote_id } => {
-                ids.push(TaskRef::RemoteMovieId { remote_id });
+                ids.push(TaskRef::RemoteMovie { remote_id });
             }
         }
 
@@ -127,7 +127,7 @@ impl Queue {
     #[inline]
     pub(crate) fn status(&self, id: TaskRef) -> Option<TaskStatus> {
         let id = self.task_ids.get(&id)?;
-        self.status.get(&id).copied()
+        self.status.get(id).copied()
     }
 
     /// Mark the given task kind as completed, returns `true` if the task was

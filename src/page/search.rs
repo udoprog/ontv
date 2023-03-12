@@ -203,7 +203,7 @@ impl Search {
     }
 
     /// Generate the view for the settings page.
-    pub(crate) fn view(&self, cx: &mut CtxtRef<'_>, state: &State) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>, state: &State) -> Element<'static, Message> {
         let mut series = w::Column::new();
 
         for s in self
@@ -216,7 +216,7 @@ impl Search {
 
             let handle = match s
                 .poster()
-                .and_then(|p| cx.assets.image_with_hint(&p, POSTER_HINT))
+                .and_then(|p| cx.assets.image_with_hint(p, POSTER_HINT))
             {
                 Some(handle) => handle,
                 None => cx.missing_poster(),
@@ -226,7 +226,7 @@ impl Search {
 
             let status = cx
                 .service
-                .task_status(TaskRef::RemoteSeriesId { remote_id: s.id });
+                .task_status(TaskRef::RemoteSeries { remote_id: s.id });
 
             match status {
                 Some(TaskStatus::Pending) => {
@@ -318,7 +318,7 @@ impl Search {
 
             let handle = match m
                 .poster()
-                .and_then(|p| cx.assets.image_with_hint(&p, POSTER_HINT))
+                .and_then(|p| cx.assets.image_with_hint(p, POSTER_HINT))
             {
                 Some(handle) => handle,
                 None => cx.missing_poster(),
@@ -328,7 +328,7 @@ impl Search {
 
             let status = cx
                 .service
-                .task_status(TaskRef::RemoteMovieId { remote_id: m.id });
+                .task_status(TaskRef::RemoteMovie { remote_id: m.id });
 
             match status {
                 Some(TaskStatus::Pending) => {

@@ -54,7 +54,7 @@ impl SeasonInfo {
         }
     }
 
-    pub(crate) fn view(&self, cx: &mut CtxtRef<'_>) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
         let (watched, total) = cx.service.season_watched(&self.series_id, &self.season);
         let mut actions = w::Row::new().spacing(SPACE);
 

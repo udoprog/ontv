@@ -138,7 +138,7 @@ async fn download_series(
     };
 
     let series_id = new_series.series.id;
-    service.insert_series(&now, new_series);
+    service.insert_series(now, new_series);
     service.save_changes().await?;
     Ok(Some(series_id))
 }

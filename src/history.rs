@@ -87,13 +87,12 @@ impl History {
         }
 
         if let Some(relative) = mutation.relative.take() {
-            if relative > 0 {
-                self.history_index = self.history_index.saturating_add(relative as usize);
-            } else if relative < 0 {
-                self.history_index = self.history_index.saturating_sub(-relative as usize);
+            self.history_index = match relative.signum() {
+                1 => self.history_index.saturating_add(relative as usize),
+                -1 => self.history_index.saturating_sub(-relative as usize),
+                _ => 0,
             }
-
-            self.history_index = self.history_index.min(self.history.len().saturating_sub(1));
+            .min(self.history.len().saturating_sub(1));
         }
 
         if let Some(page) = mutation.push.take() {

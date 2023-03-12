@@ -134,7 +134,7 @@ impl Episode {
 
     pub(crate) fn view(
         &self,
-        cx: &mut CtxtRef<'_>,
+        cx: &CtxtRef<'_>,
         pending: bool,
     ) -> Result<Element<'static, Message>> {
         let Some(e) = cx.service.episode(&self.episode_id) else {
@@ -150,7 +150,7 @@ impl Episode {
         let (image, (image_fill, rest_fill)) = if let Some(p) = pending_series {
             let poster = match p
                 .poster()
-                .and_then(|image| cx.assets.image_with_hint(&image, POSTER_HINT))
+                .and_then(|image| cx.assets.image_with_hint(image, POSTER_HINT))
             {
                 Some(handle) => handle,
                 None => cx.missing_poster(),
@@ -163,7 +163,7 @@ impl Episode {
         } else {
             let screencap = match e
                 .filename()
-                .and_then(|image| cx.assets.image_with_hint(&image, SCREENCAP_HINT))
+                .and_then(|image| cx.assets.image_with_hint(image, SCREENCAP_HINT))
             {
                 Some(handle) => handle,
                 None => cx.assets.missing_screencap(),

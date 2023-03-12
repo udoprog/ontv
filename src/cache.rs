@@ -128,7 +128,7 @@ where
     }
 
     tracing::debug!("downloading: {id}: {}", path.display());
-    let data = client.download_image(&id).await?;
+    let data = client.download_image(id).await?;
     let image = image_rs::load_from_memory_with_format(&data, format)?;
 
     let image = match hint {

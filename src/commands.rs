@@ -229,8 +229,7 @@ where
     #[inline]
     fn command(&mut self, command: Command<U>) {
         let map = self.map.clone();
-        self.commands
-            .command(command.map(move |message| map(message)));
+        self.commands.command(command.map(map));
     }
 }
 

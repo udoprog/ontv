@@ -90,7 +90,7 @@ impl Format {
     {
         match self {
             Format::Yaml => Ok(serde_yaml::from_slice(bytes)?),
-            Format::Json => Ok(serde_json::from_slice(&bytes)?),
+            Format::Json => Ok(serde_json::from_slice(bytes)?),
         }
     }
 
@@ -272,7 +272,7 @@ where
 
     tracing::trace!("saving {what}: {}", path.display());
 
-    let path = Box::<Path>::from(path.as_ref());
+    let path = Box::<Path>::from(path);
 
     let task = tokio::task::spawn_blocking(move || {
         let Some(dir) = path.parent() else {

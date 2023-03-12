@@ -29,7 +29,7 @@ impl Database {
         &self,
         series_id: &SeriesId,
     ) -> impl ExactSizeIterator<Item = RemoteSeriesId> + '_ {
-        OptionIter::new(self.by_series.get(series_id).map(|it| it.into_iter())).copied()
+        OptionIter::new(self.by_series.get(series_id).map(|it| it.iter())).copied()
     }
 
     /// Insert a series remote.

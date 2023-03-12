@@ -7,7 +7,7 @@ pub(crate) enum Message {}
 pub(crate) struct Errors;
 
 impl Errors {
-    pub(crate) fn view(&self, cx: &mut CtxtRef<'_>) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
         let mut page = w::Column::new();
 
         for e in cx.state.errors().rev() {

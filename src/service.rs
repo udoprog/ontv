@@ -759,8 +759,8 @@ impl Service {
         tracing::info!("removing series");
 
         let _ = self.db.series.remove(series_id);
-        let _ = self.db.episodes.remove(series_id);
-        let _ = self.db.seasons.remove(series_id);
+        self.db.episodes.remove(series_id);
+        self.db.seasons.remove(series_id);
         self.db.changes.change(Change::Queue);
         self.db.changes.remove_series(series_id);
 
@@ -904,7 +904,7 @@ impl Service {
             if self.db.sync.update_last_modified(
                 &series_id,
                 &data.series.remote_id,
-                Some(&last_modified),
+                Some(last_modified),
             ) {
                 self.db.changes.change(Change::Sync);
             }
@@ -1173,25 +1173,22 @@ impl Service {
     /// Mark task as completed.
     #[inline]
     pub(crate) fn complete_task(&mut self, task: Task) -> Option<TaskStatus> {
-        match &task.kind {
-            TaskKind::DownloadSeries {
-                series_id,
-                remote_id,
-                last_modified,
-                ..
-            } => {
-                let now = Utc::now();
+        if let TaskKind::DownloadSeries {
+            series_id,
+            remote_id,
+            last_modified,
+            ..
+        } = &task.kind
+        {
+            let now = Utc::now();
 
-                if self.db.sync.series_update_sync(
-                    series_id,
-                    remote_id,
-                    &now,
-                    last_modified.as_ref(),
-                ) {
-                    self.db.changes.change(Change::Sync);
-                }
+            if self
+                .db
+                .sync
+                .series_update_sync(series_id, remote_id, &now, last_modified.as_ref())
+            {
+                self.db.changes.change(Change::Sync);
             }
-            _ => {}
         }
 
         self.db.tasks.complete(&task)

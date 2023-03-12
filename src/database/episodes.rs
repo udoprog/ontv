@@ -13,7 +13,7 @@ struct EpisodeData {
 }
 
 impl EpisodeData {
-    fn into_ref<'a>(&'a self, data: &'a HashMap<EpisodeId, EpisodeData>) -> EpisodeRef<'a> {
+    fn as_episode_ref<'a>(&'a self, data: &'a HashMap<EpisodeId, EpisodeData>) -> EpisodeRef<'a> {
         EpisodeRef {
             episode: &self.episode,
             series: self.series,
@@ -56,7 +56,7 @@ impl<'a> EpisodeRef<'a> {
     #[inline]
     pub(crate) fn next(self) -> Option<EpisodeRef<'a>> {
         let data = self.data.get(&self.next?)?;
-        Some(data.into_ref(self.data))
+        Some(data.as_episode_ref(self.data))
     }
 }
 
@@ -94,7 +94,7 @@ impl Database {
         let mut first = None;
         let mut prev = None;
 
-        let _ = self.remove(&series);
+        self.remove(&series);
 
         let mut it = episodes.into_iter().peekable();
 
@@ -151,7 +151,7 @@ impl Database {
     /// Get an episode.
     pub(crate) fn get(&self, id: &EpisodeId) -> Option<EpisodeRef<'_>> {
         let data = self.data.get(id)?;
-        Some(data.into_ref(&self.data))
+        Some(data.as_episode_ref(&self.data))
     }
 
     /// Get episodes by series.
@@ -178,8 +178,8 @@ impl Database {
             .map(Vec::as_slice)
             .unwrap_or_default();
 
-        crate::database::iter::Iter::new(iter.into_iter(), &self.data)
-            .map(|e| e.into_ref(&self.data))
+        crate::database::iter::Iter::new(iter.iter(), &self.data)
+            .map(|e| e.as_episode_ref(&self.data))
     }
 }
 
@@ -218,7 +218,7 @@ impl<'a> Iterator for Iter<'a> {
         }
 
         self.len = self.len.saturating_sub(1);
-        Some(data.into_ref(self.data))
+        Some(data.as_episode_ref(self.data))
     }
 
     #[inline]
@@ -239,7 +239,7 @@ impl<'a> DoubleEndedIterator for Iter<'a> {
         }
 
         self.len = self.len.saturating_sub(1);
-        Some(data.into_ref(self.data))
+        Some(data.as_episode_ref(self.data))
     }
 }
 

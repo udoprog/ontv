@@ -26,7 +26,7 @@ impl WatchNext {
         let today = cx.state.today();
 
         if state.future {
-            let future = cx.service.pending().rev().filter(|p| p.will_air(&today));
+            let future = cx.service.pending().rev().filter(|p| p.will_air(today));
 
             self.future
                 .init_from_iter(future.map(|p| comps::episode::Props {
@@ -38,7 +38,7 @@ impl WatchNext {
             self.future.clear();
         }
 
-        let episodes = cx.service.pending().rev().filter(|p| p.has_aired(&today));
+        let episodes = cx.service.pending().rev().filter(|p| p.has_aired(today));
 
         self.episodes
             .init_from_iter(episodes.map(|p| comps::episode::Props {
@@ -72,7 +72,7 @@ impl WatchNext {
 
     pub(crate) fn view(
         &self,
-        cx: &mut CtxtRef<'_>,
+        cx: &CtxtRef<'_>,
         state: &State,
     ) -> Result<Element<'static, Message>> {
         let mut list = w::Column::new();

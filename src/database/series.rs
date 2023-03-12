@@ -37,7 +37,7 @@ impl Database {
 
     /// Iterate over all series in the database in some random.
     pub(crate) fn iter(&self) -> impl ExactSizeIterator<Item = &Series> {
-        self.data.iter().map(|(_, series)| series)
+        self.data.values()
     }
 
     /// Iterate over all series in the database in some order.

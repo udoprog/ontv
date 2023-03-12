@@ -115,6 +115,8 @@
 //! /queue.yaml
 //! ```
 
+#![allow(clippy::field_reassign_with_default, clippy::type_complexity)]
+
 mod api;
 mod application;
 mod assets;

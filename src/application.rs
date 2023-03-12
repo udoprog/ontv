@@ -19,7 +19,7 @@ use crate::service::{NewSeries, Service};
 use crate::state::State;
 use crate::utils::{Singleton, TimedOut, Timeout};
 
-macro_rules! ctxt_mut {
+macro_rules! ctxt {
     ($self:expr) => {
         &mut Ctxt {
             state: &mut $self.state,
@@ -32,7 +32,7 @@ macro_rules! ctxt_mut {
 
 macro_rules! ctxt_ref {
     ($self:expr) => {
-        &mut CtxtRef {
+        &CtxtRef {
             state: &$self.state,
             service: &$self.service,
             assets: &$self.assets,
@@ -225,38 +225,38 @@ impl iced::Application for Application {
 
         match (message, &mut self.current, self.history.page_mut()) {
             (Message::Settings(message), Current::Settings(page), _) => {
-                page.update(ctxt_mut!(self), message);
+                page.update(ctxt!(self), message);
             }
             (Message::Dashboard(message), Current::Dashboard(page), _) => {
-                page.update(ctxt_mut!(self), message);
+                page.update(ctxt!(self), message);
             }
             (
                 Message::WatchNext(message),
                 Current::WatchNext(page),
                 Some(Page::WatchNext(state)),
             ) => {
-                page.update(ctxt_mut!(self), state, message);
+                page.update(ctxt!(self), state, message);
             }
             (Message::Search(message), Current::Search(page), Some(Page::Search(state))) => {
                 page.update(
-                    ctxt_mut!(self),
+                    ctxt!(self),
                     state,
                     message,
                     self.commands.by_ref().map(Message::Search),
                 );
             }
             (Message::SeriesList(message), Current::SeriesList(page), _) => {
-                page.update(ctxt_mut!(self), message);
+                page.update(ctxt!(self), message);
             }
             (Message::Series(message), Current::Series(page), _) => {
-                page.update(ctxt_mut!(self), message);
+                page.update(ctxt!(self), message);
             }
             (Message::Season(message), Current::Season(page), _) => {
-                page.update(ctxt_mut!(self), message);
+                page.update(ctxt!(self), message);
             }
             (Message::Queue(message), Current::Queue(page), _) => {
                 page.update(
-                    ctxt_mut!(self),
+                    ctxt!(self),
                     message,
                     self.commands.by_ref().map(Message::Queue),
                 );
@@ -476,7 +476,7 @@ impl iced::Application for Application {
             };
 
             top_menu = top_menu.push(menu_item(
-                &page,
+                page,
                 text,
                 |p| matches!(p, Page::Queue),
                 || Page::Queue,
@@ -489,7 +489,7 @@ impl iced::Application for Application {
             Page::Series(page::series::State { id: series_id }) => {
                 let mut sub_menu = w::Row::new();
 
-                if let Some(series) = self.service.series(&series_id) {
+                if let Some(series) = self.service.series(series_id) {
                     sub_menu = sub_menu.push(render_series(page, series, series_id));
                 }
 
@@ -498,11 +498,11 @@ impl iced::Application for Application {
             Page::Season(page::season::State { series_id, season }) => {
                 let mut sub_menu = w::Row::new();
 
-                if let Some(series) = self.service.series(&series_id) {
+                if let Some(series) = self.service.series(series_id) {
                     sub_menu = sub_menu.push(render_series(page, series, series_id));
                 }
 
-                let mut seasons = self.service.seasons(&series_id);
+                let mut seasons = self.service.seasons(series_id);
 
                 if seasons.len() > 5 {
                     if let Some(season) = seasons.next() {
@@ -611,7 +611,7 @@ fn render_series(
     series_id: &SeriesId,
 ) -> w::Button<'static, Message> {
     menu_item(
-        &page,
+        page,
         w::text(&series.title).size(SUB_MENU_SIZE),
         |p| matches!(p, Page::Series(page::series::State { id }) if *id == *series_id),
         || page::series::page(*series_id),
@@ -623,26 +623,26 @@ impl Application {
     fn prepare(&mut self) {
         match (&mut self.current, self.history.page_mut()) {
             (Current::Dashboard(page), _) => {
-                page.prepare(ctxt_mut!(self));
+                page.prepare(ctxt!(self));
             }
             (Current::WatchNext(page), Some(Page::WatchNext(state))) => {
-                page.prepare(ctxt_mut!(self), state);
+                page.prepare(ctxt!(self), state);
             }
             (Current::Search(page), Some(Page::Search(state))) => {
                 page.prepare(
-                    ctxt_mut!(self),
+                    ctxt!(self),
                     state,
                     self.commands.by_ref().map(Message::Search),
                 );
             }
             (Current::SeriesList(page), _) => {
-                page.prepare(ctxt_mut!(self));
+                page.prepare(ctxt!(self));
             }
             (Current::Series(page), Some(Page::Series(state))) => {
-                page.prepare(ctxt_mut!(self), state);
+                page.prepare(ctxt!(self), state);
             }
             (Current::Season(page), Some(Page::Season(state))) => {
-                page.prepare(ctxt_mut!(self), state);
+                page.prepare(ctxt!(self), state);
             }
             _ => {
                 // noop
@@ -728,7 +728,7 @@ impl Application {
                     force,
                 } => {
                     self.commands.perform(
-                        ctxt_mut!(self).download_series_by_id(series_id, remote_id, *force),
+                        ctxt_ref!(self).download_series_by_id(series_id, remote_id, *force),
                         move |result| {
                             Message::TaskSeriesDownloaded(result.map_err(Into::into), task.clone())
                         },
@@ -803,7 +803,7 @@ impl Application {
         page: &Page,
     ) -> w::Button<'static, Message> {
         let title = w::text(season.number);
-        let (watched, total) = self.service.season_watched(&series_id, &season.number);
+        let (watched, total) = self.service.season_watched(series_id, &season.number);
 
         let mut title = w::Row::new().push(title.size(SUB_MENU_SIZE));
 
@@ -812,7 +812,7 @@ impl Application {
         }
 
         menu_item(
-            &page,
+            page,
             title,
             |p| matches!(p, Page::Season(page::season::State { series_id: a, season: b }) if *a == *series_id && *b == season.number),
             || page::season::page(*series_id, season.number),

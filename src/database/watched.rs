@@ -155,7 +155,7 @@ impl Database {
     ) -> impl IntoIterator<Item = Export> + 'static {
         let mut export = BTreeMap::new();
 
-        for (_, w) in &self.data {
+        for w in self.data.values() {
             let place = match &w.kind {
                 WatchedKind::Series { episode, .. } => {
                     let (season, number) = episodes
