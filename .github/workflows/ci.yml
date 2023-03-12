@@ -11,8 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - run: rustup toolchain install 1.65 --profile minimal
-    - run: rustup default 1.65
+    - uses: dtolnay/rust-toolchain@1.65
     - uses: Swatinem/rust-cache@v2
     - run: cargo build
 
@@ -20,8 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - run: rustup toolchain install stable --profile minimal
-    - run: rustup default stable
+    - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
     - run: cargo test
 
@@ -32,7 +30,6 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     steps:
     - uses: actions/checkout@v3
-    - run: rustup toolchain install stable --profile minimal
-    - run: rustup default stable
+    - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
     - run: cargo build
