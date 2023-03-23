@@ -131,6 +131,15 @@ impl Config {
     pub(crate) fn schedule_page(&self) -> usize {
         self.schedule_page.max(1)
     }
+
+    /// Build iced theme.
+    #[inline]
+    pub(crate) fn iced_theme(&self) -> iced::Theme {
+        match self.theme {
+            ThemeType::Light => iced::Theme::Light,
+            ThemeType::Dark => iced::Theme::Dark,
+        }
+    }
 }
 
 impl Default for Config {
@@ -145,17 +154,6 @@ impl Default for Config {
             dashboard_page: default_dashboard_page(),
             schedule_limit: default_schedule_limit(),
             schedule_page: default_schedule_page(),
-        }
-    }
-}
-
-impl Config {
-    /// Build iced theme.
-    #[inline]
-    pub(crate) fn theme(&self) -> iced::Theme {
-        match self.theme {
-            ThemeType::Light => iced::Theme::Light,
-            ThemeType::Dark => iced::Theme::Dark,
         }
     }
 }

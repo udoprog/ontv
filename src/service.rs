@@ -106,7 +106,7 @@ impl Service {
         let tvdb = thetvdb::Client::new(&db.config.tvdb_legacy_apikey)?;
         let tmdb = themoviedb::Client::new(&db.config.tmdb_api_key)?;
 
-        let current_theme = db.config.theme();
+        let current_theme = db.config.iced_theme();
 
         let now = Local::now();
 
@@ -121,7 +121,7 @@ impl Service {
             now: now.date_naive(),
         };
 
-        this.build_schedule();
+        this.rebuild_schedule();
         Ok(this)
     }
 
@@ -463,19 +463,23 @@ impl Service {
 
         if let Some(last) = last {
             self.populate_pending_from(now, series_id, &last);
-        } else {
-            self.remove_pending(series_id);
+        } else if self.db.pending.remove(series_id).is_some() {
+            self.db.changes.change(Change::Pending);
         }
     }
 
     /// Mark an episode as watched.
+    #[tracing::instrument(skip(self))]
     pub(crate) fn watch(
         &mut self,
         now: &DateTime<Utc>,
         episode_id: &EpisodeId,
         remaining_season: RemainingSeason,
     ) {
+        tracing::trace!("marking as watched");
+
         let Some(episode) = self.db.episodes.get(episode_id) else {
+            tracing::warn!("episode missing");
             return;
         };
 
@@ -504,31 +508,19 @@ impl Service {
     }
 
     /// Skip an episode.
-    pub(crate) fn skip(
-        &mut self,
-        now: &DateTime<Utc>,
-        series_id: &SeriesId,
-        episode_id: &EpisodeId,
-    ) {
-        let Some(episode) = self.db.episodes.get(episode_id) else {
-            if self.db.pending.remove(series_id).is_some() {
-                self.db.changes.change(Change::Pending);
-            }
-
-            return;
-        };
-
-        self.db.changes.change(Change::Pending);
-        self.db.pending.extend([Pending {
-            series: *series_id,
-            episode: episode.id,
-            timestamp: *now,
-        }]);
+    #[tracing::instrument(skip(self))]
+    pub(crate) fn skip(&mut self, now: &DateTime<Utc>, series_id: &SeriesId, id: &EpisodeId) {
+        tracing::trace!("skipping episode");
+        self.populate_pending_from(now, series_id, id);
     }
 
     /// Select the next pending episode to use for a show.
+    #[tracing::instrument(skip(self))]
     pub(crate) fn select_pending(&mut self, now: &DateTime<Utc>, episode_id: &EpisodeId) {
+        tracing::trace!("selecting pending");
+
         let Some(episode) = self.db.episodes.get(episode_id) else {
+            tracing::warn!("episode missing");
             return;
         };
 
@@ -555,7 +547,10 @@ impl Service {
     }
 
     /// Clear next episode as pending.
+    #[tracing::instrument(skip(self))]
     pub(crate) fn clear_pending(&mut self, episode_id: &EpisodeId) {
+        tracing::trace!("clearing pending");
+
         self.db.changes.change(Change::Pending);
 
         if let Some(e) = self.db.episodes.get(episode_id) {
@@ -564,30 +559,40 @@ impl Service {
     }
 
     /// Remove all watches of the given episode.
+    #[tracing::instrument(skip(self))]
     pub(crate) fn remove_episode_watch(&mut self, episode_id: &EpisodeId, watch_id: &WatchedId) {
-        tracing::trace!(?episode_id, ?watch_id,);
+        tracing::trace!("removing episode watch");
 
-        let (Some(w), Some(episode)) = (self.db.watched.remove_watch(watch_id), self.db.episodes.get(episode_id)) else {
+        let Some(w) = self.db.watched.remove_watch(watch_id) else {
+            tracing::warn!("watch missing");
             return;
         };
 
         self.db.changes.change(Change::Watched);
-        self.db.changes.change(Change::Pending);
 
-        self.db.pending.extend([Pending {
-            series: *episode.series(),
-            episode: episode.id,
-            timestamp: w.timestamp,
-        }]);
+        if let Some(e) = self.db.episodes.get(episode_id) {
+            if self.db.watched.by_episode(&e.id).len() == 0 {
+                self.db.pending.extend([Pending {
+                    series: *e.series(),
+                    episode: e.id,
+                    timestamp: w.timestamp,
+                }]);
+
+                self.db.changes.change(Change::Pending);
+            }
+        }
     }
 
     /// Remove all watches of the given episode.
+    #[tracing::instrument(skip(self))]
     pub(crate) fn remove_season_watches(
         &mut self,
         now: &DateTime<Utc>,
         series_id: &SeriesId,
         season: &SeasonNumber,
     ) {
+        tracing::trace!("removing season watches");
+
         let mut removed = 0;
 
         for e in self.db.episodes.by_series(series_id) {
@@ -629,27 +634,26 @@ impl Service {
     }
 
     /// Save changes made.
+    #[tracing::instrument(skip(self))]
     pub(crate) fn save_changes(&mut self) -> impl Future<Output = Result<()>> {
         if self.db.changes.contains(Change::Series) || self.db.changes.contains(Change::Schedule) {
-            self.build_schedule();
+            self.rebuild_schedule();
         }
 
-        self.db.save_changes(&self.paths, self.do_not_save)
-    }
-
-    /// Remove pending for the given series.
-    fn remove_pending(&mut self, series_id: &SeriesId) {
-        if self.db.pending.remove(series_id).is_some() {
-            self.db.changes.change(Change::Pending);
-        }
+        self.db
+            .save_changes(&self.paths, self.do_not_save)
+            .in_current_span()
     }
 
     /// Populate pending from a series where we don't know which episode to
     /// populate from.
     #[tracing::instrument(skip(self))]
     pub(crate) fn populate_pending(&mut self, now: &DateTime<Utc>, id: &SeriesId) {
-        if self.db.pending.get(id).is_some() {
+        tracing::trace!("populate pending");
+
+        if let Some(pending) = self.db.pending.get(id) {
             // Do nothing since we already have a pending episode.
+            tracing::trace!(?pending, "pending exists");
             return;
         }
 
@@ -675,7 +679,7 @@ impl Service {
             return;
         };
 
-        tracing::trace!(episode = ?e.id, "set as pending");
+        tracing::trace!(episode = ?e.id, "set pending");
 
         self.db.changes.change(Change::Pending);
         // Mark the next episode in the show as pending.
@@ -689,12 +693,14 @@ impl Service {
     /// Populate pending from a known episode ID.
     fn populate_pending_from(&mut self, now: &DateTime<Utc>, series_id: &SeriesId, id: &EpisodeId) {
         let Some(e) = self.db.episodes.get(id).and_then(|e| e.next()) else {
+            if self.db.pending.remove(series_id).is_some() {
+                self.db.changes.change(Change::Pending);
+            }
+
             return;
         };
 
-        // Mark the next episode in the show as pending.
         self.db.changes.change(Change::Pending);
-
         let timestamp = e.aired_timestamp().map(|t| t.max(*now)).unwrap_or(*now);
 
         self.db.pending.extend([Pending {
@@ -724,7 +730,7 @@ impl Service {
     pub(crate) fn set_theme(&mut self, theme: ThemeType) {
         self.db.config.theme = theme;
         self.db.changes.change(Change::Config);
-        self.current_theme = self.db.config.theme();
+        self.current_theme = self.db.config.iced_theme();
     }
 
     /// Set the theme configuration option.
@@ -1074,7 +1080,10 @@ impl Service {
     }
 
     /// Build schedule information.
-    pub(crate) fn build_schedule(&mut self) {
+    #[tracing::instrument(skip(self))]
+    pub(crate) fn rebuild_schedule(&mut self) {
+        tracing::trace!("rebuilding schedule");
+
         let mut current = self.now;
 
         let mut days = Vec::new();
@@ -1245,6 +1254,8 @@ fn pending_timestamp<const N: usize>(
     }
 }
 
+/// Mode for marking remaining season.
+#[derive(Debug)]
 pub(crate) enum RemainingSeason {
     /// Timestamp should be right now, but only if an episode has aired.
     Aired,
