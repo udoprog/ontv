@@ -127,10 +127,9 @@ impl SeriesList {
             );
         }
 
-        let filter = w::text_input("Filter...", &self.filter, |value| {
-            Message::ChangeFilter(value)
-        })
-        .width(Length::Fill);
+        let filter = w::text_input("Filter...", &self.filter)
+            .on_input(|value| Message::ChangeFilter(value))
+            .width(Length::Fill);
 
         w::Column::new()
             .push(centered(

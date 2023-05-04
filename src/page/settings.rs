@@ -51,20 +51,20 @@ impl Settings {
         page = page.push(
             w::Column::new()
                 .push(w::text("TheTVDB Legacy API Key:"))
-                .push(w::text_input(
-                    "Key...",
-                    &config.tvdb_legacy_apikey,
-                    Message::TvdbLegacyApiKeyChange,
-                ))
+                .push(
+                    w::text_input("Key...", &config.tvdb_legacy_apikey)
+                        .on_input(Message::TvdbLegacyApiKeyChange),
+                )
                 .spacing(SPACE),
         );
 
         page = page.push(
             w::Column::new()
                 .push(w::text("TheMovieDB API Key:"))
-                .push(w::text_input("Key...", &config.tmdb_api_key, |value| {
-                    Message::TmdbApiKeyChange(value)
-                }))
+                .push(
+                    w::text_input("Key...", &config.tmdb_api_key)
+                        .on_input(|value| Message::TmdbApiKeyChange(value)),
+                )
                 .spacing(SPACE),
         );
 

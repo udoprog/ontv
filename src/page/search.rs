@@ -411,8 +411,9 @@ impl Search {
             Message::MoviesPage,
         ));
 
-        let query =
-            w::text_input("Query...", &state.text, Message::Change).on_submit(Message::Search);
+        let query = w::text_input("Query...", &state.text)
+            .on_input(Message::Change)
+            .on_submit(Message::Search);
 
         let submit = w::button("Search");
 
