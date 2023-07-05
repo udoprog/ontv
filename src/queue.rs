@@ -8,7 +8,7 @@ use crate::prelude::{RemoteMovieId, RemoteSeriesId, SeriesId, TaskId};
 /// Number of milliseconds of delay to add by default to scheduled tasks.
 const DELAY_MILLIS: i64 = 5000;
 // Soft capacity, that some processes which might add a lot of stuff can check.
-const CAPACITY: usize = 50;
+const CAPACITY: usize = 10;
 
 /// The current task status.
 #[derive(Debug, Clone, Copy)]
