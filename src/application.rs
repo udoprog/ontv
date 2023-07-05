@@ -41,7 +41,7 @@ macro_rules! ctxt_ref {
 }
 
 // Check for remote updates every 60 seconds.
-const UPDATE_TIMEOUT: u64 = 60;
+const UPDATE_TIMEOUT: u64 = 20;
 // Number of images to process in parallel.
 const IMAGE_BATCH: usize = 10;
 
