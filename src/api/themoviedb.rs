@@ -6,6 +6,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use chrono::{DateTime, NaiveDate, Utc};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use leaky_bucket::RateLimiter;
 use relative_path::RelativePath;
 use reqwest::header;
 use reqwest::StatusCode;
@@ -32,6 +33,7 @@ pub(crate) struct Client {
     state: Arc<State>,
     client: reqwest::Client,
     api_key: Arc<str>,
+    limit: Arc<RateLimiter>,
 }
 
 impl Client {
@@ -49,6 +51,14 @@ impl Client {
                 .pool_idle_timeout(IDLE_TIMEOUT)
                 .build()?,
             api_key: api_key.as_ref().into(),
+            limit: Arc::new(
+                RateLimiter::builder()
+                    .max(50)
+                    .initial(0)
+                    .refill(1)
+                    .interval(Duration::from_millis(100))
+                    .build(),
+            ),
         })
     }
 
@@ -60,11 +70,13 @@ impl Client {
         self.api_key = api_key.as_ref().into();
     }
 
-    fn request<I>(&self, method: Method, segments: I) -> RequestBuilder
+    async fn request<I>(&self, method: Method, segments: I) -> RequestBuilder
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
     {
+        self.limit.acquire_one().await;
+
         let mut url = self.state.base_url.clone();
 
         if let Ok(mut m) = url.path_segments_mut() {
@@ -77,12 +89,13 @@ impl Client {
     }
 
     /// Request with (hopefully cached) authorization.
-    fn request_with_auth<I>(&self, method: Method, segments: I) -> RequestBuilder
+    async fn request_with_auth<I>(&self, method: Method, segments: I) -> RequestBuilder
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
     {
         self.request(method, segments)
+            .await
             .query(&[("api_key", self.api_key.as_ref())])
     }
 
@@ -90,6 +103,7 @@ impl Client {
     pub(crate) async fn search_series(&self, query: &str) -> Result<Vec<SearchSeries>> {
         let res = self
             .request_with_auth(Method::GET, &["search", "tv"])
+            .await
             .query(&[&("query", query)])
             .send()
             .await?;
@@ -134,6 +148,7 @@ impl Client {
     pub(crate) async fn search_movies(&self, query: &str) -> Result<Vec<SearchMovie>> {
         let res = self
             .request_with_auth(Method::GET, &["search", "movie"])
+            .await
             .query(&[&("query", query)])
             .send()
             .await?;
@@ -189,7 +204,9 @@ impl Client {
             Vec<Season>,
         )>,
     > {
-        let mut details = self.request_with_auth(Method::GET, &["tv", &id.to_string()]);
+        let mut details = self
+            .request_with_auth(Method::GET, &["tv", &id.to_string()])
+            .await;
 
         if let Some(etag) = if_none_match {
             details = details.header(header::IF_NONE_MATCH, etag.as_ref());
@@ -203,11 +220,13 @@ impl Client {
 
         let external_ids = self
             .request_with_auth(Method::GET, &["tv", &id.to_string(), "external_ids"])
+            .await
             .send()
             .await?;
 
         let images = self
             .request_with_auth(Method::GET, &["tv", &id.to_string(), "images"])
+            .await
             .send()
             .await?;
 
@@ -335,6 +354,7 @@ impl Client {
                     &season_number.to_string(),
                 ],
             )
+            .await
             .send()
             .await?;
 
@@ -479,7 +499,11 @@ impl Client {
             "external_ids",
         ];
 
-        let external_ids = self.request_with_auth(Method::GET, &path).send().await?;
+        let external_ids = self
+            .request_with_auth(Method::GET, &path)
+            .await
+            .send()
+            .await?;
 
         if external_ids.status() == StatusCode::NOT_FOUND {
             return Ok(None);
