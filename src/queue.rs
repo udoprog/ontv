@@ -238,7 +238,7 @@ impl Queue {
             self.task_ids.insert(task_id, id);
         }
 
-        self.data.push_back(Task {
+        self.data.push_front(Task {
             id,
             kind,
             scheduled: None,
