@@ -128,7 +128,7 @@ impl SeriesList {
         }
 
         let filter = w::text_input("Filter...", &self.filter)
-            .on_input(|value| Message::ChangeFilter(value))
+            .on_input(Message::ChangeFilter)
             .width(Length::Fill);
 
         w::Column::new()

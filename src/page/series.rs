@@ -109,7 +109,7 @@ impl Series {
 
             for remote_id in remote_ids {
                 let mut row = w::Row::new().push(
-                    w::button(w::text(&remote_id).size(SMALL))
+                    w::button(w::text(remote_id).size(SMALL))
                         .style(theme::Button::Primary)
                         .on_press(Message::OpenRemote(remote_id)),
                 );

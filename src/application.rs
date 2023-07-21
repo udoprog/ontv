@@ -317,16 +317,19 @@ impl iced::Application for Application {
                 );
             }
             (Message::TaskUpdateDownloadQueue(result, task), _, _) => {
+                let now = Utc::now();
+                self.service.complete_task(&now, task);
+
                 match result {
-                    Ok(queue) => {
-                        self.service.push_tasks(queue);
+                    Ok(task) => {
+                        if let Some(task) = task {
+                            self.service.push_task(task);
+                        }
                     }
                     Err(error) => {
                         self.state.handle_error(error);
                     }
                 }
-
-                self.service.complete_task(task);
             }
             (Message::Navigate(page), _, _) => {
                 self.history_mutations.push_history(&mut self.assets, page);
@@ -352,10 +355,12 @@ impl iced::Application for Application {
                 return self.commands.build();
             }
             (Message::TaskSeriesDownloaded(result, task), _, _) => {
+                let now = Utc::now();
+                self.service.complete_task(&now, task);
+
                 match result {
                     Ok(new_series) => {
                         if let Some(new_series) = new_series {
-                            let now = Utc::now();
                             self.service.insert_series(&now, new_series);
                         }
                     }
@@ -363,8 +368,6 @@ impl iced::Application for Application {
                         self.state.handle_error(error);
                     }
                 }
-
-                self.service.complete_task(task);
             }
             (Message::ProcessQueue(TimedOut::TimedOut, id), _, _) => {
                 self.handle_process_queue(Some(id));
@@ -709,23 +712,21 @@ impl Application {
                 TaskKind::CheckForUpdates {
                     series_id,
                     remote_id,
+                    last_modified,
                 } => {
-                    if let Some(future) = self.service.check_for_updates(series_id, remote_id) {
-                        self.commands.perform(future, move |result| {
-                            Message::TaskUpdateDownloadQueue(
-                                result.map_err(Into::into),
-                                task.clone(),
-                            )
-                        });
-                    } else {
-                        self.service.complete_task(task);
-                    }
+                    let future =
+                        self.service
+                            .check_for_updates(*series_id, *remote_id, *last_modified);
+
+                    self.commands.perform(future, move |result| {
+                        Message::TaskUpdateDownloadQueue(result.map_err(Into::into), task.clone())
+                    });
                 }
                 TaskKind::DownloadSeries {
                     series_id,
                     remote_id,
-                    last_modified: _last_modified,
                     force,
+                    ..
                 } => {
                     self.commands.perform(
                         ctxt_ref!(self).download_series_by_id(series_id, remote_id, *force),
@@ -736,7 +737,7 @@ impl Application {
                 }
                 TaskKind::DownloadSeriesByRemoteId { remote_id } => {
                     if self.service.set_series_tracked_by_remote(remote_id) {
-                        self.service.complete_task(task);
+                        self.service.complete_task(&now, task);
                     } else {
                         self.commands.perform(
                             self.service.download_series(remote_id, None, None),
@@ -751,7 +752,7 @@ impl Application {
                 }
                 TaskKind::DownloadMovieByRemoteId { .. } => {
                     // TODO: implement task
-                    self.service.complete_task(task);
+                    self.service.complete_task(&now, task);
                 }
             }
         }

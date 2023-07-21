@@ -63,7 +63,7 @@ impl Settings {
                 .push(w::text("TheMovieDB API Key:"))
                 .push(
                     w::text_input("Key...", &config.tmdb_api_key)
-                        .on_input(|value| Message::TmdbApiKeyChange(value)),
+                        .on_input(Message::TmdbApiKeyChange),
                 )
                 .spacing(SPACE),
         );

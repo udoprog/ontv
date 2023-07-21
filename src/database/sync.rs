@@ -70,12 +70,15 @@ impl Database {
 
     /// Update series last modified.
     #[must_use]
+    #[tracing::instrument(skip(self))]
     pub(crate) fn update_last_modified(
         &mut self,
         series_id: &SeriesId,
         remote_id: &RemoteSeriesId,
         last_modified: Option<&DateTime<Utc>>,
     ) -> bool {
+        tracing::trace!("series update last modified");
+
         let e = self.data.entry((*series_id.id(), *remote_id)).or_default();
 
         if let Some(last_modified) = last_modified {
@@ -87,6 +90,7 @@ impl Database {
 
     /// Update series.
     #[must_use]
+    #[tracing::instrument(skip(self))]
     pub(crate) fn series_update_sync(
         &mut self,
         series_id: &SeriesId,
@@ -94,6 +98,8 @@ impl Database {
         now: &DateTime<Utc>,
         last_modified: Option<&DateTime<Utc>>,
     ) -> bool {
+        tracing::trace!("series update sync");
+
         let e = self.data.entry((*series_id.id(), *remote_id)).or_default();
         let mut updated = e.last_sync.replace(*now) != Some(*now);
 

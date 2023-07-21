@@ -24,7 +24,7 @@ impl Movie {
     }
 
     pub(crate) fn view(&self, state: &State) -> Element<'static, Message> {
-        let id = w::text(&state.id);
+        let id = w::text(state.id);
         w::Column::new().push(id).into()
     }
 }

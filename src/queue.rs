@@ -35,6 +35,7 @@ pub(crate) enum TaskKind {
     CheckForUpdates {
         series_id: SeriesId,
         remote_id: RemoteSeriesId,
+        last_modified: Option<DateTime<Utc>>,
     },
     /// Task to download series data.
     DownloadSeries {

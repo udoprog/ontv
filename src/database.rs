@@ -273,8 +273,6 @@ pub(crate) enum Change {
     Series,
     // Remotes list has changed.
     Remotes,
-    // Task queue has changed.
-    Queue,
     // Schedule changed.
     Schedule,
 }
