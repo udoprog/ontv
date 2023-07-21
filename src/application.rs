@@ -471,7 +471,7 @@ impl iced::Application for Application {
 
         // Build queue element.
         {
-            let count = self.service.tasks().len() + self.service.running_tasks().len();
+            let count = self.service.pending_tasks().len() + self.service.running_tasks().len();
 
             let text = match count {
                 0 => w::text("Queue"),

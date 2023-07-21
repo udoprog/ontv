@@ -4,7 +4,14 @@ use crate::prelude::*;
 use crate::queue::TaskKind;
 use crate::utils::{TimedOut, Timeout};
 
+const LIMIT: usize = 8;
 const UPDATE_TIMER: u64 = 10;
+
+enum Temporal {
+    Past,
+    Now,
+    Future,
+}
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -62,97 +69,114 @@ impl Queue {
     pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
         let now = Utc::now();
 
-        let mut running_col = w::Column::new();
+        let queue = {
+            let mut running = cx.service.running_tasks();
+            let mut completed = cx.service.completed_tasks();
+            let mut pending = cx.service.pending_tasks();
 
-        let mut running = cx.service.running_tasks().peekable();
+            let mut list = w::Column::new();
 
-        running_col = running_col.push(
-            w::Row::new()
-                .push(
-                    w::text(format!("Running ({})", running.len()))
-                        .width(Length::Fill)
-                        .horizontal_alignment(Horizontal::Center),
-                )
-                .padding(GAP),
-        );
-
-        if running.len() == 0 {
-            running_col = running_col.push(
-                w::text("Empty")
-                    .size(SMALL)
-                    .width(Length::Fill)
-                    .horizontal_alignment(Horizontal::Center),
-            );
-        }
-
-        let mut list = w::Column::new();
-
-        while let Some(task) = running.next() {
-            let mut row = w::Row::new();
-            let update = build_task_row(cx, &task.kind);
-            row = row.push(update.width(Length::Fill).spacing(GAP));
-
-            list = list.push(row.width(Length::Fill).spacing(GAP));
-
-            if running.peek().is_some() {
-                list = list.push(w::horizontal_rule(1));
+            macro_rules! peek {
+                () => {
+                    running.len() > 0 || completed.len() > 0 || pending.len() > 0
+                };
             }
-        }
 
-        running_col = running_col.push(list.spacing(SPACE));
+            macro_rules! more {
+                ($iter:ident) => {
+                    if $iter.len() > 0 {
+                        list = list.push(w::text(format!("{} more", $iter.len())).size(SMALL));
 
-        let mut tasks_col = w::Column::new();
-
-        let mut tasks = cx.service.tasks().peekable();
-
-        tasks_col = tasks_col.push(
-            w::Row::new()
-                .push(
-                    w::text(format!("Queue ({})", tasks.len()))
-                        .width(Length::Fill)
-                        .horizontal_alignment(Horizontal::Center),
-                )
-                .padding(GAP),
-        );
-
-        if tasks.len() == 0 {
-            tasks_col = tasks_col.push(
-                w::text("Empty")
-                    .size(SMALL)
-                    .width(Length::Fill)
-                    .horizontal_alignment(Horizontal::Center),
-            );
-        }
-
-        let mut list = w::Column::new();
-
-        while let Some(task) = tasks.next() {
-            let mut row = build_task_row(cx, &task.kind);
-
-            let duration = match &task.scheduled {
-                Some(scheduled) => now.signed_duration_since(*scheduled),
-                None => chrono::Duration::zero(),
-            };
-
-            let when = duration_display(duration);
-            row = row.push(when.size(SMALL));
-
-            list = list.push(row.width(Length::Fill).spacing(GAP));
-
-            if tasks.peek().is_some() {
-                list = list.push(w::horizontal_rule(1));
+                        if peek!() {
+                            list = list.push(w::horizontal_rule(1));
+                        }
+                    }
+                };
             }
-        }
 
-        tasks_col = tasks_col.push(list.spacing(SPACE));
+            macro_rules! title {
+                ($iter:ident, $title:expr, $empty:expr) => {
+                    list = list
+                        .push(w::text($title).size(SUBTITLE_SIZE))
+                        .push(w::horizontal_rule(1));
 
-        let page = w::Row::new()
-            .push(tasks_col.width(Length::FillPortion(1)).spacing(GAP))
-            .push(running_col.width(Length::FillPortion(1)).spacing(GAP));
+                    if $iter.len() == 0 {
+                        list = list.push(w::text($empty).size(SMALL));
+
+                        if peek!() {
+                            list = list.push(w::horizontal_rule(1));
+                        }
+                    }
+                };
+            }
+
+            title!(running, "Running", "No running tasks");
+
+            while let Some(task) = running.next() {
+                let mut row = w::Row::new();
+                let update = build_task_row(cx, &task.kind, Temporal::Now);
+                row = row.push(update.width(Length::Fill).spacing(GAP));
+
+                list = list.push(row.width(Length::Fill).spacing(GAP));
+
+                if peek!() {
+                    list = list.push(w::horizontal_rule(1));
+                }
+            }
+
+            title!(pending, "Pending", "No pending tasks");
+
+            for _ in 0..LIMIT {
+                let Some(task) = pending.next() else {
+                    break;
+                };
+
+                let mut row = build_task_row(cx, &task.kind, Temporal::Future);
+
+                let duration = match &task.scheduled {
+                    Some(scheduled) => now.signed_duration_since(*scheduled),
+                    None => chrono::Duration::zero(),
+                };
+
+                let when = duration_display(duration);
+                row = row.push(when.size(SMALL));
+
+                list = list.push(row.width(Length::Fill).spacing(GAP));
+
+                if peek!() {
+                    list = list.push(w::horizontal_rule(1));
+                }
+            }
+
+            more!(pending);
+            title!(completed, "Completed", "No completed tasks");
+
+            for _ in 0..LIMIT {
+                let Some(c) = completed.next() else {
+                    break;
+                };
+
+                let mut row = build_task_row(cx, &c.task.kind, Temporal::Past);
+
+                let duration = now.signed_duration_since(c.at);
+                let when = duration_display(duration);
+                row = row.push(when.size(SMALL));
+
+                list = list.push(row.width(Length::Fill).spacing(GAP));
+
+                if peek!() {
+                    list = list.push(w::horizontal_rule(1));
+                }
+            }
+
+            more!(completed);
+
+            list.spacing(SPACE)
+        };
 
         default_container(
             w::Column::new()
-                .push(page.spacing(GAP2))
+                .push(queue)
                 .push(w::vertical_space(Length::Shrink))
                 .padding(GAP)
                 .spacing(GAP),
@@ -161,7 +185,7 @@ impl Queue {
     }
 }
 
-fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind) -> w::Row<'a, Message> {
+fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<'a, Message> {
     let mut update = w::Row::new();
 
     match kind {
@@ -170,7 +194,13 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind) -> w::Row<'a, Message> 
             remote_id,
             ..
         } => {
-            update = update.push(w::text("Updates").size(SMALL));
+            let text = match t {
+                Temporal::Past => "Updated",
+                Temporal::Now => "Updating",
+                Temporal::Future => "Update",
+            };
+
+            update = update.push(w::text(text).size(SMALL));
             update = decorate_series(cx, series_id, Some(remote_id), update);
         }
         TaskKind::DownloadSeries {
@@ -178,12 +208,23 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind) -> w::Row<'a, Message> 
             remote_id,
             ..
         } => {
-            update = update.push(w::text("Download series").size(SMALL));
+            let text = match t {
+                Temporal::Past => "Downloaded series",
+                Temporal::Now => "Updating series",
+                Temporal::Future => "Update series",
+            };
+
+            update = update.push(w::text(text).size(SMALL));
             update = decorate_series(cx, series_id, Some(remote_id), update);
         }
         TaskKind::DownloadSeriesByRemoteId { remote_id, .. } => {
-            update = update.push(w::text("Download series").size(SMALL).width(Length::Fill));
+            let text = match t {
+                Temporal::Past => "Downloaded series",
+                Temporal::Now => "Updating series",
+                Temporal::Future => "Update series",
+            };
 
+            update = update.push(w::text(text).size(SMALL).width(Length::Fill));
             update = update.push(
                 link(w::text(remote_id).size(SMALL))
                     .width(Length::Fill)
@@ -191,8 +232,13 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind) -> w::Row<'a, Message> 
             );
         }
         TaskKind::DownloadMovieByRemoteId { remote_id } => {
-            update = update.push(w::text("Download movie").size(SMALL).width(Length::Fill));
+            let text = match t {
+                Temporal::Past => "Downloaded movie",
+                Temporal::Now => "Updating movie",
+                Temporal::Future => "Update movie",
+            };
 
+            update = update.push(w::text(text).size(SMALL).width(Length::Fill));
             update = update.push(
                 link(w::text(remote_id).size(SMALL))
                     .width(Length::Fill)

@@ -52,7 +52,7 @@ pub(crate) enum TaskKind {
 }
 
 impl TaskKind {
-    pub(crate) fn task_ids(&self) -> ArrayVec<TaskRef, 2> {
+    pub(crate) fn task_refs(&self) -> ArrayVec<TaskRef, 2> {
         let mut ids = ArrayVec::new();
 
         match *self {
@@ -108,6 +108,11 @@ impl Task {
     }
 }
 
+pub(crate) struct CompletedTask {
+    pub(crate) at: DateTime<Utc>,
+    pub(crate) task: Task,
+}
+
 /// Queue of scheduled actions.
 #[derive(Default)]
 pub(crate) struct Queue {
@@ -119,6 +124,8 @@ pub(crate) struct Queue {
     data: VecDeque<Task>,
     /// Collection of running tasks.
     running: Vec<Task>,
+    /// Completed tasks.
+    completed: VecDeque<CompletedTask>,
     /// Test if queue has been locally modified.
     modified: bool,
 }
@@ -134,14 +141,15 @@ impl Queue {
     /// Mark the given task kind as completed, returns `true` if the task was
     /// present in the queue.
     #[inline]
-    pub(crate) fn complete(&mut self, task: &Task) -> Option<TaskStatus> {
+    pub(crate) fn complete(&mut self, now: &DateTime<Utc>, task: Task) -> Option<TaskStatus> {
         self.running.retain(|t| t.id != task.id);
         let status = self.status.remove(&task.id)?;
 
-        for id in task.kind.task_ids() {
+        for id in task.kind.task_refs() {
             let _ = self.task_ids.remove(&id);
         }
 
+        self.completed.push_front(CompletedTask { at: *now, task });
         Some(status)
     }
 
@@ -157,6 +165,12 @@ impl Queue {
         self.data.iter()
     }
 
+    /// Get list of completed tasks.
+    #[inline]
+    pub(crate) fn completed(&self) -> impl ExactSizeIterator<Item = &CompletedTask> {
+        self.completed.iter()
+    }
+
     /// Remove all matching tasks.
     pub(crate) fn remove_tasks_by<P>(&mut self, mut predicate: P) -> usize
     where
@@ -168,7 +182,7 @@ impl Queue {
             if predicate(data) {
                 let _ = self.status.remove(&data.id);
 
-                for task_id in data.kind.task_ids() {
+                for task_id in data.kind.task_refs() {
                     let _ = self.task_ids.remove(&task_id);
                 }
 
@@ -224,7 +238,7 @@ impl Queue {
 
     /// Push without delay.
     pub(crate) fn push_without_delay(&mut self, kind: TaskKind) -> bool {
-        let task_ids = kind.task_ids();
+        let task_ids = kind.task_refs();
 
         for task_id in &task_ids {
             if self.task_ids.contains_key(task_id) {
@@ -251,7 +265,7 @@ impl Queue {
 
     /// Push a task onto the queue.
     pub(crate) fn push(&mut self, kind: TaskKind) -> bool {
-        let task_ids = kind.task_ids();
+        let task_ids = kind.task_refs();
 
         for task_id in &task_ids {
             if self.task_ids.contains_key(task_id) {

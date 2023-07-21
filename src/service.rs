@@ -19,7 +19,7 @@ use crate::assets::ImageKey;
 use crate::cache::{self};
 use crate::database::{Change, Database, EpisodeRef, SeasonRef};
 use crate::model::*;
-use crate::queue::{Task, TaskKind, TaskRef, TaskStatus};
+use crate::queue::{CompletedTask, Task, TaskKind, TaskRef, TaskStatus};
 
 /// A series update as produced by an API.
 #[derive(Debug, Clone)]
@@ -205,13 +205,18 @@ impl Service {
     }
 
     /// Get task queue.
-    pub(crate) fn tasks(&self) -> impl ExactSizeIterator<Item = &Task> {
+    pub(crate) fn pending_tasks(&self) -> impl ExactSizeIterator<Item = &Task> {
         self.db.tasks.pending()
     }
 
     /// Get task queue.
     pub(crate) fn running_tasks(&self) -> impl ExactSizeIterator<Item = &Task> {
         self.db.tasks.running()
+    }
+
+    /// Get completed tasks.
+    pub(crate) fn completed_tasks(&self) -> impl ExactSizeIterator<Item = &CompletedTask> {
+        self.db.tasks.completed()
     }
 
     /// Get season summary statistics.
@@ -1157,7 +1162,7 @@ impl Service {
             }
         }
 
-        self.db.tasks.complete(&task)
+        self.db.tasks.complete(now, task)
     }
 
     /// Get remotes by series.
