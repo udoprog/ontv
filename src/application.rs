@@ -303,7 +303,6 @@ impl iced::Application for Application {
             (Message::CheckForUpdates(TimedOut::TimedOut), _, _) => {
                 let now = Utc::now();
                 self.service.find_updates(&now);
-
                 let today = now.date_naive();
 
                 if *self.state.today() != today {
@@ -408,7 +407,11 @@ impl iced::Application for Application {
         self.prepare();
 
         self.handle_image_loading();
-        self.handle_setup_queue();
+
+        if self.service.take_tasks_modified() {
+            self.handle_process_queue(None)
+        }
+
         self.commands.build()
     }
 
@@ -692,13 +695,6 @@ impl Application {
                 .load_images(self.images.drain(..).collect::<Vec<_>>()),
         );
         self.commands.perform(future, translate);
-    }
-
-    /// Setup queue processing.
-    fn handle_setup_queue(&mut self) {
-        if self.service.take_tasks_modified() {
-            self.handle_process_queue(None)
-        }
     }
 
     /// Handle process queue.

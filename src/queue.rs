@@ -262,12 +262,12 @@ impl Queue {
     }
 
     /// Push a task onto the queue.
-    pub(crate) fn push(&mut self, kind: TaskKind) -> bool {
+    pub(crate) fn push(&mut self, kind: TaskKind) {
         let task_ids = kind.task_refs();
 
         for task_id in &task_ids {
             if self.task_ids.contains_key(task_id) {
-                return false;
+                return;
             }
         }
 
@@ -294,6 +294,5 @@ impl Queue {
         });
 
         self.modified = true;
-        true
     }
 }

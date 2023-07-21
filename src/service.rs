@@ -375,8 +375,8 @@ impl Service {
     }
 
     /// Add updates to download to the queue.
-    pub(crate) fn push_task(&mut self, task: TaskKind) -> bool {
-        self.db.tasks.push(task)
+    pub(crate) fn push_task(&mut self, task: TaskKind) {
+        self.db.tasks.push(task);
     }
 
     /// Mark an episode as watched at the given timestamp.
