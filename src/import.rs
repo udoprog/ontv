@@ -1,3 +1,4 @@
+use std::fs::File;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -23,7 +24,6 @@ pub fn import_trakt_watched(
 
     let filter = filter.map(Tokens::new);
 
-    use std::fs::File;
     let f = File::open(path)?;
     let rows: Vec<serde_json::Value> = serde_json::from_reader(f)?;
 
