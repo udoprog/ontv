@@ -322,7 +322,7 @@ impl iced::Application for Application {
                 match result {
                     Ok(task) => {
                         if let Some(task) = task {
-                            self.service.push_task(task);
+                            self.service.push_task(&now, task);
                         }
                     }
                     Err(error) => {

@@ -321,7 +321,7 @@ impl Service {
                 RemoteSeriesId::Imdb { .. } => continue,
             };
 
-            self.db.tasks.push(kind);
+            self.db.tasks.push(now, kind);
         }
     }
 
@@ -375,8 +375,8 @@ impl Service {
     }
 
     /// Add updates to download to the queue.
-    pub(crate) fn push_task(&mut self, task: TaskKind) {
-        self.db.tasks.push(task);
+    pub(crate) fn push_task(&mut self, now: &DateTime<Utc>, task: TaskKind) {
+        self.db.tasks.push(now, task);
     }
 
     /// Mark an episode as watched at the given timestamp.

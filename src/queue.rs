@@ -262,7 +262,7 @@ impl Queue {
     }
 
     /// Push a task onto the queue.
-    pub(crate) fn push(&mut self, kind: TaskKind) {
+    pub(crate) fn push(&mut self, now: &DateTime<Utc>, kind: TaskKind) {
         let task_ids = kind.task_refs();
 
         for task_id in &task_ids {
@@ -279,18 +279,12 @@ impl Queue {
 
         self.status.insert(id, TaskStatus::Pending);
 
-        let scheduled = self
-            .data
-            .iter()
-            .flat_map(|t| t.scheduled)
-            .next_back()
-            .unwrap_or_else(Utc::now)
-            + Duration::milliseconds(DELAY_MILLIS);
+        let scheduled = self.data.back().and_then(|t| t.scheduled).unwrap_or(*now);
 
         self.data.push_back(Task {
             id,
             kind,
-            scheduled: Some(scheduled),
+            scheduled: Some(scheduled + Duration::milliseconds(DELAY_MILLIS)),
         });
 
         self.modified = true;
