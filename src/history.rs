@@ -16,7 +16,7 @@ pub(crate) enum Page {
     Movie(page::movie::State),
     Settings,
     Season(page::season::State),
-    Queue,
+    Queue(page::queue::State),
     Errors,
 }
 

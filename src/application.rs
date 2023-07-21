@@ -207,7 +207,7 @@ impl iced::Application for Application {
                         );
                     }
                 }
-                Page::Queue => {
+                Page::Queue(..) => {
                     return format!("{BASE} - Queue");
                 }
                 Page::Errors => {
@@ -394,7 +394,7 @@ impl iced::Application for Application {
                 Page::Movie(state) => Current::Movie(page::Movie::new(state)),
                 Page::Settings => Current::Settings(page::Settings::default()),
                 Page::Season(state) => Current::Season(page::Season::new(state)),
-                Page::Queue => {
+                Page::Queue(..) => {
                     let page = page::Queue::new(self.commands.by_ref().map(Message::Queue));
                     Current::Queue(page)
                 }
@@ -481,8 +481,8 @@ impl iced::Application for Application {
             top_menu = top_menu.push(menu_item(
                 page,
                 text,
-                |p| matches!(p, Page::Queue),
-                || Page::Queue,
+                |p| matches!(p, Page::Queue(..)),
+                || Page::Queue(page::queue::State::default()),
             ));
         }
 
@@ -789,7 +789,9 @@ impl Application {
             (Current::Season(page), Some(Page::Season(state))) => {
                 page.view(ctxt_ref!(self), state)?.map(Message::Season)
             }
-            (Current::Queue(page), _) => page.view(ctxt_ref!(self)).map(Message::Queue),
+            (Current::Queue(page), Some(Page::Queue(state))) => {
+                page.view(ctxt_ref!(self), state).map(Message::Queue)
+            }
             (Current::Errors(page), _) => page.view(ctxt_ref!(self)).map(Message::Errors),
             _ => return Err(anyhow!("illegal page state")),
         };

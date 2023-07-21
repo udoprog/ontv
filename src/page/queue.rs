@@ -1,11 +1,22 @@
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
+
 use crate::prelude::*;
 use crate::queue::TaskKind;
 use crate::utils::{TimedOut, Timeout};
 
 const LIMIT: usize = 8;
 const UPDATE_TIMER: u64 = 10;
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum State {
+    #[default]
+    Default,
+    Pending,
+    Completed,
+}
 
 enum Temporal {
     Past,
@@ -51,9 +62,11 @@ impl Queue {
             Message::Navigate(page) => {
                 cx.push_history(page);
             }
-            Message::Tick(..) => {
-                let future = self.timeout.set(Duration::from_secs(UPDATE_TIMER));
-                commands.perform(future, Message::Tick);
+            Message::Tick(timed_out) => {
+                if matches!(timed_out, TimedOut::TimedOut) {
+                    let future = self.timeout.set(Duration::from_secs(UPDATE_TIMER));
+                    commands.perform(future, Message::Tick);
+                }
             }
             Message::OpenRemoteSeries(remote_id) => {
                 let url = remote_id.url();
@@ -66,7 +79,7 @@ impl Queue {
         }
     }
 
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>, state: &State) -> Element<'static, Message> {
         let now = Utc::now();
 
         let queue = {
@@ -83,12 +96,17 @@ impl Queue {
             }
 
             macro_rules! more {
-                ($iter:ident) => {
-                    if $iter.len() > 0 {
-                        list = list.push(w::text(format!("{} more", $iter.len())).size(SMALL));
+                ($iter:ident, $toggle:ident) => {
+                    if matches!(state, State::Default) {
+                        if $iter.len() > 0 {
+                            list = list.push(
+                                link(w::text(format!("{} more", $iter.len())).size(SMALL))
+                                    .on_press(Message::Navigate(Page::Queue(State::$toggle))),
+                            );
 
-                        if peek!() {
-                            list = list.push(w::horizontal_rule(1));
+                            if peek!() {
+                                list = list.push(w::horizontal_rule(1));
+                            }
                         }
                     }
                 };
@@ -110,66 +128,79 @@ impl Queue {
                 };
             }
 
-            title!(running, "Running", "No running tasks");
+            if matches!(state, State::Default) {
+                title!(running, "Running", "No running tasks");
 
-            while let Some(task) = running.next() {
-                let mut row = w::Row::new();
-                let update = build_task_row(cx, &task.kind, Temporal::Now);
-                row = row.push(update.width(Length::Fill).spacing(GAP));
+                while let Some(task) = running.next() {
+                    let mut row = w::Row::new();
+                    let update = build_task_row(cx, &task.kind, Temporal::Now);
+                    row = row.push(update.width(Length::Fill).spacing(GAP));
 
-                list = list.push(row.width(Length::Fill).spacing(GAP));
+                    list = list.push(row.width(Length::Fill).spacing(GAP));
 
-                if peek!() {
-                    list = list.push(w::horizontal_rule(1));
+                    if peek!() {
+                        list = list.push(w::horizontal_rule(1));
+                    }
                 }
             }
 
-            title!(pending, "Pending", "No pending tasks");
+            if matches!(state, State::Default | State::Pending) {
+                title!(pending, "Pending", "No pending tasks");
 
-            for _ in 0..LIMIT {
-                let Some(task) = pending.next() else {
-                    break;
-                };
+                for _ in 0..matches!(state, State::Pending)
+                    .then_some(usize::MAX)
+                    .unwrap_or(LIMIT)
+                {
+                    let Some(task) = pending.next() else {
+                        break;
+                    };
 
-                let mut row = build_task_row(cx, &task.kind, Temporal::Future);
+                    let mut row = build_task_row(cx, &task.kind, Temporal::Future);
 
-                let duration = match &task.scheduled {
-                    Some(scheduled) => now.signed_duration_since(*scheduled),
-                    None => chrono::Duration::zero(),
-                };
+                    let duration = match &task.scheduled {
+                        Some(scheduled) => now.signed_duration_since(*scheduled),
+                        None => chrono::Duration::zero(),
+                    };
 
-                let when = duration_display(duration);
-                row = row.push(when.size(SMALL));
+                    let when = duration_display(duration);
+                    row = row.push(when.size(SMALL));
 
-                list = list.push(row.width(Length::Fill).spacing(GAP));
+                    list = list.push(row.width(Length::Fill).spacing(GAP));
 
-                if peek!() {
-                    list = list.push(w::horizontal_rule(1));
+                    if peek!() {
+                        list = list.push(w::horizontal_rule(1));
+                    }
                 }
+
+                more!(pending, Pending);
             }
 
-            more!(pending);
-            title!(completed, "Completed", "No completed tasks");
+            if matches!(state, State::Default | State::Completed) {
+                title!(completed, "Completed", "No completed tasks");
 
-            for _ in 0..LIMIT {
-                let Some(c) = completed.next() else {
-                    break;
-                };
+                for _ in 0..matches!(state, State::Completed)
+                    .then_some(usize::MAX)
+                    .unwrap_or(LIMIT)
+                {
+                    let Some(c) = completed.next() else {
+                        break;
+                    };
 
-                let mut row = build_task_row(cx, &c.task.kind, Temporal::Past);
+                    let mut row = build_task_row(cx, &c.task.kind, Temporal::Past);
 
-                let duration = now.signed_duration_since(c.at);
-                let when = duration_display(duration);
-                row = row.push(when.size(SMALL));
+                    let duration = now.signed_duration_since(c.at);
+                    let when = duration_display(duration);
+                    row = row.push(when.size(SMALL));
 
-                list = list.push(row.width(Length::Fill).spacing(GAP));
+                    list = list.push(row.width(Length::Fill).spacing(GAP));
 
-                if peek!() {
-                    list = list.push(w::horizontal_rule(1));
+                    if peek!() {
+                        list = list.push(w::horizontal_rule(1));
+                    }
                 }
-            }
 
-            more!(completed);
+                more!(completed, Completed);
+            }
 
             list.spacing(SPACE)
         };
