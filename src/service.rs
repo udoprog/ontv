@@ -293,13 +293,13 @@ impl Service {
 
             // Reduce the number of API requests by ensuring we don't check for
             // updates more than each CACHE_TIME interval.
-            if let Some(last_sync) = self.db.sync.last_sync(&s.id, &remote_id) {
+            if let Some(last_sync) = self.db.sync.last_sync(&remote_id) {
                 if now.signed_duration_since(*last_sync).num_seconds() < CACHE_TIME {
                     continue;
                 }
             }
 
-            let last_modified = self.db.sync.last_modified(&s.id, &remote_id).copied();
+            let last_modified = self.db.sync.last_modified(&remote_id).copied();
 
             let kind = match remote_id {
                 RemoteSeriesId::Tvdb { .. } => TaskKind::CheckForUpdates {
@@ -855,24 +855,20 @@ impl Service {
             }
         }
 
-        if let Some(etag) = data.last_etag {
-            if self
-                .db
-                .sync
-                .update_last_etag(&series_id, &data.series.remote_id, etag)
-            {
-                self.db.changes.change(Change::Sync);
-            }
+        if self
+            .db
+            .sync
+            .update_last_etag(data.series.remote_id, data.last_etag)
+        {
+            self.db.changes.change(Change::Sync);
         }
 
-        if let Some(last_modified) = &data.last_modified {
-            if self.db.sync.update_last_modified(
-                &series_id,
-                &data.series.remote_id,
-                Some(last_modified),
-            ) {
-                self.db.changes.change(Change::Sync);
-            }
+        if self
+            .db
+            .sync
+            .update_last_modified(data.series.remote_id, data.last_modified)
+        {
+            self.db.changes.change(Change::Sync);
         }
 
         let mut episodes = Vec::with_capacity(data.episodes.len());
@@ -1142,12 +1138,11 @@ impl Service {
     #[inline]
     pub(crate) fn complete_task(&mut self, now: &DateTime<Utc>, task: Task) -> Option<TaskStatus> {
         if let TaskKind::CheckForUpdates {
-            series_id,
             remote_id,
             last_modified,
+            ..
         }
         | TaskKind::DownloadSeries {
-            series_id,
             remote_id,
             last_modified,
             ..
@@ -1156,7 +1151,7 @@ impl Service {
             if self
                 .db
                 .sync
-                .series_update_sync(series_id, remote_id, now, last_modified.as_ref())
+                .series_update_sync(*remote_id, *now, *last_modified)
             {
                 self.db.changes.change(Change::Sync);
             }
@@ -1179,8 +1174,8 @@ impl Service {
     }
 
     /// Get last etag for the given series id.
-    pub(crate) fn last_etag(&self, id: &SeriesId, remote_id: &RemoteSeriesId) -> Option<&Etag> {
-        self.db.sync.last_etag(id, remote_id)
+    pub(crate) fn last_etag(&self, remote_id: &RemoteSeriesId) -> Option<&Etag> {
+        self.db.sync.last_etag(remote_id)
     }
 }
 

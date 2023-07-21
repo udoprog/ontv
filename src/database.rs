@@ -351,27 +351,22 @@ fn migrate_series(db: &mut Database, s: &mut Series) {
         db.changes.change(Change::Series);
     }
 
-    if let Some(remote_id) = &s.remote_id {
+    if let Some(remote_id) = s.remote_id {
         if let Some(etag) = s.compat_last_etag.take() {
-            if db.sync.update_last_etag(&s.id, remote_id, etag) {
+            if db.sync.update_last_etag(remote_id, Some(etag)) {
                 db.changes.change(Change::Sync);
             }
         }
 
-        let last_modified = s.compat_last_modified.take();
-
-        if let Some(last_modified) = &last_modified {
-            if db
-                .sync
-                .update_last_modified(&s.id, remote_id, Some(last_modified))
-            {
+        if let Some(last_modified) = s.compat_last_modified.take() {
+            if db.sync.update_last_modified(remote_id, Some(last_modified)) {
                 db.changes.change(Change::Sync);
             }
         }
     }
 
     for (remote_id, last_sync) in std::mem::take(&mut s.compat_last_sync) {
-        if db.sync.import_last_sync(&s.id, &remote_id, &last_sync) {
+        if db.sync.import_last_sync(remote_id, last_sync) {
             db.changes.change(Change::Sync);
         }
     }

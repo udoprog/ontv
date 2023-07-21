@@ -57,14 +57,6 @@ id!(MovieId);
 id!(WatchedId);
 id!(TaskId);
 
-impl SeriesId {
-    /// Get underlying uuid.
-    #[inline]
-    pub(crate) fn id(&self) -> &Uuid {
-        &self.0
-    }
-}
-
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum ThemeType {

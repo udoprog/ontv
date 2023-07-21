@@ -37,7 +37,7 @@ impl<'a> CtxtRef<'a> {
         let none_if_match = if force {
             None
         } else {
-            self.service.last_etag(series_id, remote_id).cloned()
+            self.service.last_etag(remote_id).cloned()
         };
 
         self.service
