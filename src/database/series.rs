@@ -45,11 +45,6 @@ impl Database {
         Iter::new(self.by_name.iter().map(|(_, key)| key), &self.data)
     }
 
-    /// Iterate over all series mutably in the database.
-    pub(crate) fn iter_mut(&mut self) -> impl ExactSizeIterator<Item = &mut Series> {
-        self.data.iter_mut().map(|data| data.1)
-    }
-
     /// Export series data.
     pub(crate) fn export(&self) -> impl IntoIterator<Item = Series> + 'static {
         let mut out = Vec::with_capacity(self.by_name.len());

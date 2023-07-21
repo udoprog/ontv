@@ -21,6 +21,8 @@ use crate::database::{Change, Database, EpisodeRef, SeasonRef};
 use crate::model::*;
 use crate::queue::{CompletedTask, Task, TaskKind, TaskRef, TaskStatus};
 
+// Cache series updates for 12 hours.
+const CACHE_TIME: i64 = 3600 * 12;
 /// A series update as produced by an API.
 #[derive(Debug, Clone)]
 pub(crate) struct UpdateSeries {
@@ -279,14 +281,7 @@ impl Service {
 
     /// Find updates that need to be performed.
     pub(crate) fn find_updates(&mut self, now: &DateTime<Utc>) {
-        // Cache series updates for 6 hours.
-        const CACHE_TIME: i64 = 3600 * 6;
-
-        for s in self.db.series.iter_mut() {
-            if self.db.tasks.at_soft_capacity() {
-                break;
-            }
-
+        for s in self.db.series.iter() {
             // Ignore series which are no longer tracked.
             if !s.tracked {
                 continue;
@@ -305,6 +300,11 @@ impl Service {
             }
 
             let last_modified = self.db.sync.last_modified(&remote_id).copied();
+
+            if matches!(last_modified, Some(last_modified) if now.signed_duration_since(last_modified).num_seconds() < CACHE_TIME)
+            {
+                continue;
+            }
 
             let kind = match remote_id {
                 RemoteSeriesId::Tvdb { .. } => TaskKind::CheckForUpdates {
