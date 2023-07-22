@@ -14,6 +14,7 @@ const UPDATE_TIMER: u64 = 10;
 pub(crate) enum State {
     #[default]
     Default,
+    Running,
     Pending,
     Completed,
 }
@@ -128,10 +129,17 @@ impl Queue {
                 };
             }
 
-            if matches!(state, State::Default) {
+            if matches!(state, State::Default | State::Running) {
                 title!(running, "Running", "No running tasks");
 
-                while let Some(task) = running.next() {
+                for _ in 0..matches!(state, State::Running)
+                    .then_some(usize::MAX)
+                    .unwrap_or(LIMIT)
+                {
+                    let Some(task) = running.next() else {
+                        break;
+                    };
+
                     let mut row = w::Row::new();
                     let update = build_task_row(cx, &task.kind, Temporal::Now);
                     row = row.push(update.width(Length::Fill).spacing(GAP));
@@ -142,6 +150,8 @@ impl Queue {
                         list = list.push(w::horizontal_rule(1));
                     }
                 }
+
+                more!(running, Running);
             }
 
             if matches!(state, State::Default | State::Pending) {
