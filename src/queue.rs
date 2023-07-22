@@ -119,7 +119,7 @@ pub(crate) struct Queue {
     /// Blocked tasks.
     task_ids: HashMap<TaskRef, TaskId>,
     /// Items in the download queue.
-    data: VecDeque<Task>,
+    pending: VecDeque<Task>,
     /// Collection of running tasks.
     running: Vec<Task>,
     /// Completed tasks.
@@ -160,7 +160,7 @@ impl Queue {
     /// Get queue data.
     #[inline]
     pub(crate) fn pending(&self) -> impl ExactSizeIterator<Item = &Task> {
-        self.data.iter()
+        self.pending.iter()
     }
 
     /// Get list of completed tasks.
@@ -176,7 +176,7 @@ impl Queue {
     {
         let mut removed = 0;
 
-        for data in &self.data {
+        for data in &self.pending {
             if predicate(data) {
                 let _ = self.status.remove(&data.id);
 
@@ -188,7 +188,7 @@ impl Queue {
             }
         }
 
-        self.data.retain(move |task| !predicate(task));
+        self.pending.retain(move |task| !predicate(task));
         self.modified |= removed > 0;
         removed
     }
@@ -205,7 +205,7 @@ impl Queue {
         now: &DateTime<Utc>,
         timed_out: Option<TaskId>,
     ) -> Option<Task> {
-        let task = self.data.front()?;
+        let task = self.pending.front()?;
 
         if !matches!(timed_out, Some(id) if id == task.id)
             && task.scheduled.map(|s| s > *now).unwrap_or_default()
@@ -213,7 +213,7 @@ impl Queue {
             return None;
         }
 
-        let task = self.data.pop_front()?;
+        let task = self.pending.pop_front()?;
         self.status.insert(task.id, TaskStatus::Running);
         self.running.push(task.clone());
         Some(task)
@@ -221,7 +221,7 @@ impl Queue {
 
     /// Next sleep.
     pub(crate) fn next_sleep(&self, now: &DateTime<Utc>) -> Option<(u64, TaskId)> {
-        let task = self.data.front()?;
+        let task = self.pending.front()?;
         let id = task.id;
 
         let Some(scheduled) = &task.scheduled else {
@@ -251,7 +251,7 @@ impl Queue {
             self.task_ids.insert(task_id, id);
         }
 
-        self.data.push_front(Task {
+        self.pending.push_front(Task {
             id,
             kind,
             scheduled: None,
@@ -279,9 +279,13 @@ impl Queue {
 
         self.status.insert(id, TaskStatus::Pending);
 
-        let scheduled = self.data.back().and_then(|t| t.scheduled).unwrap_or(*now);
+        let scheduled = self
+            .pending
+            .back()
+            .and_then(|t| t.scheduled)
+            .unwrap_or(*now);
 
-        self.data.push_back(Task {
+        self.pending.push_back(Task {
             id,
             kind,
             scheduled: Some(scheduled + Duration::milliseconds(DELAY_MILLIS)),

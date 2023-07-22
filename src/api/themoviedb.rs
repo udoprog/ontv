@@ -4,13 +4,10 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::{DateTime, NaiveDate, Utc};
-use futures::stream::FuturesUnordered;
-use futures::StreamExt;
 use leaky_bucket::RateLimiter;
 use relative_path::RelativePath;
 use reqwest::header;
-use reqwest::StatusCode;
-use reqwest::{Method, RequestBuilder, Response, Url};
+use reqwest::{Method, RequestBuilder, Response, StatusCode, Url};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
@@ -359,43 +356,15 @@ impl Client {
 
         let details: Details = response("tv/{id}/season/{number}", details).await?;
 
-        let mut episodes = Vec::new();
-        let mut output = Vec::with_capacity(details.episodes.len());
-        let mut it = details.episodes.into_iter();
+        let mut episodes = Vec::with_capacity(details.episodes.len());
 
-        let mut tasks = FuturesUnordered::new();
+        for e in details.episodes {
+            let remote_id = RemoteEpisodeId::Tmdb { id: e.id };
 
-        let mut index = 0..;
+            let d = self
+                .download_remote_ids(remote_id, series_id, season_number, e, &lookup)
+                .await?;
 
-        loop {
-            while tasks.len() {
-                let Some(e) = it.next() else {
-                    break;
-                };
-
-                let remote_id = RemoteEpisodeId::Tmdb { id: e.id };
-
-                tasks.push(self.download_remote_ids(
-                    index.next().context("overflow")?,
-                    remote_id,
-                    series_id,
-                    season_number,
-                    e,
-                    &lookup,
-                ));
-            }
-
-            let Some(result) = tasks.next().await else {
-                break;
-            };
-
-            let d = result?;
-            output.push(d);
-        }
-
-        output.sort_by(|a, b| a.key.cmp(&b.key));
-
-        for d in output {
             let mut graphics = EpisodeGraphics::default();
             graphics.filename = d.episode.still_path.as_deref().and_then(ImageV2::tmdb);
 
@@ -429,7 +398,6 @@ impl Client {
 
     async fn download_remote_ids(
         &self,
-        index: usize,
         remote_id: RemoteEpisodeId,
         series_id: u32,
         season_number: u32,
@@ -473,7 +441,6 @@ impl Client {
         };
 
         Ok(DownloadEpisode {
-            key: (episode.episode_number, index),
             remote_ids,
             remote_id,
             id,
@@ -645,7 +612,6 @@ struct EpisodeDetail {
 }
 
 struct DownloadEpisode {
-    key: (u32, usize),
     remote_ids: BTreeSet<RemoteEpisodeId>,
     remote_id: RemoteEpisodeId,
     id: EpisodeId,
