@@ -130,6 +130,7 @@ mod database;
 mod error;
 mod history;
 pub mod import;
+pub mod lock;
 mod model;
 mod page;
 mod params;

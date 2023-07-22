@@ -2260,6 +2260,7 @@ dependencies = [
  "twox-hash",
  "uuid",
  "webbrowser",
+ "windows-sys 0.48.0",
  "winres",
 ]
 

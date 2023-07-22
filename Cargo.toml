@@ -53,6 +53,12 @@ twox-hash = "1.6.3"
 uuid = { version = "1.4.1", features = ["v4", "serde"] }
 webbrowser = "0.8.10"
 
+[target.'cfg(windows)'.dependencies.windows-sys]
+version = "0.48.0"
+features = [
+    "Win32_System_Threading"
+]
+
 [build-dependencies]
 anyhow = "1.0.72"
 winres = "0.1.12"
