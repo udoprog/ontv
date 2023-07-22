@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::{DateTime, NaiveDate, Utc};
+use leaky_bucket::RateLimiter;
 use relative_path::RelativePath;
 use reqwest::{Method, RequestBuilder, Response, Url};
 use serde::de::DeserializeOwned;
@@ -43,6 +44,7 @@ pub(crate) struct Client {
     state: Arc<State>,
     client: reqwest::Client,
     api_key: Arc<str>,
+    limit: Arc<RateLimiter>,
 }
 
 impl Client {
@@ -61,6 +63,14 @@ impl Client {
                 .pool_idle_timeout(IDLE_TIMEOUT)
                 .build()?,
             api_key: api_key.as_ref().into(),
+            limit: Arc::new(
+                RateLimiter::builder()
+                    .max(50)
+                    .initial(0)
+                    .refill(1)
+                    .interval(Duration::from_millis(100))
+                    .build(),
+            ),
         })
     }
 
@@ -138,6 +148,7 @@ impl Client {
         I: IntoIterator,
         I::Item: AsRef<str>,
     {
+        self.limit.acquire_one().await;
         let token = self.login().await?;
         Ok(self.request(method, segments).bearer_auth(&token))
     }

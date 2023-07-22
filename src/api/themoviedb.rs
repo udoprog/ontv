@@ -21,7 +21,6 @@ use crate::service::{NewEpisode, UpdateSeries};
 const BASE_URL: &str = "https://api.themoviedb.org/3";
 const IMAGE_URL: &str = "https://image.tmdb.org";
 const IDLE_TIMEOUT: Duration = Duration::from_secs(10);
-const PARALLELISM: usize = 10;
 
 struct State {
     base_url: Url,
@@ -369,7 +368,7 @@ impl Client {
         let mut index = 0..;
 
         loop {
-            while tasks.len() < PARALLELISM {
+            while tasks.len() {
                 let Some(e) = it.next() else {
                     break;
                 };
