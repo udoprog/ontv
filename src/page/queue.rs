@@ -140,10 +140,7 @@ impl Queue {
                         break;
                     };
 
-                    let mut row = w::Row::new();
-                    let update = build_task_row(cx, &task.kind, Temporal::Now);
-                    row = row.push(update.width(Length::Fill).spacing(GAP));
-
+                    let row = build_task_row(cx, &task.kind, Temporal::Now);
                     list = list.push(row.width(Length::Fill).spacing(GAP));
 
                     if peek!() {
@@ -165,16 +162,14 @@ impl Queue {
                         break;
                     };
 
+                    let duration = task
+                        .scheduled
+                        .as_ref()
+                        .map(|s| now.signed_duration_since(*s))
+                        .unwrap_or_else(chrono::Duration::zero);
+
                     let mut row = build_task_row(cx, &task.kind, Temporal::Future);
-
-                    let duration = match &task.scheduled {
-                        Some(scheduled) => now.signed_duration_since(*scheduled),
-                        None => chrono::Duration::zero(),
-                    };
-
-                    let when = duration_display(duration);
-                    row = row.push(when.size(SMALL));
-
+                    row = row.push(duration_display(duration).size(SMALL));
                     list = list.push(row.width(Length::Fill).spacing(GAP));
 
                     if peek!() {
@@ -197,11 +192,7 @@ impl Queue {
                     };
 
                     let mut row = build_task_row(cx, &c.task.kind, Temporal::Past);
-
-                    let duration = now.signed_duration_since(c.at);
-                    let when = duration_display(duration);
-                    row = row.push(when.size(SMALL));
-
+                    row = row.push(duration_display(now.signed_duration_since(c.at)).size(SMALL));
                     list = list.push(row.width(Length::Fill).spacing(GAP));
 
                     if peek!() {
@@ -242,7 +233,7 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<
             };
 
             update = update.push(w::text(text).size(SMALL));
-            update = decorate_series(cx, series_id, Some(remote_id), update);
+            update = decorate_series(cx, *series_id, *remote_id, update);
         }
         TaskKind::DownloadSeries {
             series_id,
@@ -256,7 +247,7 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<
             };
 
             update = update.push(w::text(text).size(SMALL));
-            update = decorate_series(cx, series_id, Some(remote_id), update);
+            update = decorate_series(cx, *series_id, *remote_id, update);
         }
         TaskKind::DownloadSeriesByRemoteId { remote_id, .. } => {
             let text = match t {
@@ -293,29 +284,22 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<
 
 fn decorate_series<'a>(
     cx: &CtxtRef<'_>,
-    series_id: &SeriesId,
-    remote_id: Option<&RemoteSeriesId>,
+    series_id: SeriesId,
+    remote_id: RemoteSeriesId,
     mut row: w::Row<'a, Message>,
 ) -> w::Row<'a, Message> {
-    let remote_id = if let Some(series) = cx.service.series(series_id) {
-        row = row.push(
-            link(w::text(&series.title).size(SMALL))
-                .on_press(Message::Navigate(page::series::page(*series_id))),
-        );
+    row = row
+        .push(link(w::text(remote_id).size(SMALL)).on_press(Message::OpenRemoteSeries(remote_id)));
 
-        remote_id.or(series.remote_id.as_ref())
+    let text = if let Some(series) = cx.service.series(&series_id) {
+        w::text(&series.title)
     } else {
-        row = row.push(w::text(format!("{series_id}")).size(SMALL));
-        remote_id
+        w::text(format!("{series_id}"))
     };
 
-    if let Some(remote_id) = remote_id {
-        row = row.push(
-            link(w::text(remote_id).size(SMALL))
-                .width(Length::Fill)
-                .on_press(Message::OpenRemoteSeries(*remote_id)),
-        );
-    }
-
-    row
+    row.push(
+        link(text.size(SMALL))
+            .width(Length::Fill)
+            .on_press(Message::Navigate(page::series::page(series_id))),
+    )
 }
