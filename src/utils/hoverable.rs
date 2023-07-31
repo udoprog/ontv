@@ -1,9 +1,11 @@
+use iced::advanced::layout;
+use iced::advanced::renderer;
+use iced::advanced::widget::tree::{self, Tree};
+use iced::advanced::{Clipboard, Layout, Shell, Widget};
+use iced::event::{self, Event};
+use iced::mouse::Cursor;
 use iced::overlay;
-use iced_native::event::{self, Event};
-use iced_native::layout;
-use iced_native::renderer;
-use iced_native::widget::tree::{self, Tree};
-use iced_native::{Clipboard, Element, Layout, Length, Point, Rectangle, Shell, Widget};
+use iced::{Element, Length, Rectangle};
 
 const WIDTH: Length = Length::Shrink;
 const HEIGHT: Length = Length::Shrink;
@@ -20,7 +22,7 @@ pub(crate) struct Hoverable<'a, Message, Renderer> {
 
 impl<'a, Message, Renderer> Hoverable<'a, Message, Renderer>
 where
-    Renderer: iced_native::Renderer,
+    Renderer: iced::advanced::Renderer,
 {
     pub(crate) fn new(content: impl Into<Element<'a, Message, Renderer>>) -> Self {
         Self {
@@ -38,7 +40,7 @@ where
 impl<'a, Message: 'a, Renderer> Widget<Message, Renderer> for Hoverable<'a, Message, Renderer>
 where
     Message: Clone,
-    Renderer: iced_native::Renderer,
+    Renderer: iced::advanced::Renderer,
 {
     #[inline]
     fn tag(&self) -> tree::Tag {
@@ -65,10 +67,11 @@ where
         tree: &mut Tree,
         event: Event,
         layout: Layout<'_>,
-        cursor_position: Point,
+        cursor_position: Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
+        viewport: &Rectangle,
     ) -> event::Status {
         if let event::Status::Captured = self.content.as_widget_mut().on_event(
             &mut tree.children[0],
@@ -78,13 +81,17 @@ where
             renderer,
             clipboard,
             shell,
+            viewport,
         ) {
             return event::Status::Captured;
         }
 
         let mut state = tree.state.downcast_mut::<State>();
 
-        match (state.hovered, layout.bounds().contains(cursor_position)) {
+        match (
+            state.hovered,
+            cursor_position.position_over(layout.bounds()).is_some(),
+        ) {
             (true, false) => {
                 state.hovered = false;
             }
@@ -122,10 +129,10 @@ where
         &self,
         state: &Tree,
         renderer: &mut Renderer,
-        theme: &<Renderer as iced_native::Renderer>::Theme,
+        theme: &<Renderer as iced::advanced::Renderer>::Theme,
         style: &renderer::Style,
         layout: Layout<'_>,
-        cursor_position: Point,
+        cursor_position: Cursor,
         _viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
@@ -146,10 +153,10 @@ where
         &self,
         state: &Tree,
         layout: Layout<'_>,
-        cursor_position: Point,
+        cursor_position: Cursor,
         viewport: &Rectangle,
         renderer: &Renderer,
-    ) -> iced_native::mouse::Interaction {
+    ) -> iced::advanced::mouse::Interaction {
         self.content.as_widget().mouse_interaction(
             &state.children[0],
             layout.children().next().unwrap(),
@@ -177,7 +184,7 @@ impl<'a, Message: 'a, Renderer: 'a> From<Hoverable<'a, Message, Renderer>>
     for Element<'a, Message, Renderer>
 where
     Message: Clone,
-    Renderer: iced_native::Renderer,
+    Renderer: iced::advanced::Renderer,
 {
     #[inline]
     fn from(hoverable: Hoverable<'a, Message, Renderer>) -> Self {

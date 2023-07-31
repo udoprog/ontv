@@ -9,8 +9,8 @@ use std::sync::Arc;
 use anyhow::{anyhow, bail, Context, Error, Result};
 use chrono::{DateTime, Days, Local, NaiveDate, Utc};
 use futures::stream::FuturesUnordered;
+use iced::advanced::image::Handle;
 use iced::Theme;
-use iced_native::image::Handle;
 use tracing_futures::Instrument;
 
 use crate::api::themoviedb;

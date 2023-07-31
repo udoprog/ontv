@@ -1,7 +1,6 @@
 use chrono::Duration;
 use iced::widget::{Column, Container, Text};
-use iced::Element;
-use iced_native::Pixels;
+use iced::{Element, Pixels};
 
 use crate::cache::ImageHint;
 use crate::style;

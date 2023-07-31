@@ -5,7 +5,7 @@ use std::path::Path;
 use std::pin::Pin;
 
 use anyhow::{bail, Result};
-use iced_native::image::Handle;
+use iced::advanced::image::Handle;
 use image_rs::imageops::FilterType;
 use image_rs::{DynamicImage, GenericImageView};
 use relative_path::RelativePath;

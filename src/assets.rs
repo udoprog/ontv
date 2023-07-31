@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use iced::advanced::image::Handle;
 use iced::Theme;
-use iced_native::image::Handle;
 
 use crate::cache::ImageHint;
 use crate::model::{ImageHash, ImageV2};

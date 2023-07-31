@@ -5,8 +5,8 @@ pub(crate) use self::buf::CommandsBuf;
 
 use std::future::Future;
 
+use iced::Command;
 use iced_futures::MaybeSend;
-use iced_native::Command;
 
 /// Send commands to an iced application.
 #[doc(hidden)]
@@ -122,7 +122,7 @@ pub trait Commands<T> {
     ///
     /// ```
     /// # // NB: we don't have access to iced here so faking it.
-    /// # mod iced { pub(crate) mod window { pub(crate) fn close<Message>() -> iced_native::Command<Message> { todo!() } } }
+    /// # mod iced { pub(crate) mod window { pub(crate) fn close<Message>() -> iced::Command<Message> { todo!() } } }
     /// # use ontv::commands::Commands;
     /// enum Message {
     ///     /* snip */

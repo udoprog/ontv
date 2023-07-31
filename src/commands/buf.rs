@@ -1,8 +1,8 @@
 use std::fmt;
 use std::future::Future;
 
+use iced::Command;
 use iced_futures::MaybeSend;
-use iced_native::Command;
 
 use crate::commands::Commands;
 

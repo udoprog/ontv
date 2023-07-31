@@ -22,7 +22,7 @@ impl<'a> CtxtRef<'a> {
     }
 
     #[inline]
-    pub(crate) fn missing_poster(&self) -> iced_native::image::Handle {
+    pub(crate) fn missing_poster(&self) -> iced::advanced::image::Handle {
         self.assets.missing_poster(self.service.theme())
     }
 

@@ -1,8 +1,8 @@
 use std::time::Duration;
 
+use iced::advanced::image::Handle;
 use iced::window;
 use iced::{Command, Theme};
-use iced_native::image::Handle;
 
 use crate::assets::{Assets, ImageKey};
 use crate::commands::{Commands, CommandsBuf};
@@ -70,7 +70,7 @@ pub(crate) enum Message {
     /// Navigate history by the specified stride.
     History(isize),
     /// A scroll happened.
-    Scroll(w::scrollable::RelativeOffset),
+    Scroll(w::scrollable::Viewport),
     /// Images have been loaded in the background.
     ImagesLoaded(Result<Vec<(ImageKey, Handle)>, ErrorInfo>),
     /// Update download queue with the given items.
@@ -337,7 +337,7 @@ impl iced::Application for Application {
                 self.history_mutations.navigate(relative);
             }
             (Message::Scroll(offset), _, _) => {
-                self.history.history_scroll(offset);
+                self.history.history_scroll(offset.relative_offset());
             }
             (Message::ImagesLoaded(loaded), _, _) => {
                 match loaded {
@@ -418,18 +418,20 @@ impl iced::Application for Application {
     #[inline]
     fn subscription(&self) -> iced::Subscription<Self::Message> {
         use iced::{event, mouse, Event};
-        return iced_native::subscription::events_with(handle_event);
+        return iced::subscription::events_with(handle_event);
 
         fn handle_event(event: Event, status: event::Status) -> Option<Message> {
             let event::Status::Ignored = status else {
                 return None;
             };
 
+            tracing::info!(?event);
+
             match event {
                 Event::Window(window::Event::CloseRequested) => Some(Message::CloseRequested),
                 Event::Mouse(mouse::Event::ButtonPressed(button)) => match button {
-                    mouse::Button::Other(32) => Some(Message::History(-1)),
-                    mouse::Button::Other(64) => Some(Message::History(1)),
+                    mouse::Button::Other(1) => Some(Message::History(-1)),
+                    mouse::Button::Other(2) => Some(Message::History(1)),
                     _ => None,
                 },
                 _ => None,
