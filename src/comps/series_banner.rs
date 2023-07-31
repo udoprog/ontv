@@ -37,8 +37,12 @@ impl SeriesBanner {
 
         let banner = w::image(handle);
 
-        let title = link(w::text(&series.title).size(TITLE_SIZE))
-            .on_press(Message::Navigate(page::series::page(series.id)));
+        let title = link(
+            w::text(&series.title)
+                .shaping(w::text::Shaping::Advanced)
+                .size(TITLE_SIZE),
+        )
+        .on_press(Message::Navigate(page::series::page(series.id)));
 
         w::Column::new()
             .push(banner)

@@ -209,7 +209,7 @@ impl Series {
             .push(info);
 
         if !series.overview.is_empty() {
-            header = header.push(w::text(&series.overview));
+            header = header.push(w::text(&series.overview).shaping(w::text::Shaping::Advanced));
         }
 
         let header = centered(header.spacing(GAP), None).padding(GAP);

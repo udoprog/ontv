@@ -620,7 +620,9 @@ fn render_series(
 ) -> w::Button<'static, Message> {
     menu_item(
         page,
-        w::text(&series.title).size(SUB_MENU_SIZE),
+        w::text(&series.title)
+            .shaping(w::text::Shaping::Advanced)
+            .size(SUB_MENU_SIZE),
         |p| matches!(p, Page::Series(page::series::State { id }) if *id == *series_id),
         || page::series::page(*series_id),
     )

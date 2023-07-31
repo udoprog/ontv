@@ -273,7 +273,9 @@ impl Search {
 
             let mut result = w::Column::new();
 
-            let series_name = w::text(&s.name).size(SUBTITLE_SIZE);
+            let series_name = w::text(&s.name)
+                .shaping(w::text::Shaping::Advanced)
+                .size(SUBTITLE_SIZE);
 
             if let Some(local_series) = local_series {
                 result = result.push(
@@ -293,7 +295,7 @@ impl Search {
                     .push(
                         w::Column::new()
                             .push(result.spacing(SPACE))
-                            .push(w::text(&s.overview))
+                            .push(w::text(&s.overview).shaping(w::text::Shaping::Advanced))
                             .spacing(GAP),
                     )
                     .spacing(GAP),
@@ -367,8 +369,6 @@ impl Search {
                 }
             }
 
-            let overview = m.overview.as_str();
-
             let mut release_date = w::Column::new();
 
             if let Some(date) = m.release_date {
@@ -378,7 +378,9 @@ impl Search {
 
             let mut result = w::Column::new();
 
-            let movie_title = w::text(&m.title).size(SUBTITLE_SIZE);
+            let movie_title = w::text(&m.title)
+                .shaping(w::text::Shaping::Advanced)
+                .size(SUBTITLE_SIZE);
 
             if let Some(local_movie) = local_movie {
                 result = result.push(
@@ -398,7 +400,7 @@ impl Search {
                     .push(
                         w::Column::new()
                             .push(result.spacing(SPACE))
-                            .push(w::text(overview))
+                            .push(w::text(&m.overview).shaping(w::text::Shaping::Advanced))
                             .spacing(GAP),
                     )
                     .spacing(GAP),

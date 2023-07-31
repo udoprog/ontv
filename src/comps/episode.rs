@@ -279,8 +279,12 @@ impl Episode {
 
         if let Some(p) = pending_series {
             info_top = info_top.push(
-                link(w::text(&p.series.title).size(SUBTITLE_SIZE))
-                    .on_press(Message::Navigate(page::series::page(p.series.id))),
+                link(
+                    w::text(&p.series.title)
+                        .shaping(w::text::Shaping::Advanced)
+                        .size(SUBTITLE_SIZE),
+                )
+                .on_press(Message::Navigate(page::series::page(p.series.id))),
             );
 
             if let Some(season) = p.season {
@@ -299,7 +303,9 @@ impl Episode {
             .push(show_info.spacing(SPACE))
             .spacing(SPACE);
 
-        let mut info = w::Column::new().push(info_top).push(w::text(&e.overview));
+        let mut info = w::Column::new()
+            .push(info_top)
+            .push(w::text(&e.overview).shaping(w::text::Shaping::Advanced));
 
         if watched.len() > 0 {
             let mut history = w::Column::new();

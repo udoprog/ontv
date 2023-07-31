@@ -292,7 +292,7 @@ fn decorate_series<'a>(
         .push(link(w::text(remote_id).size(SMALL)).on_press(Message::OpenRemoteSeries(remote_id)));
 
     let text = if let Some(series) = cx.service.series(&series_id) {
-        w::text(&series.title)
+        w::text(&series.title).shaping(w::text::Shaping::Advanced)
     } else {
         w::text(format!("{series_id}"))
     };

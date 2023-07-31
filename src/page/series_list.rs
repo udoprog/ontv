@@ -93,8 +93,12 @@ impl SeriesList {
 
             let episodes = cx.service.episodes(&series.id);
 
-            let title = link(w::text(&series.title).size(SUBTITLE_SIZE))
-                .on_press(Message::Navigate(page::series::page(series.id)));
+            let title = link(
+                w::text(&series.title)
+                    .shaping(w::text::Shaping::Advanced)
+                    .size(SUBTITLE_SIZE),
+            )
+            .on_press(Message::Navigate(page::series::page(series.id)));
 
             let actions = actions
                 .view(cx, series)
@@ -111,7 +115,8 @@ impl SeriesList {
             );
 
             if !series.overview.is_empty() {
-                content = content.push(w::text(&series.overview));
+                content =
+                    content.push(w::text(&series.overview).shaping(w::text::Shaping::Advanced));
             }
 
             rows = rows.push(

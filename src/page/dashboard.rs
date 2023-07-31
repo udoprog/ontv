@@ -400,7 +400,7 @@ impl Dashboard {
                         .push(Hoverable::new(episode).on_hover(Message::HoverScheduled(series.id)));
                 }
 
-                let title = link(w::text(&series.title))
+                let title = link(w::text(&series.title).shaping(w::text::Shaping::Advanced))
                     .on_press(Message::Navigate(page::series::page(series.id)));
 
                 series_column = series_column
@@ -438,7 +438,7 @@ fn episode_title(episode: &Episode) -> w::Text<'static> {
     }
 
     if let Some(name) = &episode.name {
-        w::text(format!("{episode_number}: {name}"))
+        w::text(format!("{episode_number}: {name}")).shaping(w::text::Shaping::Advanced)
     } else {
         w::text(episode_number)
     }
