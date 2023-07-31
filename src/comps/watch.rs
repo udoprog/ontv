@@ -90,16 +90,16 @@ impl Watch {
 
         if self.confirm {
             let buttons = [
-                w::button(w::text("Now").size(SMALL))
+                w::button(w::text("Now").size(SMALL_SIZE))
                     .style(right_now)
                     .on_press(Message::RightNow),
-                w::button(w::text("Air date").size(SMALL))
+                w::button(w::text("Air date").size(SMALL_SIZE))
                     .style(air_date)
                     .on_press(Message::AirDate),
                 w::button(
                     w::text("Cancel")
                         .horizontal_alignment(Horizontal::Center)
-                        .size(SMALL),
+                        .size(SMALL_SIZE),
                 )
                 .style(theme::Button::Secondary)
                 .width(width)
@@ -107,7 +107,7 @@ impl Watch {
             ];
 
             let head = if reminder {
-                Some(w::button(w::text(title).size(SMALL)).style(theme::Button::Secondary))
+                Some(w::button(w::text(title).size(SMALL_SIZE)).style(theme::Button::Secondary))
             } else {
                 None
             };
@@ -130,7 +130,7 @@ impl Watch {
             row = row.push(
                 w::button(
                     w::text(title)
-                        .size(SMALL)
+                        .size(SMALL_SIZE)
                         .width(Length::Fill)
                         .horizontal_alignment(alignment),
                 )

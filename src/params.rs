@@ -5,14 +5,14 @@ use iced::{Element, Pixels};
 use crate::cache::ImageHint;
 use crate::style;
 
-pub(crate) const SPACE: u16 = 5;
-pub(crate) const GAP: u16 = 20;
-pub(crate) const GAP2: u16 = GAP * 2;
+pub(crate) const SPACE: f32 = 5.0;
+pub(crate) const GAP: f32 = 20.0;
+pub(crate) const GAP2: f32 = GAP * 2.0;
 
-pub(crate) const TITLE_SIZE: u16 = 32;
-pub(crate) const SUBTITLE_SIZE: u16 = 24;
-pub(crate) const SMALL: f32 = 16.0;
-pub(crate) const SUB_MENU_SIZE: u16 = 16;
+pub(crate) const TITLE_SIZE: Pixels = Pixels(28.0);
+pub(crate) const SUBTITLE_SIZE: Pixels = Pixels(20.0);
+pub(crate) const SUB_MENU_SIZE: Pixels = Pixels(14.0);
+pub(crate) const SMALL_SIZE: Pixels = Pixels(14.0);
 
 pub(crate) const CONTAINER_WIDTH: Pixels = Pixels(1200.0);
 

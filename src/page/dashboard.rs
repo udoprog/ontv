@@ -126,8 +126,8 @@ impl Dashboard {
             modify = modify.push(
                 w::button(
                     w::text("-")
-                        .width(SMALL)
-                        .size(SMALL)
+                        .width(SMALL_SIZE)
+                        .size(SMALL_SIZE)
                         .horizontal_alignment(Horizontal::Center),
                 )
                 .style(theme::Button::Secondary)
@@ -138,8 +138,8 @@ impl Dashboard {
         modify = modify.push(
             w::button(
                 w::text("+")
-                    .width(SMALL)
-                    .size(SMALL)
+                    .width(SMALL_SIZE)
+                    .size(SMALL_SIZE)
                     .horizontal_alignment(Horizontal::Center),
             )
             .style(theme::Button::Secondary)
@@ -148,20 +148,20 @@ impl Dashboard {
 
         if cx.service.config().dashboard_limit > 1 {
             modify = modify.push(
-                w::button(w::text("reset").size(SMALL))
+                w::button(w::text("reset").size(SMALL_SIZE))
                     .style(theme::Button::Secondary)
                     .on_press(Message::ResetPending),
             );
 
             modify = modify.push(
-                w::button(w::text("show less...").size(SMALL))
+                w::button(w::text("show less...").size(SMALL_SIZE))
                     .style(theme::Button::Secondary)
                     .on_press(Message::ShowLessPending),
             );
         }
 
         modify = modify.push(
-            w::button(w::text("show more...").size(SMALL))
+            w::button(w::text("show more...").size(SMALL_SIZE))
                 .style(theme::Button::Secondary)
                 .on_press(Message::ShowMorePending),
         );
@@ -256,7 +256,7 @@ impl Dashboard {
                     w::button(
                         w::text("Skip")
                             .horizontal_alignment(Horizontal::Center)
-                            .size(SMALL),
+                            .size(SMALL_SIZE),
                     )
                     .style(theme::Button::Secondary)
                     .on_press(Message::Skip(series.id, episode.id))
@@ -274,7 +274,7 @@ impl Dashboard {
                     w::button(
                         w::text(format_args!("{len}"))
                             .horizontal_alignment(Horizontal::Center)
-                            .size(SMALL),
+                            .size(SMALL_SIZE),
                     )
                     .style(style)
                     .width(Length::FillPortion(2)),
@@ -286,13 +286,13 @@ impl Dashboard {
             let episode_title = episode_title(&episode);
 
             if let Some(air_date) = &episode.aired {
-                panel = panel.push(w::text(format!("Aired: {air_date}")).size(SMALL));
+                panel = panel.push(w::text(format!("Aired: {air_date}")).size(SMALL_SIZE));
             }
 
             panel = panel.push(
                 link(
                     episode_title
-                        .size(SMALL)
+                        .size(SMALL_SIZE)
                         .horizontal_alignment(Horizontal::Center),
                 )
                 .on_press(Message::Navigate(page::season::page(
@@ -392,7 +392,7 @@ impl Dashboard {
                         None => format!("{}x{}", episode.season.short(), episode.number),
                     };
 
-                    let episode = link(w::text(name).size(SMALL)).on_press(Message::Navigate(
+                    let episode = link(w::text(name).size(SMALL_SIZE)).on_press(Message::Navigate(
                         page::season::page(series.id, episode.season),
                     ));
 

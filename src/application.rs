@@ -12,7 +12,7 @@ use crate::error::ErrorInfo;
 use crate::history::{History, HistoryMutations, Page};
 use crate::model::ImageV2;
 use crate::page;
-use crate::params::{GAP, SMALL, SPACE, SUB_MENU_SIZE};
+use crate::params::{GAP, SMALL_SIZE, SPACE, SUB_MENU_SIZE};
 use crate::prelude::*;
 use crate::queue::{Task, TaskKind};
 use crate::service::{NewSeries, Service};
@@ -570,7 +570,8 @@ impl iced::Application for Application {
         let mut any = false;
 
         if self.state.is_saving() {
-            status_bar = status_bar.push(w::Row::new().push(w::text("Saving... ").size(SMALL)));
+            status_bar =
+                status_bar.push(w::Row::new().push(w::text("Saving... ").size(SMALL_SIZE)));
             any = true;
         }
 
@@ -580,7 +581,7 @@ impl iced::Application for Application {
 
         if errors != 0 {
             status_bar = status_bar.push(
-                w::button(w::text(format_args!("Errors ({errors})")).size(SMALL))
+                w::button(w::text(format_args!("Errors ({errors})")).size(SMALL_SIZE))
                     .style(theme::Button::Destructive)
                     .on_press(Message::Navigate(Page::Errors)),
             );

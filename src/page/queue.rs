@@ -101,7 +101,7 @@ impl Queue {
                     if matches!(state, State::Default) {
                         if $iter.len() > 0 {
                             list = list.push(
-                                link(w::text(format!("{} more", $iter.len())).size(SMALL))
+                                link(w::text(format!("{} more", $iter.len())).size(SMALL_SIZE))
                                     .on_press(Message::Navigate(Page::Queue(State::$toggle))),
                             );
 
@@ -120,7 +120,7 @@ impl Queue {
                         .push(w::horizontal_rule(1));
 
                     if $iter.len() == 0 {
-                        list = list.push(w::text($empty).size(SMALL));
+                        list = list.push(w::text($empty).size(SMALL_SIZE));
 
                         if peek!() {
                             list = list.push(w::horizontal_rule(1));
@@ -169,7 +169,7 @@ impl Queue {
                         .unwrap_or_else(chrono::Duration::zero);
 
                     let mut row = build_task_row(cx, &task.kind, Temporal::Future);
-                    row = row.push(duration_display(duration).size(SMALL));
+                    row = row.push(duration_display(duration).size(SMALL_SIZE));
                     list = list.push(row.width(Length::Fill).spacing(GAP));
 
                     if peek!() {
@@ -192,7 +192,8 @@ impl Queue {
                     };
 
                     let mut row = build_task_row(cx, &c.task.kind, Temporal::Past);
-                    row = row.push(duration_display(now.signed_duration_since(c.at)).size(SMALL));
+                    row = row
+                        .push(duration_display(now.signed_duration_since(c.at)).size(SMALL_SIZE));
                     list = list.push(row.width(Length::Fill).spacing(GAP));
 
                     if peek!() {
@@ -232,7 +233,7 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<
                 Temporal::Future => "Update",
             };
 
-            update = update.push(w::text(text).size(SMALL));
+            update = update.push(w::text(text).size(SMALL_SIZE));
             update = decorate_series(cx, *series_id, *remote_id, update);
         }
         TaskKind::DownloadSeries {
@@ -246,7 +247,7 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<
                 Temporal::Future => "Update series",
             };
 
-            update = update.push(w::text(text).size(SMALL));
+            update = update.push(w::text(text).size(SMALL_SIZE));
             update = decorate_series(cx, *series_id, *remote_id, update);
         }
         TaskKind::DownloadSeriesByRemoteId { remote_id, .. } => {
@@ -256,9 +257,9 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<
                 Temporal::Future => "Update series",
             };
 
-            update = update.push(w::text(text).size(SMALL).width(Length::Fill));
+            update = update.push(w::text(text).size(SMALL_SIZE).width(Length::Fill));
             update = update.push(
-                link(w::text(remote_id).size(SMALL))
+                link(w::text(remote_id).size(SMALL_SIZE))
                     .width(Length::Fill)
                     .on_press(Message::OpenRemoteSeries(*remote_id)),
             );
@@ -270,9 +271,9 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<
                 Temporal::Future => "Update movie",
             };
 
-            update = update.push(w::text(text).size(SMALL).width(Length::Fill));
+            update = update.push(w::text(text).size(SMALL_SIZE).width(Length::Fill));
             update = update.push(
-                link(w::text(remote_id).size(SMALL))
+                link(w::text(remote_id).size(SMALL_SIZE))
                     .width(Length::Fill)
                     .on_press(Message::OpenRemoteMovie(*remote_id)),
             );
@@ -288,8 +289,9 @@ fn decorate_series<'a>(
     remote_id: RemoteSeriesId,
     mut row: w::Row<'a, Message>,
 ) -> w::Row<'a, Message> {
-    row = row
-        .push(link(w::text(remote_id).size(SMALL)).on_press(Message::OpenRemoteSeries(remote_id)));
+    row = row.push(
+        link(w::text(remote_id).size(SMALL_SIZE)).on_press(Message::OpenRemoteSeries(remote_id)),
+    );
 
     let text = if let Some(series) = cx.service.series(&series_id) {
         w::text(&series.title).shaping(w::text::Shaping::Advanced)
@@ -298,7 +300,7 @@ fn decorate_series<'a>(
     };
 
     row.push(
-        link(text.size(SMALL))
+        link(text.size(SMALL_SIZE))
             .width(Length::Fill)
             .on_press(Message::Navigate(page::series::page(series_id))),
     )

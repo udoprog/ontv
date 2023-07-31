@@ -62,13 +62,13 @@ impl SeriesActions {
 
         if series.tracked {
             row = row.push(
-                w::button(w::text("Untrack").size(SMALL))
+                w::button(w::text("Untrack").size(SMALL_SIZE))
                     .style(theme::Button::Destructive)
                     .on_press(Message::Untrack),
             );
         } else {
             row = row.push(
-                w::button(w::text("Track").size(SMALL))
+                w::button(w::text("Track").size(SMALL_SIZE))
                     .style(theme::Button::Positive)
                     .on_press(Message::Track),
             );
@@ -80,18 +80,20 @@ impl SeriesActions {
 
         match status {
             Some(TaskStatus::Pending) => {
-                row = row
-                    .push(w::button(w::text("Refresh").size(SMALL)).style(theme::Button::Positive));
+                row = row.push(
+                    w::button(w::text("Refresh").size(SMALL_SIZE)).style(theme::Button::Positive),
+                );
             }
             Some(TaskStatus::Running) => {
                 row = row.push(
-                    w::button(w::text("Downloading...").size(SMALL)).style(theme::Button::Primary),
+                    w::button(w::text("Downloading...").size(SMALL_SIZE))
+                        .style(theme::Button::Primary),
                 );
             }
             None => {
                 if let Some(remote_id) = series.remote_id {
                     row = row.push(
-                        w::button(w::text("Refresh").size(SMALL))
+                        w::button(w::text("Refresh").size(SMALL_SIZE))
                             .style(theme::Button::Positive)
                             .on_press(Message::RefreshSeries(remote_id)),
                     );
@@ -100,7 +102,7 @@ impl SeriesActions {
         }
 
         row = row.push(
-            w::button(w::text("Remove").size(SMALL))
+            w::button(w::text("Remove").size(SMALL_SIZE))
                 .style(theme::Button::Destructive)
                 .on_press(Message::RemoveSeries),
         );

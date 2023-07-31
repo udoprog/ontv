@@ -109,16 +109,16 @@ impl Series {
 
             for remote_id in remote_ids {
                 let mut row = w::Row::new().push(
-                    w::button(w::text(remote_id).size(SMALL))
+                    w::button(w::text(remote_id).size(SMALL_SIZE))
                         .style(theme::Button::Primary)
                         .on_press(Message::OpenRemote(remote_id)),
                 );
 
                 if series.remote_id.as_ref() == Some(&remote_id) {
-                    row = row.push(w::button(w::text("Current").size(SMALL)));
+                    row = row.push(w::button(w::text("Current").size(SMALL_SIZE)));
                 } else if remote_id.is_supported() {
-                    let button =
-                        w::button(w::text("Switch").size(SMALL)).style(theme::Button::Positive);
+                    let button = w::button(w::text("Switch").size(SMALL_SIZE))
+                        .style(theme::Button::Positive);
 
                     let status = cx.service.task_status_any([
                         TaskRef::RemoteSeries { remote_id },
@@ -177,9 +177,9 @@ impl Series {
 
             if let (Some(start), end) = (first.and_then(|e| e.aired), last.and_then(|e| e.aired)) {
                 let text = if let Some(end) = end {
-                    w::text(format_args!("{start} - {end}")).size(SMALL)
+                    w::text(format_args!("{start} - {end}")).size(SMALL_SIZE)
                 } else {
-                    w::text(format_args!("{start} -")).size(SMALL)
+                    w::text(format_args!("{start} -")).size(SMALL_SIZE)
                 };
 
                 column = column.push(text);

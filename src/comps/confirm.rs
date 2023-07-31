@@ -106,11 +106,11 @@ impl Confirm {
 
         if self.confirm {
             let buttons = [
-                w::button(w::text(title).size(SMALL)).style(theme::Button::Secondary),
-                w::button(w::text("Confirm").size(SMALL))
+                w::button(w::text(title).size(SMALL_SIZE)).style(theme::Button::Secondary),
+                w::button(w::text("Confirm").size(SMALL_SIZE))
                     .style(initial_theme)
                     .on_press(Message::Confirm),
-                w::button(w::text("Cancel").size(SMALL))
+                w::button(w::text("Cancel").size(SMALL_SIZE))
                     .style(theme::Button::Secondary)
                     .on_press(Message::Cancel),
             ];
@@ -129,7 +129,7 @@ impl Confirm {
             }
         } else {
             row = row.push(
-                w::button(w::text(title).size(SMALL))
+                w::button(w::text(title).size(SMALL_SIZE))
                     .style(initial_theme)
                     .on_press(Message::Start),
             );

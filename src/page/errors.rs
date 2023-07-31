@@ -30,7 +30,7 @@ impl Errors {
                 }
             }
 
-            error = error.push(w::text(format!("At: {}", e.timestamp)).size(SMALL));
+            error = error.push(w::text(format!("At: {}", e.timestamp)).size(SMALL_SIZE));
             error = error.push(w::text(&e.message));
 
             for cause in &e.causes {

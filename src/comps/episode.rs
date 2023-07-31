@@ -1,7 +1,7 @@
 use crate::component::{Component, ComponentInitExt};
 use crate::comps;
 use crate::model::{EpisodeId, Watched};
-use crate::params::{GAP, SCREENCAP_HINT, SMALL, SPACE};
+use crate::params::{GAP, SCREENCAP_HINT, SMALL_SIZE, SPACE};
 use crate::prelude::*;
 
 #[derive(Debug, Clone)]
@@ -232,13 +232,13 @@ impl Episode {
         if !any_confirm {
             if !pending {
                 actions = actions.push(
-                    w::button(w::text("Make next episode").size(SMALL))
+                    w::button(w::text("Make next episode").size(SMALL_SIZE))
                         .style(theme::Button::Secondary)
                         .on_press(Message::SelectPending(e.id)),
                 );
             } else {
                 actions = actions.push(
-                    w::button(w::text("Clear next episode").size(SMALL))
+                    w::button(w::text("Clear next episode").size(SMALL_SIZE))
                         .style(theme::Button::Destructive)
                         .on_press(Message::ClearPending(e.id)),
                 );
@@ -249,9 +249,11 @@ impl Episode {
 
         if let Some(air_date) = &e.aired {
             if air_date > cx.state.today() {
-                show_info = show_info.push(w::text(format_args!("Airs: {air_date}")).size(SMALL));
+                show_info =
+                    show_info.push(w::text(format_args!("Airs: {air_date}")).size(SMALL_SIZE));
             } else {
-                show_info = show_info.push(w::text(format_args!("Aired: {air_date}")).size(SMALL));
+                show_info =
+                    show_info.push(w::text(format_args!("Aired: {air_date}")).size(SMALL_SIZE));
             }
         }
 
@@ -273,7 +275,7 @@ impl Episode {
             }
         };
 
-        show_info = show_info.push(watched_text.size(SMALL));
+        show_info = show_info.push(watched_text.size(SMALL_SIZE));
 
         let mut info_top = w::Column::new();
 
@@ -317,14 +319,14 @@ impl Episode {
 
                 row = row.push(
                     w::text(format!("#{}", n + 1))
-                        .size(SMALL)
+                        .size(SMALL_SIZE)
                         .width(24.0)
                         .horizontal_alignment(Horizontal::Left),
                 );
 
                 row = row.push(
                     w::text(watch.timestamp.date_naive())
-                        .size(SMALL)
+                        .size(SMALL_SIZE)
                         .width(Length::Fill),
                 );
 

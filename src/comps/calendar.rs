@@ -70,7 +70,7 @@ impl Calendar {
 
         for (date, o) in self.week(self.start_of_week).zip(cols.iter_mut()) {
             let mut col = mem::replace(o, placeholder);
-            col = col.push(w::text(format_week(date)).size(SMALL));
+            col = col.push(w::text(format_week(date)).size(SMALL_SIZE));
             placeholder = mem::replace(o, col);
         }
 
@@ -83,7 +83,7 @@ impl Calendar {
             let mut button = w::button(
                 w::text(date.day())
                     .width(Length::Fill)
-                    .size(SMALL)
+                    .size(SMALL_SIZE)
                     .horizontal_alignment(Horizontal::Center),
             );
 
@@ -116,7 +116,8 @@ impl Calendar {
 
         let mut title = w::Row::new();
 
-        title = title.push(w::button(w::text("Prev").size(SMALL)).on_press(Message::PrevMonth));
+        title =
+            title.push(w::button(w::text("Prev").size(SMALL_SIZE)).on_press(Message::PrevMonth));
 
         title = title.push(
             w::text(format!(
@@ -128,7 +129,8 @@ impl Calendar {
             .width(Length::Fill),
         );
 
-        title = title.push(w::button(w::text("Next").size(SMALL)).on_press(Message::NextMonth));
+        title =
+            title.push(w::button(w::text("Next").size(SMALL_SIZE)).on_press(Message::NextMonth));
 
         column = column.push(title.spacing(SPACE));
         column = column.push(row.spacing(SPACE));

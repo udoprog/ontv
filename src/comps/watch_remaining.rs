@@ -97,14 +97,14 @@ impl WatchRemaining {
 
         if self.confirm {
             let buttons = [
-                w::button(w::text(title).size(SMALL)).style(theme::Button::Secondary),
-                w::button(w::text("Right now").size(SMALL))
+                w::button(w::text(title).size(SMALL_SIZE)).style(theme::Button::Secondary),
+                w::button(w::text("Right now").size(SMALL_SIZE))
                     .style(right_now)
                     .on_press(Message::RightNow),
-                w::button(w::text("Air date").size(SMALL))
+                w::button(w::text("Air date").size(SMALL_SIZE))
                     .style(air_date)
                     .on_press(Message::AirDate),
-                w::button(w::text("Cancel").size(SMALL))
+                w::button(w::text("Cancel").size(SMALL_SIZE))
                     .style(theme::Button::Secondary)
                     .on_press(Message::Cancel),
             ];
@@ -123,7 +123,7 @@ impl WatchRemaining {
             }
         } else {
             row = row.push(
-                w::button(w::text(title).size(SMALL))
+                w::button(w::text(title).size(SMALL_SIZE))
                     .style(right_now)
                     .on_press(Message::Start),
             );
