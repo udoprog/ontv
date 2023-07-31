@@ -28,6 +28,7 @@ const CACHE_TIME: i64 = 3600 * 12;
 pub(crate) struct UpdateSeries {
     pub(crate) id: SeriesId,
     pub(crate) title: String,
+    pub(crate) language: Option<String>,
     pub(crate) first_air_date: Option<NaiveDate>,
     pub(crate) overview: String,
     pub(crate) graphics: SeriesGraphics,
@@ -794,8 +795,14 @@ impl Service {
 
                     for season in &seasons {
                         let new_episodes = tmdb
-                            .download_episodes(id, season.number, &lookup_episode)
+                            .download_episodes(
+                                id,
+                                season.number,
+                                series.language.as_deref(),
+                                &lookup_episode,
+                            )
                             .await?;
+
                         episodes.extend(new_episodes);
                     }
 

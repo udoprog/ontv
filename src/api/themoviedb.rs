@@ -117,7 +117,7 @@ impl Client {
 
             output.push(SearchSeries {
                 id: RemoteSeriesId::Tmdb { id: row.id },
-                name: row.name.unwrap_or_default(),
+                name: row.original_name.unwrap_or_default(),
                 poster,
                 overview: row.overview.unwrap_or_default(),
                 first_aired,
@@ -130,7 +130,7 @@ impl Client {
         struct Row {
             id: u32,
             #[serde(default)]
-            name: Option<String>,
+            original_name: Option<String>,
             #[serde(default)]
             overview: Option<String>,
             #[serde(default)]
@@ -176,6 +176,9 @@ impl Client {
             id: u32,
             #[serde(default)]
             original_title: Option<String>,
+            #[serde(default)]
+            #[allow(unused)]
+            original_language: Option<String>,
             #[serde(default)]
             overview: Option<String>,
             #[serde(default)]
@@ -263,7 +266,8 @@ impl Client {
 
         let series = UpdateSeries {
             id,
-            title: details.name.unwrap_or_default(),
+            title: details.original_name.or(details.name).unwrap_or_default(),
+            language: details.original_language.filter(|s| !s.is_empty()),
             first_air_date: details.first_air_date,
             overview: details.overview.unwrap_or_default(),
             graphics,
@@ -303,6 +307,10 @@ impl Client {
             #[serde(default)]
             name: Option<String>,
             #[serde(default)]
+            original_name: Option<String>,
+            #[serde(default)]
+            original_language: Option<String>,
+            #[serde(default)]
             overview: Option<String>,
             #[serde(default)]
             poster_path: Option<String>,
@@ -333,11 +341,22 @@ impl Client {
         &self,
         series_id: u32,
         season: SeasonNumber,
+        language: Option<&str>,
         lookup: impl common::LookupEpisodeId,
     ) -> Result<Vec<NewEpisode>> {
         let season_number = match season {
             SeasonNumber::Specials => 0,
             SeasonNumber::Number(n) => n,
+        };
+
+        let pair;
+
+        let query = match language {
+            Some(language) => {
+                pair = [("language", language)];
+                &pair[..]
+            }
+            None => &[],
         };
 
         let details = self
@@ -351,6 +370,7 @@ impl Client {
                 ],
             )
             .await
+            .query(query)
             .send()
             .await?;
 

@@ -191,6 +191,8 @@ impl Client {
             #[serde(default)]
             series_name: String,
             #[serde(default)]
+            original_language: Option<String>,
+            #[serde(default)]
             airs_day_of_week: Option<String>,
             #[serde(default)]
             airs_time: Option<String>,
@@ -231,6 +233,7 @@ impl Client {
         let series = UpdateSeries {
             id,
             title: value.series_name.to_owned(),
+            language: value.original_language.filter(|s| !s.is_empty()),
             first_air_date: None,
             overview: value.overview.unwrap_or_default(),
             graphics,

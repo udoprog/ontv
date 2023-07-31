@@ -180,7 +180,7 @@ impl Episode {
         name = name.push(w::text(e.number));
 
         if let Some(string) = &e.name {
-            name = name.push(w::text(string));
+            name = name.push(w::text(string).shaping(w::text::Shaping::Advanced));
         }
 
         let watched = cx.service.watched(&e.id);
