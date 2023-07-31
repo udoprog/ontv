@@ -425,7 +425,7 @@ impl iced::Application for Application {
                 return None;
             };
 
-            tracing::info!(?event);
+            tracing::trace!(?event);
 
             match event {
                 Event::Window(window::Event::CloseRequested) => Some(Message::CloseRequested),
