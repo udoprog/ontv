@@ -38,6 +38,8 @@ mod sys {
 
 #[cfg(not(windows))]
 mod sys {
+    use std::io;
+
     pub struct Lock;
 
     impl Drop for Lock {
