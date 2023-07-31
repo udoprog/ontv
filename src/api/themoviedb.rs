@@ -97,6 +97,19 @@ impl Client {
 
     /// Search series result.
     pub(crate) async fn search_series(&self, query: &str) -> Result<Vec<SearchSeries>> {
+        #[derive(Deserialize)]
+        struct Row {
+            id: u32,
+            #[serde(default)]
+            original_name: Option<String>,
+            #[serde(default)]
+            overview: Option<String>,
+            #[serde(default)]
+            poster_path: Option<String>,
+            #[serde(default)]
+            first_air_date: Option<String>,
+        }
+
         let res = self
             .request_with_auth(Method::GET, &["search", "tv"])
             .await
@@ -124,24 +137,27 @@ impl Client {
             });
         }
 
-        return Ok(output);
+        Ok(output)
+    }
 
+    /// Search movies result.
+    pub(crate) async fn search_movies(&self, query: &str) -> Result<Vec<SearchMovie>> {
         #[derive(Deserialize)]
         struct Row {
             id: u32,
             #[serde(default)]
-            original_name: Option<String>,
+            original_title: Option<String>,
+            #[serde(default)]
+            #[allow(unused)]
+            original_language: Option<String>,
             #[serde(default)]
             overview: Option<String>,
             #[serde(default)]
             poster_path: Option<String>,
             #[serde(default)]
-            first_air_date: Option<String>,
+            release_date: Option<String>,
         }
-    }
 
-    /// Search movies result.
-    pub(crate) async fn search_movies(&self, query: &str) -> Result<Vec<SearchMovie>> {
         let res = self
             .request_with_auth(Method::GET, &["search", "movie"])
             .await
@@ -169,23 +185,7 @@ impl Client {
             });
         }
 
-        return Ok(output);
-
-        #[derive(Deserialize)]
-        struct Row {
-            id: u32,
-            #[serde(default)]
-            original_title: Option<String>,
-            #[serde(default)]
-            #[allow(unused)]
-            original_language: Option<String>,
-            #[serde(default)]
-            overview: Option<String>,
-            #[serde(default)]
-            poster_path: Option<String>,
-            #[serde(default)]
-            release_date: Option<String>,
-        }
+        Ok(output)
     }
 
     /// Download series information.
@@ -203,104 +203,6 @@ impl Client {
             Vec<Season>,
         )>,
     > {
-        let mut details = self
-            .request_with_auth(Method::GET, &["tv", &id.to_string()])
-            .await;
-
-        if let Some(etag) = if_none_match {
-            details = details.header(header::IF_NONE_MATCH, etag.as_ref());
-        }
-
-        let details = details.send().await?;
-
-        if details.status() == StatusCode::NOT_MODIFIED {
-            return Ok(None);
-        }
-
-        let external_ids = self
-            .request_with_auth(Method::GET, &["tv", &id.to_string(), "external_ids"])
-            .await
-            .send()
-            .await?;
-
-        let images = self
-            .request_with_auth(Method::GET, &["tv", &id.to_string(), "images"])
-            .await
-            .send()
-            .await?;
-
-        let last_modified = common::parse_last_modified(&details)?;
-        let last_etag = common::parse_etag(&details);
-
-        let (external_ids, details, images) = tokio::try_join!(
-            response::<ExternalIds>("tv/{id}/external_ids", external_ids),
-            response::<Details>("tv/{id}/details", details),
-            response::<Images>("tv/{id}/images", images)
-        )?;
-
-        let remote_id = RemoteSeriesId::Tmdb { id: details.id };
-
-        let mut remote_ids = BTreeSet::from([remote_id]);
-
-        for remote_id in external_ids.as_remote_series() {
-            remote_ids.insert(remote_id?);
-        }
-
-        // Try to lookup the series by known remote ids.
-        let id = lookup
-            .lookup(remote_ids.iter().copied())
-            .unwrap_or_else(SeriesId::random);
-
-        let mut graphics = SeriesGraphics::default();
-        graphics.poster = details.poster_path.as_deref().and_then(ImageV2::tmdb);
-
-        for image in images.posters {
-            graphics.posters.extend(ImageV2::tmdb(&image.file_path));
-        }
-
-        graphics.banner = details.backdrop_path.as_deref().and_then(ImageV2::tmdb);
-
-        for image in images.backdrops {
-            graphics.banners.extend(ImageV2::tmdb(&image.file_path));
-        }
-
-        let series = UpdateSeries {
-            id,
-            title: details.original_name.or(details.name).unwrap_or_default(),
-            language: details.original_language.filter(|s| !s.is_empty()),
-            first_air_date: details.first_air_date,
-            overview: details.overview.unwrap_or_default(),
-            graphics,
-            remote_id,
-        };
-
-        let mut seasons = Vec::with_capacity(details.seasons.len());
-
-        for s in details.seasons {
-            let mut graphics = SeasonGraphics::default();
-            graphics.poster = s.poster_path.as_deref().and_then(ImageV2::tmdb);
-
-            seasons.push(Season {
-                number: match s.season_number {
-                    Some(n) if n > 0 => SeasonNumber::Number(n),
-                    _ => SeasonNumber::Specials,
-                },
-                air_date: s.air_date,
-                name: s.name,
-                overview: s.overview.unwrap_or_default(),
-                compat_poster: None,
-                graphics,
-            });
-        }
-
-        return Ok(Some((
-            series,
-            remote_ids,
-            last_etag,
-            last_modified,
-            seasons,
-        )));
-
         #[derive(Deserialize)]
         struct Details {
             id: u32,
@@ -334,6 +236,120 @@ impl Client {
             #[serde(default)]
             poster_path: Option<String>,
         }
+
+        let mut details = self
+            .request_with_auth(Method::GET, &["tv", &id.to_string()])
+            .await;
+
+        if let Some(etag) = if_none_match {
+            details = details.header(header::IF_NONE_MATCH, etag.as_ref());
+        }
+
+        let details = details.send().await?;
+
+        if details.status() == StatusCode::NOT_MODIFIED {
+            return Ok(None);
+        }
+
+        let last_modified = common::parse_last_modified(&details)?;
+        let last_etag = common::parse_etag(&details);
+
+        let details = response::<Details>("tv/{id}/details", details).await?;
+
+        let language = details.original_language.filter(|s| !s.is_empty());
+
+        let external_ids = self
+            .request_with_auth(Method::GET, &["tv", &id.to_string(), "external_ids"])
+            .await
+            .send()
+            .await?;
+
+        let languages;
+        let images_query;
+
+        let image_query = match language.as_deref() {
+            Some(lang) => {
+                languages = format!("{lang},null");
+                images_query = [("include_image_language", &languages)];
+                &images_query[..]
+            }
+            None => &[][..],
+        };
+
+        let images = self
+            .request_with_auth(Method::GET, &["tv", &id.to_string(), "images"])
+            .await
+            .query(&image_query)
+            .send()
+            .await?;
+
+        let (external_ids, images) = tokio::try_join!(
+            response::<ExternalIds>("tv/{id}/external_ids", external_ids),
+            response::<Images>("tv/{id}/images", images)
+        )?;
+
+        let remote_id = RemoteSeriesId::Tmdb { id: details.id };
+
+        let mut remote_ids = BTreeSet::from([remote_id]);
+
+        for remote_id in external_ids.as_remote_series() {
+            remote_ids.insert(remote_id?);
+        }
+
+        // Try to lookup the series by known remote ids.
+        let id = lookup
+            .lookup(remote_ids.iter().copied())
+            .unwrap_or_else(SeriesId::random);
+
+        let mut graphics = SeriesGraphics::default();
+        graphics.poster = details.poster_path.as_deref().and_then(ImageV2::tmdb);
+
+        for image in images.posters {
+            graphics.posters.extend(ImageV2::tmdb(&image.file_path));
+        }
+
+        graphics.banner = details.backdrop_path.as_deref().and_then(ImageV2::tmdb);
+
+        for image in images.backdrops {
+            graphics.banners.extend(ImageV2::tmdb(&image.file_path));
+        }
+
+        let series = UpdateSeries {
+            id,
+            title: details.original_name.or(details.name).unwrap_or_default(),
+            language,
+            first_air_date: details.first_air_date,
+            overview: details.overview.unwrap_or_default(),
+            graphics,
+            remote_id,
+        };
+
+        let mut seasons = Vec::with_capacity(details.seasons.len());
+
+        for s in details.seasons {
+            let mut graphics = SeasonGraphics::default();
+            graphics.poster = s.poster_path.as_deref().and_then(ImageV2::tmdb);
+
+            seasons.push(Season {
+                number: match s.season_number {
+                    Some(n) if n > 0 => SeasonNumber::Number(n),
+                    _ => SeasonNumber::Specials,
+                },
+                air_date: s.air_date,
+                name: s.name,
+                overview: s.overview.unwrap_or_default(),
+                compat_poster: None,
+                graphics,
+            });
+        }
+
+        Ok(Some((
+            series,
+            remote_ids,
+            last_etag,
+            last_modified,
+            seasons,
+        )))
     }
 
     /// Download episodes.
@@ -344,6 +360,12 @@ impl Client {
         language: Option<&str>,
         lookup: impl common::LookupEpisodeId,
     ) -> Result<Vec<NewEpisode>> {
+        #[derive(Deserialize)]
+        struct Details {
+            #[serde(default)]
+            episodes: Vec<EpisodeDetail>,
+        }
+
         let season_number = match season {
             SeasonNumber::Specials => 0,
             SeasonNumber::Number(n) => n,
@@ -407,13 +429,7 @@ impl Client {
             });
         }
 
-        return Ok(episodes);
-
-        #[derive(Deserialize)]
-        struct Details {
-            #[serde(default)]
-            episodes: Vec<EpisodeDetail>,
-        }
+        Ok(episodes)
     }
 
     async fn download_remote_ids(
