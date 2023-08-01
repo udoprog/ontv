@@ -392,9 +392,15 @@ impl Dashboard {
                         None => format!("{}x{}", episode.season.short(), episode.number),
                     };
 
-                    let episode = link(w::text(name).size(SMALL_SIZE)).on_press(Message::Navigate(
-                        page::season::page(series.id, episode.season),
-                    ));
+                    let episode = link(
+                        w::text(name)
+                            .shaping(w::text::Shaping::Advanced)
+                            .size(SMALL_SIZE),
+                    )
+                    .on_press(Message::Navigate(page::season::page(
+                        series.id,
+                        episode.season,
+                    )));
 
                     episodes = episodes
                         .push(Hoverable::new(episode).on_hover(Message::HoverScheduled(series.id)));
