@@ -152,10 +152,14 @@ impl Default for Config {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "type")]
-pub(crate) enum RemoteId {
+pub(crate) enum RemoteIds {
     Series {
         uuid: SeriesId,
-        remotes: Vec<RemoteSeriesId>,
+        remotes: Vec<RemoteId>,
+    },
+    Movies {
+        uuid: MovieId,
+        remotes: Vec<RemoteId>,
     },
     Episode {
         uuid: EpisodeId,
@@ -207,31 +211,31 @@ impl fmt::Display for RemoteSeasonId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum RemoteSeriesId {
+pub(crate) enum RemoteId {
     Tvdb { id: u32 },
     Tmdb { id: u32 },
     Imdb { id: Raw<16> },
 }
 
-impl RemoteSeriesId {
+impl RemoteId {
     /// Coerce into a remote season.
     pub(crate) fn into_season(self, season: SeasonNumber) -> Option<RemoteSeasonId> {
         match self {
-            RemoteSeriesId::Tmdb { id } => Some(RemoteSeasonId::Tmdb { id, season }),
-            RemoteSeriesId::Imdb { id } => Some(RemoteSeasonId::Imdb { id, season }),
+            RemoteId::Tmdb { id } => Some(RemoteSeasonId::Tmdb { id, season }),
+            RemoteId::Imdb { id } => Some(RemoteSeasonId::Imdb { id, season }),
             _ => None,
         }
     }
 
     pub(crate) fn url(&self) -> String {
         match self {
-            RemoteSeriesId::Tvdb { id } => {
+            RemoteId::Tvdb { id } => {
                 format!("https://thetvdb.com/search?query={id}")
             }
-            RemoteSeriesId::Tmdb { id } => {
+            RemoteId::Tmdb { id } => {
                 format!("https://www.themoviedb.org/tv/{id}")
             }
-            RemoteSeriesId::Imdb { id } => {
+            RemoteId::Imdb { id } => {
                 format!("https://www.imdb.com/title/{id}/")
             }
         }
@@ -239,30 +243,27 @@ impl RemoteSeriesId {
 
     /// Test if the remote is supported for syncing.
     pub(crate) fn is_supported(&self) -> bool {
-        matches!(
-            self,
-            RemoteSeriesId::Tmdb { .. } | RemoteSeriesId::Tvdb { .. }
-        )
+        matches!(self, RemoteId::Tmdb { .. } | RemoteId::Tvdb { .. })
     }
 }
 
-impl fmt::Display for RemoteSeriesId {
+impl fmt::Display for RemoteId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RemoteSeriesId::Tvdb { id } => {
+            RemoteId::Tvdb { id } => {
                 write!(f, "tvdb:{id}")
             }
-            RemoteSeriesId::Tmdb { id } => {
+            RemoteId::Tmdb { id } => {
                 write!(f, "tmdb:{id}")
             }
-            RemoteSeriesId::Imdb { id } => {
+            RemoteId::Imdb { id } => {
                 write!(f, "imdb:{id}")
             }
         }
     }
 }
 
-impl Serialize for RemoteSeriesId {
+impl Serialize for RemoteId {
     #[inline]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -272,16 +273,16 @@ impl Serialize for RemoteSeriesId {
     }
 }
 
-impl<'de> Deserialize<'de> for RemoteSeriesId {
+impl<'de> Deserialize<'de> for RemoteId {
     #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
     {
-        struct RemoteSeriesIdVisitor;
+        struct RemoteIdVisitor;
 
-        impl<'de> de::Visitor<'de> for RemoteSeriesIdVisitor {
-            type Value = RemoteSeriesId;
+        impl<'de> de::Visitor<'de> for RemoteIdVisitor {
+            type Value = RemoteId;
 
             #[inline]
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -298,13 +299,13 @@ impl<'de> Deserialize<'de> for RemoteSeriesId {
                     .ok_or_else(|| de::Error::custom("missing `:`"))?;
 
                 match head {
-                    "tmdb" => Ok(RemoteSeriesId::Tmdb {
+                    "tmdb" => Ok(RemoteId::Tmdb {
                         id: tail.parse().map_err(E::custom)?,
                     }),
-                    "tvdb" => Ok(RemoteSeriesId::Tvdb {
+                    "tvdb" => Ok(RemoteId::Tvdb {
                         id: tail.parse().map_err(E::custom)?,
                     }),
-                    "imdb" => Ok(RemoteSeriesId::Imdb {
+                    "imdb" => Ok(RemoteId::Imdb {
                         id: Raw::new(tail)
                             .ok_or_else(|| de::Error::custom("overflowing imdb identifier"))?,
                     }),
@@ -341,13 +342,13 @@ impl<'de> Deserialize<'de> for RemoteSeriesId {
                 let id = id.into_deserializer();
 
                 match remote.as_str() {
-                    "tmdb" => Ok(RemoteSeriesId::Tmdb {
+                    "tmdb" => Ok(RemoteId::Tmdb {
                         id: u32::deserialize(id).map_err(de::Error::custom)?,
                     }),
-                    "tvdb" => Ok(RemoteSeriesId::Tvdb {
+                    "tvdb" => Ok(RemoteId::Tvdb {
                         id: u32::deserialize(id).map_err(de::Error::custom)?,
                     }),
-                    "imdb" => Ok(RemoteSeriesId::Imdb {
+                    "imdb" => Ok(RemoteId::Imdb {
                         id: Raw::deserialize(id).map_err(de::Error::custom)?,
                     }),
                     kind => Err(de::Error::invalid_value(de::Unexpected::Str(kind), &self)),
@@ -355,7 +356,7 @@ impl<'de> Deserialize<'de> for RemoteSeriesId {
             }
         }
 
-        deserializer.deserialize_any(RemoteSeriesIdVisitor)
+        deserializer.deserialize_any(RemoteIdVisitor)
     }
 }
 
@@ -479,39 +480,6 @@ impl<'de> Deserialize<'de> for RemoteEpisodeId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", tag = "remote")]
-pub(crate) enum RemoteMovieId {
-    Tmdb { id: u32 },
-    Imdb { id: Raw<16> },
-}
-
-impl RemoteMovieId {
-    pub(crate) fn url(&self) -> String {
-        match self {
-            RemoteMovieId::Tmdb { id } => {
-                format!("https://www.themoviedb.org/tv/{id}")
-            }
-            RemoteMovieId::Imdb { id } => {
-                format!("https://www.imdb.com/title/{id}/")
-            }
-        }
-    }
-}
-
-impl fmt::Display for RemoteMovieId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RemoteMovieId::Tmdb { id } => {
-                write!(f, "themoviedb.org ({id})")
-            }
-            RemoteMovieId::Imdb { id } => {
-                write!(f, "imdb.com ({id})")
-            }
-        }
-    }
-}
-
 /// Graphics which have been customized.
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -520,6 +488,50 @@ pub(crate) enum CustomGraphic {
     Poster,
     /// A series banner.
     Banner,
+}
+
+/// Associated series graphics.
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) struct MovieGraphics {
+    /// Graphical elements which have been customized.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub(crate) custom: BTreeSet<CustomGraphic>,
+    /// Poster image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) poster: Option<ImageV2>,
+    /// Available alternative poster images.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub(crate) posters: BTreeSet<ImageV2>,
+    /// Banner image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) banner: Option<ImageV2>,
+    /// Available alternative banner images.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub(crate) banners: BTreeSet<ImageV2>,
+    /// Fanart image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) fanart: Option<ImageV2>,
+}
+
+impl MovieGraphics {
+    fn merge_from(&mut self, other: Self) {
+        if !self.custom.contains(&CustomGraphic::Poster) {
+            self.poster = other.poster;
+        }
+
+        if !self.custom.contains(&CustomGraphic::Banner) {
+            self.banner = other.banner;
+        }
+
+        self.posters = other.posters;
+        self.banners = other.banners;
+        self.fanart = other.fanart;
+    }
+
+    fn is_empty(&self) -> bool {
+        self.poster.is_none() && self.banner.is_none() && self.fanart.is_none()
+    }
 }
 
 /// Associated series graphics.
@@ -588,7 +600,7 @@ pub(crate) struct Series {
     pub(crate) tracked: bool,
     /// The remote identifier that is used to synchronize this series.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) remote_id: Option<RemoteSeriesId>,
+    pub(crate) remote_id: Option<RemoteId>,
     /// Inline poster image.
     #[serde(default, rename = "poster", skip_serializing)]
     #[deprecated = "replaced by .graphics"]
@@ -612,7 +624,7 @@ pub(crate) struct Series {
     /// Last sync time for each remote.
     #[serde(rename = "last_sync", default, skip_serializing, with = "btree_as_vec")]
     #[deprecated = "deprecated for storing separately in sync database"]
-    pub(crate) compat_last_sync: BTreeMap<RemoteSeriesId, DateTime<Utc>>,
+    pub(crate) compat_last_sync: BTreeMap<RemoteId, DateTime<Utc>>,
 }
 
 impl Series {
@@ -664,9 +676,50 @@ pub(crate) struct Movie {
     pub(crate) id: MovieId,
     /// The title of the movie.
     pub(crate) title: String,
+    /// First screen date of the movie.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) release_date: Option<NaiveDate>,
+    /// The overview of a movie.
+    pub(crate) overview: String,
+    /// Movie graphics.
+    #[serde(default, skip_serializing_if = "MovieGraphics::is_empty")]
+    pub(crate) graphics: MovieGraphics,
     /// The remote identifier that is used to synchronize this movie.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) remote_id: Option<RemoteMovieId>,
+    pub(crate) remote_id: Option<RemoteId>,
+}
+
+impl Movie {
+    /// Construct a new series from a series update.
+    pub(crate) fn new_movie(update: crate::service::UpdateMovie) -> Self {
+        Self {
+            id: update.id,
+            title: update.title,
+            release_date: update.release_date,
+            overview: update.overview,
+            graphics: update.graphics,
+            remote_id: Some(update.remote_id),
+        }
+    }
+
+    /// Merge this movie from an update.
+    pub(crate) fn merge_from(&mut self, other: crate::service::UpdateMovie) {
+        self.title = other.title;
+        self.release_date = other.release_date;
+        self.overview = other.overview;
+        self.graphics.merge_from(other.graphics);
+        self.remote_id = Some(other.remote_id);
+    }
+
+    /// Get the poster of the movie.
+    pub(crate) fn poster(&self) -> Option<&ImageV2> {
+        self.graphics.poster.as_ref()
+    }
+
+    /// Get the banner of the movie.
+    pub(crate) fn banner(&self) -> Option<&ImageV2> {
+        self.graphics.banner.as_ref()
+    }
 }
 
 pub(crate) mod btree_as_vec {
@@ -1077,7 +1130,7 @@ pub(crate) struct Pending {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SearchSeries {
-    pub(crate) id: RemoteSeriesId,
+    pub(crate) id: RemoteId,
     pub(crate) name: String,
     pub(crate) poster: Option<ImageV2>,
     pub(crate) overview: String,
@@ -1092,7 +1145,7 @@ impl SearchSeries {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SearchMovie {
-    pub(crate) id: RemoteMovieId,
+    pub(crate) id: RemoteId,
     pub(crate) title: String,
     pub(crate) poster: Option<ImageV2>,
     pub(crate) overview: String,

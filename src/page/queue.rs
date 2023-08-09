@@ -32,9 +32,9 @@ pub(crate) enum Message {
     /// Tick the page.
     Tick(TimedOut),
     /// Open the given remote series.
-    OpenRemoteSeries(RemoteSeriesId),
+    OpenRemoteSeries(RemoteId),
     /// Open the given remote movie.
-    OpenRemoteMovie(RemoteMovieId),
+    OpenRemoteMovie(RemoteId),
 }
 
 /// The state for the settings page.
@@ -250,6 +250,20 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<
             update = update.push(w::text(text).size(SMALL_SIZE));
             update = decorate_series(cx, *series_id, *remote_id, update);
         }
+        TaskKind::DownloadMovie {
+            movie_id,
+            remote_id,
+            ..
+        } => {
+            let text = match t {
+                Temporal::Past => "Downloaded series",
+                Temporal::Now => "Updating series",
+                Temporal::Future => "Update series",
+            };
+
+            update = update.push(w::text(text).size(SMALL_SIZE));
+            update = decorate_movie(cx, *movie_id, *remote_id, update);
+        }
         TaskKind::DownloadSeriesByRemoteId { remote_id, .. } => {
             let text = match t {
                 Temporal::Past => "Downloaded series",
@@ -286,7 +300,7 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<
 fn decorate_series<'a>(
     cx: &CtxtRef<'_>,
     series_id: SeriesId,
-    remote_id: RemoteSeriesId,
+    remote_id: RemoteId,
     mut row: w::Row<'a, Message>,
 ) -> w::Row<'a, Message> {
     row = row.push(
@@ -303,5 +317,28 @@ fn decorate_series<'a>(
         link(text.size(SMALL_SIZE))
             .width(Length::Fill)
             .on_press(Message::Navigate(page::series::page(series_id))),
+    )
+}
+
+fn decorate_movie<'a>(
+    cx: &CtxtRef<'_>,
+    movie_id: MovieId,
+    remote_id: RemoteId,
+    mut row: w::Row<'a, Message>,
+) -> w::Row<'a, Message> {
+    row = row.push(
+        link(w::text(remote_id).size(SMALL_SIZE)).on_press(Message::OpenRemoteMovie(remote_id)),
+    );
+
+    let text = if let Some(series) = cx.service.movie(&movie_id) {
+        w::text(&series.title).shaping(w::text::Shaping::Advanced)
+    } else {
+        w::text(format!("{movie_id}"))
+    };
+
+    row.push(
+        link(text.size(SMALL_SIZE))
+            .width(Length::Fill)
+            .on_press(Message::Navigate(page::movie::page(movie_id))),
     )
 }

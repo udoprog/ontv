@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::runtime;
 
-use crate::model::{Raw, RemoteSeriesId, SeasonNumber, SeriesId};
+use crate::model::{Raw, RemoteId, SeasonNumber, SeriesId};
 use crate::search::Tokens;
 use crate::service::Service;
 
@@ -40,15 +40,15 @@ pub fn import_trakt_watched(
 
         let mut ids = Vec::new();
 
-        let tmdb_remote_id = RemoteSeriesId::Tmdb {
+        let tmdb_remote_id = RemoteId::Tmdb {
             id: entry.show.ids.tmdb,
         };
 
-        ids.push(RemoteSeriesId::Tvdb {
+        ids.push(RemoteId::Tvdb {
             id: entry.show.ids.tvdb,
         });
         ids.push(tmdb_remote_id);
-        ids.push(RemoteSeriesId::Imdb {
+        ids.push(RemoteId::Imdb {
             id: Raw::new(&entry.show.ids.imdb).context("imdb id")?,
         });
 
@@ -122,7 +122,7 @@ async fn download_series(
     service: &mut Service,
     now: &DateTime<Utc>,
     entry: &Entry,
-    remote_id: &RemoteSeriesId,
+    remote_id: &RemoteId,
 ) -> Result<Option<SeriesId>> {
     tracing::info!("downloading `{}`", entry.show.title);
 

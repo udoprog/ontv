@@ -4,7 +4,7 @@ use std::mem::replace;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::model::{Etag, RemoteSeriesId};
+use crate::model::{Etag, RemoteId};
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -27,7 +27,7 @@ impl Entry {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct Export {
-    id: RemoteSeriesId,
+    id: RemoteId,
     #[serde(flatten)]
     entry: Entry,
 }
@@ -35,7 +35,7 @@ pub(crate) struct Export {
 /// Database of synchronization state.
 #[derive(Default)]
 pub struct Database {
-    data: BTreeMap<RemoteSeriesId, Entry>,
+    data: BTreeMap<RemoteId, Entry>,
 }
 
 impl Database {
@@ -57,7 +57,7 @@ impl Database {
 
     /// Update series last sync.
     #[must_use]
-    pub(crate) fn import_last_sync(&mut self, id: RemoteSeriesId, now: DateTime<Utc>) -> bool {
+    pub(crate) fn import_last_sync(&mut self, id: RemoteId, now: DateTime<Utc>) -> bool {
         let e = self.data.entry(id).or_default();
         e.last_sync.replace(now) != Some(now)
     }
@@ -67,7 +67,7 @@ impl Database {
     #[tracing::instrument(skip(self))]
     pub(crate) fn update_last_modified(
         &mut self,
-        id: RemoteSeriesId,
+        id: RemoteId,
         last_modified: Option<DateTime<Utc>>,
     ) -> bool {
         tracing::trace!("series update last modified");
@@ -81,7 +81,7 @@ impl Database {
     #[tracing::instrument(skip(self))]
     pub(crate) fn series_update_sync(
         &mut self,
-        id: RemoteSeriesId,
+        id: RemoteId,
         now: DateTime<Utc>,
         last_modified: Option<DateTime<Utc>>,
     ) -> bool {
@@ -94,7 +94,7 @@ impl Database {
 
     /// Insert last etag.
     #[must_use]
-    pub(crate) fn update_last_etag(&mut self, id: RemoteSeriesId, etag: Option<Etag>) -> bool {
+    pub(crate) fn update_last_etag(&mut self, id: RemoteId, etag: Option<Etag>) -> bool {
         let e = self.data.entry(id).or_default();
 
         if e.etag.as_ref() == etag.as_ref() {
@@ -106,17 +106,17 @@ impl Database {
     }
 
     /// Get last sync for the given time series.
-    pub(crate) fn last_sync(&self, id: &RemoteSeriesId) -> Option<&DateTime<Utc>> {
+    pub(crate) fn last_sync(&self, id: &RemoteId) -> Option<&DateTime<Utc>> {
         self.data.get(id)?.last_sync.as_ref()
     }
 
     /// Get last modified for the given time series.
-    pub(crate) fn last_modified(&self, id: &RemoteSeriesId) -> Option<&DateTime<Utc>> {
+    pub(crate) fn last_modified(&self, id: &RemoteId) -> Option<&DateTime<Utc>> {
         self.data.get(id)?.last_modified.as_ref()
     }
 
     /// Last etag for the given series id.
-    pub(crate) fn last_etag(&self, id: &RemoteSeriesId) -> Option<&Etag> {
+    pub(crate) fn last_etag(&self, id: &RemoteId) -> Option<&Etag> {
         let entry = self.data.get(id)?;
         entry.etag.as_ref()
     }

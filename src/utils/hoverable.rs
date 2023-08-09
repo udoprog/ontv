@@ -86,7 +86,7 @@ where
             return event::Status::Captured;
         }
 
-        let mut state = tree.state.downcast_mut::<State>();
+        let state = tree.state.downcast_mut::<State>();
 
         match (
             state.hovered,

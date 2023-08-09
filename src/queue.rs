@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use arrayvec::ArrayVec;
 use chrono::{DateTime, Duration, Utc};
 
-use crate::prelude::{RemoteMovieId, RemoteSeriesId, SeriesId, TaskId};
+use crate::prelude::{MovieId, RemoteId, SeriesId, TaskId};
 
 /// Number of milliseconds of delay to add by default to scheduled tasks.
 const DELAY_MILLIS: i64 = 5000;
@@ -21,10 +21,12 @@ pub(crate) enum TaskStatus {
 pub(crate) enum TaskRef {
     /// Task to download series data.
     Series { series_id: SeriesId },
+    /// Task to download a movie.
+    Movie { movie_id: MovieId },
     /// Task to add a series by a remote identifier.
-    RemoteSeries { remote_id: RemoteSeriesId },
+    RemoteSeries { remote_id: RemoteId },
     /// Task to add download a movie by a remote identifier.
-    RemoteMovie { remote_id: RemoteMovieId },
+    RemoteMovie { remote_id: RemoteId },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -32,21 +34,27 @@ pub(crate) enum TaskKind {
     /// Check for updates.
     CheckForUpdates {
         series_id: SeriesId,
-        remote_id: RemoteSeriesId,
+        remote_id: RemoteId,
         last_modified: Option<DateTime<Utc>>,
     },
     /// Task to download series data.
     DownloadSeries {
         series_id: SeriesId,
-        remote_id: RemoteSeriesId,
+        remote_id: RemoteId,
+        last_modified: Option<DateTime<Utc>>,
+        force: bool,
+    },
+    /// Download a movie.
+    DownloadMovie {
+        movie_id: MovieId,
+        remote_id: RemoteId,
         last_modified: Option<DateTime<Utc>>,
         force: bool,
     },
     /// Task to add a series by a remote identifier.
-    DownloadSeriesByRemoteId { remote_id: RemoteSeriesId },
+    DownloadSeriesByRemoteId { remote_id: RemoteId },
     /// Task to add download a movie by a remote identifier.
-    #[allow(unused)]
-    DownloadMovieByRemoteId { remote_id: RemoteMovieId },
+    DownloadMovieByRemoteId { remote_id: RemoteId },
 }
 
 impl TaskKind {
@@ -68,6 +76,14 @@ impl TaskKind {
                 ..
             } => {
                 ids.push(TaskRef::Series { series_id });
+                ids.push(TaskRef::RemoteSeries { remote_id });
+            }
+            TaskKind::DownloadMovie {
+                movie_id,
+                remote_id,
+                ..
+            } => {
+                ids.push(TaskRef::Movie { movie_id });
                 ids.push(TaskRef::RemoteSeries { remote_id });
             }
             TaskKind::DownloadSeriesByRemoteId { remote_id, .. } => {
@@ -100,8 +116,15 @@ impl Task {
         match &self.kind {
             TaskKind::DownloadSeries { series_id, .. } => *series_id == *id,
             TaskKind::CheckForUpdates { series_id, .. } => *series_id == *id,
-            TaskKind::DownloadSeriesByRemoteId { .. } => false,
-            TaskKind::DownloadMovieByRemoteId { .. } => false,
+            _ => false,
+        }
+    }
+
+    /// Test if task involves the given movie.
+    pub(crate) fn is_movie(&self, id: &MovieId) -> bool {
+        match &self.kind {
+            TaskKind::DownloadMovie { movie_id, .. } => *movie_id == *id,
+            _ => false,
         }
     }
 }

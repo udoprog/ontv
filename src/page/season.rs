@@ -33,7 +33,7 @@ impl Season {
         Self {
             episodes: Vec::new(),
             season_info: comps::SeasonInfo::new((state.series_id, state.season)),
-            banner: comps::SeriesBanner::default(),
+            banner: comps::SeriesBanner,
         }
     }
 
