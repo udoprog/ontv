@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use reqwest::{header, Response};
 
-use crate::model::{EpisodeId, Etag, RemoteEpisodeId, RemoteSeriesId, SeriesId};
+use crate::model::{EpisodeId, Etag, MovieId, RemoteEpisodeId, RemoteId, SeriesId};
 
 /// Parse out last modified header if present.
 pub(crate) fn parse_last_modified(res: &Response) -> Result<Option<DateTime<Utc>>> {
@@ -25,7 +25,14 @@ pub(crate) fn parse_etag(response: &Response) -> Option<Etag> {
 pub(crate) trait LookupSeriesId {
     fn lookup<I>(&self, ids: I) -> Option<SeriesId>
     where
-        I: IntoIterator<Item = RemoteSeriesId>;
+        I: IntoIterator<Item = RemoteId>;
+}
+
+/// Helper trait to lookup a series id.
+pub(crate) trait LookupMovieId {
+    fn lookup<I>(&self, ids: I) -> Option<MovieId>
+    where
+        I: IntoIterator<Item = RemoteId>;
 }
 
 /// Helper trait to lookup an episode id.
@@ -37,12 +44,31 @@ pub(crate) trait LookupEpisodeId {
 
 impl<F> LookupSeriesId for F
 where
-    F: Fn(RemoteSeriesId) -> Option<SeriesId>,
+    F: Fn(RemoteId) -> Option<SeriesId>,
 {
     #[inline]
     fn lookup<I>(&self, ids: I) -> Option<SeriesId>
     where
-        I: IntoIterator<Item = RemoteSeriesId>,
+        I: IntoIterator<Item = RemoteId>,
+    {
+        for id in ids {
+            if let Some(id) = (self)(id) {
+                return Some(id);
+            }
+        }
+
+        None
+    }
+}
+
+impl<F> LookupMovieId for F
+where
+    F: Fn(RemoteId) -> Option<MovieId>,
+{
+    #[inline]
+    fn lookup<I>(&self, ids: I) -> Option<MovieId>
+    where
+        I: IntoIterator<Item = RemoteId>,
     {
         for id in ids {
             if let Some(id) = (self)(id) {

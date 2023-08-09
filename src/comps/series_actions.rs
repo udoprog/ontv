@@ -5,7 +5,7 @@ use crate::queue::{TaskKind, TaskRef, TaskStatus};
 pub(crate) enum Message {
     Untrack,
     Track,
-    RefreshSeries(RemoteSeriesId),
+    RefreshSeries(RemoteId),
     RemoveSeries,
 }
 

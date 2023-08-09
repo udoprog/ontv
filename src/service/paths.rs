@@ -74,6 +74,7 @@ pub(crate) struct Paths {
     pub(crate) remotes: Candidate,
     pub(crate) images: Box<Path>,
     pub(crate) series: Candidate,
+    pub(crate) movies: Candidate,
     pub(crate) watched: Candidate,
     pub(crate) pending: Candidate,
     pub(crate) episodes: Directory,
@@ -89,6 +90,7 @@ impl Paths {
             sync: Candidate::new(config.join("sync")),
             remotes: Candidate::new(config.join("remotes")),
             series: Candidate::new(config.join("series")),
+            movies: Candidate::new(config.join("movies")),
             watched: Candidate::new(config.join("watched")),
             pending: Candidate::new(config.join("pending")),
             episodes: Directory {

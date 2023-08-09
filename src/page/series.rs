@@ -15,12 +15,12 @@ pub(crate) fn page(id: SeriesId) -> Page {
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
-    OpenRemote(RemoteSeriesId),
+    OpenRemote(RemoteId),
     SeriesActions(comps::series_actions::Message),
     Navigate(Page),
     SeasonInfo(usize, comps::season_info::Message),
     SeriesBanner(comps::series_banner::Message),
-    SwitchSeries(SeriesId, RemoteSeriesId),
+    SwitchSeries(SeriesId, RemoteId),
 }
 
 pub(crate) struct Series {
@@ -35,7 +35,7 @@ impl Series {
         Self {
             series: comps::SeriesActions::new(state.id),
             seasons: Vec::new(),
-            banner: comps::SeriesBanner::default(),
+            banner: comps::SeriesBanner,
         }
     }
 
@@ -96,7 +96,7 @@ impl Series {
         state: &State,
     ) -> Result<Element<'static, Message>> {
         let Some(series) = cx.service.series(&state.id) else {
-            bail!("missing series {}", state.id);
+            bail!("Missing series {}", state.id);
         };
 
         let mut top =

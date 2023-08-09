@@ -4,8 +4,8 @@ use anyhow::Result;
 
 use crate::assets::Assets;
 use crate::history::{HistoryMutations, Page};
-use crate::model::{RemoteSeriesId, SeriesId};
-use crate::service::{NewSeries, Service};
+use crate::model::{MovieId, RemoteId, SeriesId};
+use crate::service::{NewMovie, NewSeries, Service};
 use crate::state::State;
 
 /// Context reference.
@@ -31,7 +31,7 @@ impl<'a> CtxtRef<'a> {
     pub(crate) fn download_series_by_id(
         &self,
         series_id: &SeriesId,
-        remote_id: &RemoteSeriesId,
+        remote_id: &RemoteId,
         force: bool,
     ) -> impl Future<Output = Result<Option<NewSeries>>> {
         let none_if_match = if force {
@@ -42,6 +42,24 @@ impl<'a> CtxtRef<'a> {
 
         self.service
             .download_series(remote_id, none_if_match.as_ref(), Some(series_id))
+    }
+
+    /// Refresh movie data.
+    #[tracing::instrument(skip(self))]
+    pub(crate) fn download_movie_by_id(
+        &self,
+        movie_id: &MovieId,
+        remote_id: &RemoteId,
+        force: bool,
+    ) -> impl Future<Output = Result<Option<NewMovie>>> {
+        let none_if_match = if force {
+            None
+        } else {
+            self.service.last_etag(remote_id).cloned()
+        };
+
+        self.service
+            .download_movie(remote_id, none_if_match.as_ref(), Some(movie_id))
     }
 }
 
@@ -63,12 +81,12 @@ impl<'a> Ctxt<'a> {
     }
 
     /// Remove a series.
-    pub(crate) fn remove_series(&mut self, series_id: &SeriesId) {
-        /*if matches!(self.history.page(), Some(Page::Series(id) | Page::Season(id, _)) if *id == *series_id)
-        {
-            self.history.push_history(self.assets, Page::Dashboard);
-        }*/
+    pub(crate) fn remove_series(&mut self, id: &SeriesId) {
+        self.service.remove_series(id);
+    }
 
-        self.service.remove_series(series_id);
+    /// Remove a movie.
+    pub(crate) fn remove_movie(&mut self, id: &MovieId) {
+        self.service.remove_movie(id);
     }
 }

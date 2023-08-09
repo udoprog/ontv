@@ -171,7 +171,7 @@ impl Client {
         lookup: impl common::LookupSeriesId,
     ) -> Result<(
         UpdateSeries,
-        BTreeSet<RemoteSeriesId>,
+        BTreeSet<RemoteId>,
         Option<Etag>,
         Option<DateTime<Utc>>,
     )> {
@@ -215,12 +215,12 @@ impl Client {
         graphics.fanart = value.fanart.as_deref().and_then(ImageV2::tvdb);
         graphics.poster = value.poster.as_deref().and_then(ImageV2::tvdb);
 
-        let remote_id = RemoteSeriesId::Tvdb { id };
+        let remote_id = RemoteId::Tvdb { id };
 
         let mut remote_ids = BTreeSet::from([remote_id]);
 
         if let Some(imdb_id) = value.imdb_id.filter(|id| !id.is_empty()) {
-            remote_ids.insert(RemoteSeriesId::Imdb {
+            remote_ids.insert(RemoteId::Imdb {
                 id: Raw::new(&imdb_id).context("id overflow")?,
             });
         }
@@ -425,7 +425,7 @@ impl Client {
             let poster = row.poster.as_deref().and_then(ImageV2::tvdb);
 
             output.push(SearchSeries {
-                id: RemoteSeriesId::Tvdb { id: row.id },
+                id: RemoteId::Tvdb { id: row.id },
                 name: row.series_name,
                 poster,
                 overview: row.overview.unwrap_or_default(),

@@ -19,11 +19,11 @@ pub(crate) enum Message {
     MoviesPage(usize),
     Result(Vec<SearchSeries>, Vec<SearchMovie>),
     SearchKindChanged(SearchKind),
-    AddSeriesByRemote(RemoteSeriesId),
-    SwitchSeries(SeriesId, RemoteSeriesId),
+    AddSeriesByRemote(RemoteId),
+    SwitchSeries(SeriesId, RemoteId),
     RemoveSeries(SeriesId),
-    AddMovieByRemote(RemoteMovieId),
-    SwitchMovie(MovieId, RemoteMovieId),
+    AddMovieByRemote(RemoteId),
+    SwitchMovie(MovieId, RemoteId),
     RemoveMovie(MovieId),
 }
 
@@ -147,7 +147,10 @@ impl Search {
             Message::RemoveSeries(series_id) => {
                 cx.remove_series(&series_id);
             }
-            Message::AddMovieByRemote(_) => {}
+            Message::AddMovieByRemote(remote_id) => {
+                cx.service
+                    .push_task_without_delay(TaskKind::DownloadMovieByRemoteId { remote_id });
+            }
             Message::SwitchMovie(_, _) => {}
             Message::RemoveMovie(_) => {}
         }

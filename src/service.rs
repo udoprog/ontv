@@ -23,6 +23,20 @@ use crate::queue::{CompletedTask, Task, TaskKind, TaskRef, TaskStatus};
 
 // Cache series updates for 12 hours.
 const CACHE_TIME: i64 = 3600 * 12;
+
+/// A movie update as produced by an API.
+#[derive(Debug, Clone)]
+pub(crate) struct UpdateMovie {
+    pub(crate) id: MovieId,
+    pub(crate) title: String,
+    #[allow(unused)]
+    pub(crate) language: Option<String>,
+    pub(crate) release_date: Option<NaiveDate>,
+    pub(crate) overview: String,
+    pub(crate) graphics: MovieGraphics,
+    pub(crate) remote_id: RemoteId,
+}
+
 /// A series update as produced by an API.
 #[derive(Debug, Clone)]
 pub(crate) struct UpdateSeries {
@@ -32,7 +46,7 @@ pub(crate) struct UpdateSeries {
     pub(crate) first_air_date: Option<NaiveDate>,
     pub(crate) overview: String,
     pub(crate) graphics: SeriesGraphics,
-    pub(crate) remote_id: RemoteSeriesId,
+    pub(crate) remote_id: RemoteId,
 }
 
 /// New episode.
@@ -46,11 +60,20 @@ pub(crate) struct NewEpisode {
 #[derive(Debug, Clone)]
 pub(crate) struct NewSeries {
     pub(crate) series: UpdateSeries,
-    pub(crate) remote_ids: BTreeSet<RemoteSeriesId>,
+    pub(crate) remote_ids: BTreeSet<RemoteId>,
     pub(crate) last_etag: Option<Etag>,
     pub(crate) last_modified: Option<DateTime<Utc>>,
     pub(crate) episodes: Vec<NewEpisode>,
     pub(crate) seasons: Vec<Season>,
+}
+
+/// Data encapsulating a newly added movie.
+#[derive(Debug, Clone)]
+pub(crate) struct NewMovie {
+    pub(crate) movie: UpdateMovie,
+    pub(crate) remote_ids: BTreeSet<RemoteId>,
+    pub(crate) last_etag: Option<Etag>,
+    pub(crate) last_modified: Option<DateTime<Utc>>,
 }
 
 /// A pending thing to watch.
@@ -144,14 +167,18 @@ impl Service {
     }
 
     /// Get a single movie.
-    pub(crate) fn movie(&self, _: &MovieId) -> Option<&Movie> {
-        // TODO: implement this
-        None
+    pub(crate) fn movie(&self, id: &MovieId) -> Option<&Movie> {
+        self.db.movies.get(id)
     }
 
     /// Get list of series.
     pub(crate) fn series_by_name(&self) -> impl DoubleEndedIterator<Item = &Series> {
         self.db.series.iter_by_name()
+    }
+
+    /// Get list of series.
+    pub(crate) fn movies_by_name(&self) -> impl DoubleEndedIterator<Item = &Movie> {
+        self.db.movies.iter_by_name()
     }
 
     /// Iterator over available episodes.
@@ -308,18 +335,18 @@ impl Service {
             }
 
             let kind = match remote_id {
-                RemoteSeriesId::Tvdb { .. } => TaskKind::CheckForUpdates {
+                RemoteId::Tvdb { .. } => TaskKind::CheckForUpdates {
                     series_id: s.id,
                     remote_id,
                     last_modified,
                 },
-                RemoteSeriesId::Tmdb { .. } => TaskKind::DownloadSeries {
+                RemoteId::Tmdb { .. } => TaskKind::DownloadSeries {
                     series_id: s.id,
                     remote_id,
                     last_modified,
                     force: false,
                 },
-                RemoteSeriesId::Imdb { .. } => continue,
+                RemoteId::Imdb { .. } => continue,
             };
 
             self.db.tasks.push(now, kind);
@@ -330,14 +357,14 @@ impl Service {
     pub(crate) fn check_for_updates(
         &mut self,
         series_id: SeriesId,
-        remote_id: RemoteSeriesId,
+        remote_id: RemoteId,
         last_modified: Option<DateTime<Utc>>,
     ) -> impl Future<Output = Result<Option<TaskKind>>> {
         let tvdb = self.tvdb.clone();
 
         let future = async move {
             match remote_id {
-                RemoteSeriesId::Tvdb { id } => {
+                RemoteId::Tvdb { id } => {
                     let Some(update) = tvdb.series_last_modified(id).await? else {
                         bail!("{series_id}/{remote_id}: missing last-modified in api");
                     };
@@ -717,34 +744,44 @@ impl Service {
     }
 
     /// Check if series is tracked.
-    pub(crate) fn get_series_by_remote(&self, id: &RemoteSeriesId) -> Option<&Series> {
+    pub(crate) fn get_series_by_remote(&self, id: &RemoteId) -> Option<&Series> {
         let id = self.db.remotes.get_series(id)?;
         self.db.series.get(&id)
     }
 
     /// Check if movie is tracked.
-    pub(crate) fn get_movie_by_remote(&self, _: &RemoteMovieId) -> Option<&Movie> {
-        // TODO: implement this.
-        None
+    pub(crate) fn get_movie_by_remote(&self, id: &RemoteId) -> Option<&Movie> {
+        let id = self.db.remotes.get_movie(id)?;
+        self.db.movies.get(&id)
     }
 
-    /// Remove the given series by ID.
+    /// Remove the given series.
     #[tracing::instrument(skip(self))]
-    pub(crate) fn remove_series(&mut self, series_id: &SeriesId) {
-        tracing::info!("removing series");
+    pub(crate) fn remove_series(&mut self, id: &SeriesId) {
+        tracing::info!("remove series");
 
-        let _ = self.db.series.remove(series_id);
-        self.db.episodes.remove(series_id);
-        self.db.seasons.remove(series_id);
-        self.db.changes.remove_series(series_id);
-        self.db.tasks.remove_tasks_by(|t| t.is_series(series_id));
+        let _ = self.db.series.remove(id);
+        self.db.episodes.remove(id);
+        self.db.seasons.remove(id);
+        self.db.changes.remove_series(id);
+        self.db.tasks.remove_tasks_by(|t| t.is_series(id));
+    }
+
+    /// Remove the given movie.
+    #[tracing::instrument(skip(self))]
+    pub(crate) fn remove_movie(&mut self, id: &MovieId) {
+        tracing::info!("remove movie");
+
+        let _ = self.db.movies.remove(id);
+        self.db.changes.remove_movie(id);
+        self.db.tasks.remove_tasks_by(|t| t.is_movie(id));
     }
 
     /// Download series using a remote identifier.
     #[tracing::instrument(skip(self))]
     pub(crate) fn download_series(
         &self,
-        remote_id: &RemoteSeriesId,
+        remote_id: &RemoteId,
         if_none_match: Option<&Etag>,
         series_id: Option<&SeriesId>,
     ) -> impl Future<Output = Result<Option<NewSeries>>> {
@@ -756,7 +793,7 @@ impl Service {
         let series_id = series_id.copied();
 
         let future = async move {
-            tracing::info!("downloading series");
+            tracing::info!("Downloading series");
 
             let lookup_series = |q| {
                 if let Some(series_id) = series_id {
@@ -769,7 +806,7 @@ impl Service {
             let lookup_episode = |q| proxy.find_episode_by_remote(q);
 
             let data = match remote_id {
-                RemoteSeriesId::Tvdb { id } => {
+                RemoteId::Tvdb { id } => {
                     let series = tvdb.series(id, lookup_series);
                     let episodes = tvdb.series_episodes(id, lookup_episode);
                     let ((series, remote_ids, last_etag, last_modified), episodes) =
@@ -785,7 +822,7 @@ impl Service {
                         seasons,
                     }
                 }
-                RemoteSeriesId::Tmdb { id } => {
+                RemoteId::Tmdb { id } => {
                     let Some((series, remote_ids, last_etag, last_modified, seasons)) = tmdb.series(id, lookup_series, if_none_match.as_ref()).await? else {
                         tracing::trace!("{remote_id}: not changed");
                         return Ok(None);
@@ -815,7 +852,7 @@ impl Service {
                         seasons,
                     }
                 }
-                RemoteSeriesId::Imdb { .. } => {
+                RemoteId::Imdb { .. } => {
                     bail!("cannot download series data from imdb")
                 }
             };
@@ -826,13 +863,75 @@ impl Service {
         future.in_current_span()
     }
 
+    /// Download series using a remote identifier.
+    #[tracing::instrument(skip(self))]
+    pub(crate) fn download_movie(
+        &self,
+        remote_id: &RemoteId,
+        if_none_match: Option<&Etag>,
+        movie_id: Option<&MovieId>,
+    ) -> impl Future<Output = Result<Option<NewMovie>>> {
+        let tmdb = self.tmdb.clone();
+        let proxy = self.db.remotes.proxy();
+        let remote_id = *remote_id;
+        let if_none_match = if_none_match.cloned();
+        let movie_id = movie_id.copied();
+
+        let future = async move {
+            tracing::info!("Downloading movies");
+
+            let lookup_movie = |q| {
+                if let Some(movie_id) = movie_id {
+                    return Some(movie_id);
+                }
+
+                proxy.find_movie_by_remote(q)
+            };
+
+            let data = match remote_id {
+                RemoteId::Tmdb { id } => {
+                    let Some((movie, remote_ids, last_etag, last_modified)) = tmdb.movie(id, lookup_movie, if_none_match.as_ref()).await? else {
+                        tracing::trace!("{remote_id}: not changed");
+                        return Ok(None);
+                    };
+
+                    NewMovie {
+                        movie,
+                        remote_ids,
+                        last_etag,
+                        last_modified,
+                    }
+                }
+                RemoteId::Tvdb { .. } => {
+                    bail!("Cannot download movie data from tvdb")
+                }
+                RemoteId::Imdb { .. } => {
+                    bail!("Cannot download movie data from imdb")
+                }
+            };
+
+            Ok::<_, Error>(Some(data))
+        };
+
+        future.in_current_span()
+    }
+
     /// If the series is already loaded in the local database, simply mark it as tracked.
-    pub(crate) fn set_series_tracked_by_remote(&mut self, id: &RemoteSeriesId) -> bool {
+    pub(crate) fn set_series_tracked_by_remote(&mut self, id: &RemoteId) -> bool {
         let Some(id) = self.db.remotes.get_series(id) else {
             return false;
         };
 
         self.track(&id)
+    }
+
+    /// Test if a movie with the given remote exists.
+    pub(crate) fn is_movie_by_remote(&mut self, id: &RemoteId) -> bool {
+        let Some(id) = self.db.remotes.get_movie(id) else {
+            return false;
+        };
+
+        self.db.movies.get_mut(&id).is_none()
     }
 
     /// Set the given show as tracked.
@@ -854,10 +953,10 @@ impl Service {
         }
     }
 
-    /// Insert a new tracked song.
+    /// Insert a new tracked series
     #[tracing::instrument(skip(self))]
     pub(crate) fn insert_series(&mut self, now: &DateTime<Utc>, data: NewSeries) {
-        tracing::info!("inserting new series");
+        tracing::info!("Inserting new series");
 
         let series_id = data.series.id;
 
@@ -913,6 +1012,44 @@ impl Service {
         self.db.changes.add_series(&series_id);
     }
 
+    /// Insert a new tracked movie.
+    #[tracing::instrument(skip(self))]
+    pub(crate) fn insert_movie(&mut self, now: &DateTime<Utc>, data: NewMovie) {
+        tracing::info!("Inserting new movie");
+
+        let movie_id = data.movie.id;
+
+        for &remote_id in &data.remote_ids {
+            if self.db.remotes.insert_movie(remote_id, movie_id) {
+                self.db.changes.change(Change::Remotes);
+            }
+        }
+
+        if self
+            .db
+            .sync
+            .update_last_etag(data.movie.remote_id, data.last_etag)
+        {
+            self.db.changes.change(Change::Sync);
+        }
+
+        if self
+            .db
+            .sync
+            .update_last_modified(data.movie.remote_id, data.last_modified)
+        {
+            self.db.changes.change(Change::Sync);
+        }
+
+        if let Some(current) = self.db.movies.get_mut(&movie_id) {
+            current.merge_from(data.movie);
+        } else {
+            self.db.movies.insert(Movie::new_movie(data.movie));
+        }
+
+        self.db.changes.add_movie(&movie_id);
+    }
+
     /// Ensure that a collection of the given image ids are loaded.
     pub(crate) fn load_images(
         &self,
@@ -945,7 +1082,7 @@ impl Service {
                         }
                     };
 
-                    let handle = handle.with_context(|| anyhow!("downloading: {image:?}"))?;
+                    let handle = handle.with_context(|| anyhow!("Downloading: {image:?}"))?;
                     Ok::<_, Error>((key, handle))
                 });
             }
@@ -968,7 +1105,7 @@ impl Service {
     /// Get existing id by remote if it exists.
     pub(crate) fn existing_by_remote_ids<I>(&self, ids: I) -> Option<SeriesId>
     where
-        I: IntoIterator<Item = RemoteSeriesId>,
+        I: IntoIterator<Item = RemoteId>,
     {
         for remote_id in ids {
             if let Some(id) = self.db.remotes.get_series(&remote_id) {
@@ -1175,9 +1312,17 @@ impl Service {
     /// Get remotes by series.
     pub(crate) fn remotes_by_series(
         &self,
-        series_id: &SeriesId,
-    ) -> impl ExactSizeIterator<Item = RemoteSeriesId> + '_ {
-        self.db.remotes.get_by_series(series_id)
+        id: &SeriesId,
+    ) -> impl ExactSizeIterator<Item = RemoteId> + '_ {
+        self.db.remotes.get_by_series(id)
+    }
+
+    /// Get remotes by movie.
+    pub(crate) fn remotes_by_movie(
+        &self,
+        id: &MovieId,
+    ) -> impl ExactSizeIterator<Item = RemoteId> + '_ {
+        self.db.remotes.get_by_movie(id)
     }
 
     /// Clear last sync.
@@ -1186,7 +1331,7 @@ impl Service {
     }
 
     /// Get last etag for the given series id.
-    pub(crate) fn last_etag(&self, remote_id: &RemoteSeriesId) -> Option<&Etag> {
+    pub(crate) fn last_etag(&self, remote_id: &RemoteId) -> Option<&Etag> {
         self.db.sync.last_etag(remote_id)
     }
 }

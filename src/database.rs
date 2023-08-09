@@ -1,6 +1,7 @@
 mod episodes;
 mod format;
 mod iter;
+mod movies;
 mod pending;
 mod remotes;
 mod seasons;
@@ -18,7 +19,9 @@ use tracing_futures::Instrument;
 
 pub(crate) use self::episodes::EpisodeRef;
 pub(crate) use self::seasons::SeasonRef;
-use crate::model::{Config, Episode, Pending, RemoteId, Season, Series, SeriesId, Watched};
+use crate::model::{
+    Config, Episode, Movie, MovieId, Pending, RemoteIds, Season, Series, SeriesId, Watched,
+};
 use crate::queue::Queue;
 use crate::service::paths;
 
@@ -30,6 +33,8 @@ pub(crate) struct Database {
     pub(crate) remotes: remotes::Database,
     /// Series database.
     pub(crate) series: series::Database,
+    /// Movies database.
+    pub(crate) movies: movies::Database,
     /// Episodes database.
     pub(crate) episodes: episodes::Database,
     /// Seasons collection.
@@ -61,15 +66,20 @@ impl Database {
             }
         }
 
-        if let Some((format, remotes)) = format::load_array::<RemoteId>(&paths.remotes)? {
+        if let Some((format, remotes)) = format::load_array::<RemoteIds>(&paths.remotes)? {
             for remote_id in remotes {
                 match remote_id {
-                    RemoteId::Series { uuid, remotes } => {
+                    RemoteIds::Series { uuid, remotes } => {
                         for remote_id in remotes {
                             db.remotes.insert_series(remote_id, uuid);
                         }
                     }
-                    RemoteId::Episode { uuid, remotes } => {
+                    RemoteIds::Movies { uuid, remotes } => {
+                        for remote_id in remotes {
+                            db.remotes.insert_movie(remote_id, uuid);
+                        }
+                    }
+                    RemoteIds::Episode { uuid, remotes } => {
                         for remote_id in remotes {
                             db.remotes.insert_episode(remote_id, uuid);
                         }
@@ -96,6 +106,16 @@ impl Database {
 
             if matches!(format, format::Format::Json) {
                 db.changes.change(Change::Series);
+            }
+        }
+
+        if let Some((format, movies)) = format::load_array::<Movie>(&paths.movies)? {
+            for s in movies {
+                db.movies.insert(s);
+            }
+
+            if matches!(format, format::Format::Json) {
+                db.changes.change(Change::Movie);
             }
         }
 
@@ -179,14 +199,22 @@ impl Database {
             .contains(Change::Series)
             .then(|| self.series.export());
 
-        let remove_series = changes.remove;
-        let mut add_series = Vec::with_capacity(changes.add.len());
+        let movies = changes
+            .set
+            .contains(Change::Movie)
+            .then(|| self.movies.export());
 
-        for id in changes.add {
+        let remove_series = changes.remove_series;
+        let mut add_series = Vec::with_capacity(changes.add_series.len());
+
+        for id in changes.add_series {
             let episodes = self.episodes.by_series(&id);
             let seasons = self.seasons.by_series(&id);
             add_series.push((id, episodes.export(), seasons.export()));
         }
+
+        let _ = changes.remove_movies;
+        let _ = changes.add_movies;
 
         let remotes = if changes.set.contains(Change::Remotes) {
             Some(self.remotes.export())
@@ -195,13 +223,14 @@ impl Database {
         };
 
         let paths = paths.clone();
+        let changes = changes.set;
 
         let future = async move {
             if do_not_save {
                 return Ok(());
             }
 
-            tracing::info!("saving database");
+            tracing::info!(?changes, "Saving database");
 
             let guard = paths.lock.lock().await;
 
@@ -217,6 +246,12 @@ impl Database {
                 format::save_array("series", &paths.series, series)
                     .await
                     .context("series")?;
+            }
+
+            if let Some(movies) = movies {
+                format::save_array("movies", &paths.movies, movies)
+                    .await
+                    .context("movies")?;
             }
 
             if let Some(watched) = watched {
@@ -259,7 +294,7 @@ impl Database {
     }
 }
 
-#[derive(Clone, Copy, fixed_map::Key)]
+#[derive(Debug, Clone, Copy, fixed_map::Key)]
 pub(crate) enum Change {
     // Configuration file has changed.
     Config,
@@ -271,6 +306,8 @@ pub(crate) enum Change {
     Pending,
     // Series list has changed.
     Series,
+    // Movies have changed.
+    Movie,
     // Remotes list has changed.
     Remotes,
     // Schedule changed.
@@ -282,9 +319,13 @@ pub(crate) struct Changes {
     // Set of changes to apply to database.
     set: fixed_map::Set<Change>,
     // Series removed.
-    remove: HashSet<SeriesId>,
+    remove_series: HashSet<SeriesId>,
     // Series added.
-    add: HashSet<SeriesId>,
+    add_series: HashSet<SeriesId>,
+    // Movie removed.
+    remove_movies: HashSet<MovieId>,
+    // Movie added.
+    add_movies: HashSet<MovieId>,
 }
 
 impl Changes {
@@ -300,21 +341,47 @@ impl Changes {
 
     #[inline]
     pub(crate) fn has_changes(&self) -> bool {
-        !self.set.is_empty() || !self.remove.is_empty() || !self.add.is_empty()
+        if !self.set.is_empty() {
+            return true;
+        }
+
+        if !self.remove_series.is_empty() || !self.add_series.is_empty() {
+            return true;
+        }
+
+        if !self.remove_movies.is_empty() && !self.add_movies.is_empty() {
+            return true;
+        }
+
+        false
     }
 
     /// Mark a series as added.
     pub(crate) fn add_series(&mut self, id: &SeriesId) {
         self.set.insert(Change::Series);
-        self.remove.remove(id);
-        self.add.insert(*id);
+        self.remove_series.remove(id);
+        self.add_series.insert(*id);
+    }
+
+    /// Mark a movie as added.
+    pub(crate) fn add_movie(&mut self, id: &MovieId) {
+        self.set.insert(Change::Movie);
+        self.remove_movies.remove(id);
+        self.add_movies.insert(*id);
     }
 
     /// Marker a series for removal.
     pub(crate) fn remove_series(&mut self, id: &SeriesId) {
         self.set.insert(Change::Series);
-        self.add.remove(id);
-        self.remove.insert(*id);
+        self.add_series.remove(id);
+        self.remove_series.insert(*id);
+    }
+
+    /// Marker a movie for removal.
+    pub(crate) fn remove_movie(&mut self, id: &MovieId) {
+        self.set.insert(Change::Movie);
+        self.add_movies.remove(id);
+        self.remove_movies.insert(*id);
     }
 }
 

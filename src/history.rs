@@ -12,6 +12,7 @@ pub(crate) enum Page {
     WatchNext(page::watch_next::State),
     Search(page::search::State),
     SeriesList,
+    MoviesList,
     Series(page::series::State),
     Movie(page::movie::State),
     Settings,

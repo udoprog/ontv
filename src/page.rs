@@ -19,6 +19,9 @@ pub(crate) use self::movie::Movie;
 pub(crate) mod series_list;
 pub(crate) use self::series_list::SeriesList;
 
+pub(crate) mod movies_list;
+pub(crate) use self::movies_list::MoviesList;
+
 pub(crate) mod settings;
 pub(crate) use self::settings::Settings;
 

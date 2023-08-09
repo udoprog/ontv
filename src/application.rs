@@ -15,7 +15,7 @@ use crate::page;
 use crate::params::{GAP, SMALL_SIZE, SPACE, SUB_MENU_SIZE};
 use crate::prelude::*;
 use crate::queue::{Task, TaskKind};
-use crate::service::{NewSeries, Service};
+use crate::service::{NewMovie, NewSeries, Service};
 use crate::state::State;
 use crate::utils::{Singleton, TimedOut, Timeout};
 
@@ -54,6 +54,7 @@ pub(crate) enum Message {
     WatchNext(page::watch_next::Message),
     Search(page::search::Message),
     SeriesList(page::series_list::Message),
+    MoviesList(page::movies_list::Message),
     Series(page::series::Message),
     Movie(page::movie::Message),
     Season(page::season::Message),
@@ -77,6 +78,8 @@ pub(crate) enum Message {
     TaskUpdateDownloadQueue(Result<Option<TaskKind>, ErrorInfo>, Task),
     /// Task output of add series by remote.
     TaskSeriesDownloaded(Result<Option<NewSeries>, ErrorInfo>, Task),
+    /// Task output of add movie by remote.
+    TaskMovieDownloaded(Result<Option<NewMovie>, ErrorInfo>, Task),
     /// Queue processing.
     ProcessQueue(TimedOut, TaskId),
 }
@@ -90,6 +93,7 @@ enum Current {
     Series(page::Series),
     Movie(page::Movie),
     SeriesList(page::SeriesList),
+    MoviesList(page::MoviesList),
     Season(page::Season),
     Queue(page::Queue),
     Errors(page::Errors),
@@ -185,6 +189,9 @@ impl iced::Application for Application {
                 Page::SeriesList => {
                     return format!("{BASE} - Series overview");
                 }
+                Page::MoviesList => {
+                    return format!("{BASE} - Movies overview");
+                }
                 Page::Series(state) => {
                     if let Some(series) = self.service.series(&state.id) {
                         return format!("{BASE} - {}", series.title);
@@ -248,7 +255,13 @@ impl iced::Application for Application {
             (Message::SeriesList(message), Current::SeriesList(page), _) => {
                 page.update(ctxt!(self), message);
             }
+            (Message::MoviesList(message), Current::MoviesList(page), _) => {
+                page.update(ctxt!(self), message);
+            }
             (Message::Series(message), Current::Series(page), _) => {
+                page.update(ctxt!(self), message);
+            }
+            (Message::Movie(message), Current::Movie(page), _) => {
                 page.update(ctxt!(self), message);
             }
             (Message::Season(message), Current::Season(page), _) => {
@@ -368,6 +381,21 @@ impl iced::Application for Application {
                     }
                 }
             }
+            (Message::TaskMovieDownloaded(result, task), _, _) => {
+                let now = Utc::now();
+                self.service.complete_task(&now, task);
+
+                match result {
+                    Ok(new_movie) => {
+                        if let Some(new_movie) = new_movie {
+                            self.service.insert_movie(&now, new_movie);
+                        }
+                    }
+                    Err(error) => {
+                        self.state.handle_error(error);
+                    }
+                }
+            }
             (Message::ProcessQueue(TimedOut::TimedOut, id), _, _) => {
                 self.handle_process_queue(Some(id));
             }
@@ -389,15 +417,16 @@ impl iced::Application for Application {
                 Page::WatchNext(..) => Current::WatchNext(page::WatchNext::default()),
                 Page::Search(..) => Current::Search(page::Search::default()),
                 Page::SeriesList => Current::SeriesList(page::SeriesList::default()),
+                Page::MoviesList => Current::MoviesList(page::MoviesList::default()),
                 Page::Series(state) => Current::Series(page::Series::new(state)),
                 Page::Movie(state) => Current::Movie(page::Movie::new(state)),
-                Page::Settings => Current::Settings(page::Settings::default()),
+                Page::Settings => Current::Settings(page::Settings),
                 Page::Season(state) => Current::Season(page::Season::new(state)),
                 Page::Queue(..) => {
                     let page = page::Queue::new(self.commands.by_ref().map(Message::Queue));
                     Current::Queue(page)
                 }
-                Page::Errors => Current::Errors(page::Errors::default()),
+                Page::Errors => Current::Errors(page::Errors),
             };
 
             self.commands
@@ -458,6 +487,13 @@ impl iced::Application for Application {
             w::text("Series"),
             |p| matches!(p, Page::SeriesList),
             || Page::SeriesList,
+        ));
+
+        top_menu = top_menu.push(menu_item(
+            page,
+            w::text("Movies"),
+            |p| matches!(p, Page::MoviesList),
+            || Page::MoviesList,
         ));
 
         top_menu = top_menu.push(menu_item(
@@ -649,7 +685,13 @@ impl Application {
             (Current::SeriesList(page), _) => {
                 page.prepare(ctxt!(self));
             }
+            (Current::MoviesList(page), _) => {
+                page.prepare(ctxt!(self));
+            }
             (Current::Series(page), Some(Page::Series(state))) => {
+                page.prepare(ctxt!(self), state);
+            }
+            (Current::Movie(page), Some(Page::Movie(state))) => {
                 page.prepare(ctxt!(self), state);
             }
             (Current::Season(page), Some(Page::Season(state))) => {
@@ -736,6 +778,19 @@ impl Application {
                         },
                     );
                 }
+                TaskKind::DownloadMovie {
+                    movie_id,
+                    remote_id,
+                    force,
+                    ..
+                } => {
+                    self.commands.perform(
+                        ctxt_ref!(self).download_movie_by_id(movie_id, remote_id, *force),
+                        move |result| {
+                            Message::TaskMovieDownloaded(result.map_err(Into::into), task.clone())
+                        },
+                    );
+                }
                 TaskKind::DownloadSeriesByRemoteId { remote_id } => {
                     if self.service.set_series_tracked_by_remote(remote_id) {
                         self.service.complete_task(&now, task);
@@ -751,9 +806,20 @@ impl Application {
                         );
                     }
                 }
-                TaskKind::DownloadMovieByRemoteId { .. } => {
-                    // TODO: implement task
-                    self.service.complete_task(&now, task);
+                TaskKind::DownloadMovieByRemoteId { remote_id } => {
+                    if self.service.is_movie_by_remote(remote_id) {
+                        self.service.complete_task(&now, task);
+                    } else {
+                        self.commands.perform(
+                            self.service.download_movie(remote_id, None, None),
+                            move |result| {
+                                Message::TaskMovieDownloaded(
+                                    result.map_err(Into::into),
+                                    task.clone(),
+                                )
+                            },
+                        );
+                    }
                 }
             }
         }
@@ -780,11 +846,12 @@ impl Application {
                 page.view(ctxt_ref!(self), state).map(Message::Search)
             }
             (Current::SeriesList(page), _) => page.view(ctxt_ref!(self)).map(Message::SeriesList),
+            (Current::MoviesList(page), _) => page.view(ctxt_ref!(self)).map(Message::MoviesList),
             (Current::Series(page), Some(Page::Series(series_id))) => {
                 page.view(ctxt_ref!(self), series_id)?.map(Message::Series)
             }
             (Current::Movie(page), Some(Page::Movie(state))) => {
-                page.view(state).map(Message::Movie)
+                page.view(ctxt_ref!(self), state)?.map(Message::Movie)
             }
             (Current::Settings(page), _) => page.view(ctxt_ref!(self)).map(Message::Settings),
             (Current::Season(page), Some(Page::Season(state))) => {
