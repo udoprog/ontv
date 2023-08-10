@@ -64,8 +64,9 @@ impl Dashboard {
         cx.assets
             .mark_with_hint(iter.clone().flat_map(|p| p.poster()), POSTER_HINT);
 
-        self.watch
-            .init_from_iter(iter.map(|p| comps::watch::Props::new(p.episode.id)));
+        self.watch.init_from_iter(
+            iter.map(|p| comps::watch::Props::new(comps::watch::Kind::Episode(p.episode.id))),
+        );
     }
 
     pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, message: Message) {

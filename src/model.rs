@@ -720,6 +720,13 @@ impl Movie {
     pub(crate) fn banner(&self) -> Option<&ImageV2> {
         self.graphics.banner.as_ref()
     }
+
+    /// Get release timestamp.
+    pub(crate) fn release(&self) -> Option<DateTime<Utc>> {
+        self.release_date
+            .as_ref()
+            .and_then(|&d| Some(DateTime::from_utc(d.and_hms_opt(12, 0, 0)?, Utc)))
+    }
 }
 
 pub(crate) mod btree_as_vec {

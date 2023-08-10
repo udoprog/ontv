@@ -44,7 +44,9 @@ where
         Self {
             pending_series: props.include_series,
             episode_id: props.episode_id,
-            watch: comps::Watch::new(comps::watch::Props::new(props.episode_id)),
+            watch: comps::Watch::new(comps::watch::Props::new(comps::watch::Kind::Episode(
+                props.episode_id,
+            ))),
             remove_last_watch: props.watched.clone().next_back().map(move |w| {
                 comps::Confirm::new(comps::confirm::Props::new(
                     comps::confirm::Kind::RemoveEpisodeWatch {
@@ -73,7 +75,9 @@ where
         self.pending_series = props.include_series;
         self.episode_id = props.episode_id;
         self.watch
-            .changed(comps::watch::Props::new(props.episode_id));
+            .changed(comps::watch::Props::new(comps::watch::Kind::Episode(
+                props.episode_id,
+            )));
         self.remove_last_watch
             .init_from_iter(props.watched.clone().next_back().map(move |w| {
                 comps::confirm::Props::new(comps::confirm::Kind::RemoveEpisodeWatch {
@@ -245,23 +249,45 @@ impl Episode {
             }
         }
 
-        let mut show_info = w::Column::new();
+        let mut info = w::Column::new();
+
+        if let Some(p) = pending_series {
+            info = info.push(
+                link(
+                    w::text(&p.series.title)
+                        .shaping(w::text::Shaping::Advanced)
+                        .size(SUBTITLE_SIZE),
+                )
+                .on_press(Message::Navigate(page::series::page(p.series.id))),
+            );
+
+            if let Some(season) = p.season {
+                info = info.push(link(name).on_press(Message::Navigate(page::season::page(
+                    p.series.id,
+                    season.number,
+                ))));
+            } else {
+                info = info.push(name);
+            }
+        } else {
+            info = info.push(name);
+        }
+
+        info = info.push(actions);
 
         if let Some(air_date) = &e.aired {
             if air_date > cx.state.today() {
-                show_info =
-                    show_info.push(w::text(format_args!("Airs: {air_date}")).size(SMALL_SIZE));
+                info = info.push(w::text(format_args!("Airs: {air_date}")).size(SMALL_SIZE));
             } else {
-                show_info =
-                    show_info.push(w::text(format_args!("Aired: {air_date}")).size(SMALL_SIZE));
+                info = info.push(w::text(format_args!("Aired: {air_date}")).size(SMALL_SIZE));
             }
         }
 
-        let watched_text = {
+        {
             let mut it = watched.clone();
             let len = it.len();
 
-            match (len, it.next(), it.next_back()) {
+            let text = match (len, it.next(), it.next_back()) {
                 (1, Some(once), _) => w::text(format_args!(
                     "Watched once on {}",
                     once.timestamp.date_naive()
@@ -272,42 +298,12 @@ impl Episode {
                     last.timestamp.date_naive()
                 )),
                 _ => w::text("Never watched").style(cx.warning_text()),
-            }
+            };
+
+            info = info.push(text.size(SMALL_SIZE));
         };
 
-        show_info = show_info.push(watched_text.size(SMALL_SIZE));
-
-        let mut info_top = w::Column::new();
-
-        if let Some(p) = pending_series {
-            info_top = info_top.push(
-                link(
-                    w::text(&p.series.title)
-                        .shaping(w::text::Shaping::Advanced)
-                        .size(SUBTITLE_SIZE),
-                )
-                .on_press(Message::Navigate(page::series::page(p.series.id))),
-            );
-
-            if let Some(season) = p.season {
-                info_top = info_top.push(link(name).on_press(Message::Navigate(
-                    page::season::page(p.series.id, season.number),
-                )));
-            } else {
-                info_top = info_top.push(name);
-            }
-        } else {
-            info_top = info_top.push(name);
-        }
-
-        info_top = info_top
-            .push(actions)
-            .push(show_info.spacing(SPACE))
-            .spacing(SPACE);
-
-        let mut info = w::Column::new()
-            .push(info_top)
-            .push(w::text(&e.overview).shaping(w::text::Shaping::Advanced));
+        info = info.push(w::text(&e.overview).shaping(w::text::Shaping::Advanced));
 
         if watched.len() > 0 {
             let mut history = w::Column::new();
@@ -343,7 +339,7 @@ impl Episode {
 
         Ok(w::Row::new()
             .push(image.width(Length::FillPortion(image_fill)))
-            .push(info.width(Length::FillPortion(rest_fill)).spacing(GAP))
+            .push(info.width(Length::FillPortion(rest_fill)).spacing(SPACE))
             .spacing(GAP)
             .into())
     }

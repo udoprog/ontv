@@ -11,17 +11,23 @@ pub(crate) enum Message {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Kind {
+    Episode(EpisodeId),
+    Movie(MovieId),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Props {
     ordering: Ordering,
-    episode_id: EpisodeId,
+    kind: Kind,
 }
 
 impl Props {
     #[inline]
-    pub(crate) fn new(episode_id: EpisodeId) -> Self {
+    pub(crate) fn new(kind: Kind) -> Self {
         Self {
             ordering: Ordering::Right,
-            episode_id,
+            kind,
         }
     }
 }
@@ -59,14 +65,28 @@ impl Watch {
             Message::RightNow => {
                 self.confirm = false;
                 let now = Utc::now();
-                cx.service
-                    .watch(&now, &self.props.episode_id, RemainingSeason::Aired);
+
+                match &self.props.kind {
+                    Kind::Episode(id) => {
+                        cx.service.watch(&now, id, RemainingSeason::Aired);
+                    }
+                    Kind::Movie(id) => {
+                        cx.service.watch_movie(&now, id, RemainingSeason::Aired);
+                    }
+                }
             }
             Message::AirDate => {
                 self.confirm = false;
                 let now = Utc::now();
-                cx.service
-                    .watch(&now, &self.props.episode_id, RemainingSeason::AirDate);
+
+                match &self.props.kind {
+                    Kind::Episode(id) => {
+                        cx.service.watch(&now, id, RemainingSeason::AirDate);
+                    }
+                    Kind::Movie(id) => {
+                        cx.service.watch_movie(&now, id, RemainingSeason::AirDate);
+                    }
+                }
             }
             Message::Cancel => {
                 self.confirm = false;

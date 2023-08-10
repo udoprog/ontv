@@ -15,9 +15,11 @@ pub(crate) fn page(id: MovieId) -> Page {
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
+    RemoveLastWatch(comps::confirm::Message),
     OpenRemote(RemoteId),
     MovieActions(comps::movie_actions::Message),
     MovieBanner(comps::movie_banner::Message),
+    Watch(comps::watch::Message),
     SwitchMovie(MovieId, RemoteId),
     RemoveWatch(usize, comps::confirm::Message),
 }
@@ -25,6 +27,8 @@ pub(crate) enum Message {
 pub(crate) struct Movie {
     movie: comps::MovieActions,
     banner: comps::MovieBanner,
+    watch: comps::Watch,
+    remove_last_watch: Option<comps::Confirm>,
     remove_watches: Vec<comps::Confirm>,
 }
 
@@ -34,12 +38,30 @@ impl Movie {
         Self {
             movie: comps::MovieActions::new(state.id),
             banner: comps::MovieBanner,
+            watch: comps::Watch::new(comps::watch::Props::new(comps::watch::Kind::Movie(
+                state.id,
+            ))),
+            remove_last_watch: None,
             remove_watches: Vec::new(),
         }
     }
 
     pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>, state: &State) {
         self.banner.prepare(cx, &state.id);
+
+        self.watch
+            .changed(comps::watch::Props::new(comps::watch::Kind::Movie(
+                state.id,
+            )));
+
+        self.remove_last_watch
+            .init_from_iter(cx.service.watched_by_movie(&state.id).rev().map(|w| {
+                comps::confirm::Props::new(comps::confirm::Kind::RemoveMovieWatch {
+                    movie_id: state.id,
+                    watch_id: w.id,
+                })
+                .with_ordering(comps::ordering::Ordering::Left)
+            }));
 
         self.remove_watches
             .init_from_iter(cx.service.watched_by_movie(&state.id).map(|w| {
@@ -53,6 +75,11 @@ impl Movie {
 
     pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, message: Message) {
         match message {
+            Message::RemoveLastWatch(message) => {
+                if let Some(c) = &mut self.remove_last_watch {
+                    c.update(cx, message);
+                }
+            }
             Message::OpenRemote(remote_id) => {
                 let url = remote_id.url();
                 let _ = webbrowser::open_browser(webbrowser::Browser::Default, &url);
@@ -62,6 +89,9 @@ impl Movie {
             }
             Message::MovieBanner(message) => {
                 self.banner.update(cx, message);
+            }
+            Message::Watch(message) => {
+                self.watch.update(cx, message);
             }
             Message::SwitchMovie(movie_id, remote_id) => {
                 cx.service.push_task_without_delay(TaskKind::DownloadMovie {
@@ -128,15 +158,70 @@ impl Movie {
             top = top.push(remotes.spacing(GAP));
         }
 
+        let watched = cx.service.watched_by_movie(&movie.id);
+
+        let mut actions = w::Row::new().spacing(SPACE);
+
+        let any_confirm = self.watch.is_confirm()
+            || self
+                .remove_last_watch
+                .as_ref()
+                .map(comps::Confirm::is_confirm)
+                .unwrap_or_default();
+
+        if let Some(remove_last_watch) = &self.remove_last_watch {
+            if !any_confirm || remove_last_watch.is_confirm() {
+                let watch_text = match watched.len() {
+                    1 => "Remove watch",
+                    _ => "Remove last watch",
+                };
+
+                actions = actions.push(
+                    remove_last_watch
+                        .view(watch_text, theme::Button::Destructive)
+                        .map(Message::RemoveLastWatch),
+                );
+            }
+        }
+
+        let watch_text = match watched.len() {
+            0 => "First watch",
+            _ => "Watch again",
+        };
+
+        if !any_confirm || self.watch.is_confirm() {
+            actions = actions.push(
+                self.watch
+                    .view(
+                        watch_text,
+                        theme::Button::Positive,
+                        theme::Button::Positive,
+                        Length::Shrink,
+                        Horizontal::Center,
+                        true,
+                    )
+                    .map(Message::Watch),
+            );
+        }
+
         let mut info = w::Column::new()
             .push(top.align_items(Alignment::Center).spacing(GAP))
-            .push(self.movie.view(cx, movie).map(Message::MovieActions));
+            .push(self.movie.view(cx, movie).map(Message::MovieActions))
+            .push(actions);
+
+        if let Some(release_date) = &movie.release_date {
+            let text = if release_date > cx.state.today() {
+                w::text(format_args!("Releases: {release_date}"))
+            } else {
+                w::text(format_args!("Released: {release_date}"))
+            };
+
+            info = info.push(text.size(SMALL_SIZE));
+        }
 
         if !movie.overview.is_empty() {
             info = info.push(w::text(&movie.overview).shaping(w::text::Shaping::Advanced));
         }
-
-        let watched = cx.service.watched_by_movie(&movie.id);
 
         {
             let mut it = watched.clone();

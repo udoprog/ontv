@@ -54,7 +54,6 @@ pub fn import_trakt_watched(
 
         let now = Utc::now();
 
-        // TODO: use more databases.
         let series_id = match service.existing_by_remote_ids(ids) {
             Some(series_id) => {
                 if service.series(&series_id).is_none() && import_missing {
@@ -124,15 +123,15 @@ async fn download_series(
     entry: &Entry,
     remote_id: &RemoteId,
 ) -> Result<Option<SeriesId>> {
-    tracing::info!("downloading `{}`", entry.show.title);
+    tracing::info!("Downloading `{}`", entry.show.title);
 
     let new_series = match service.download_series(remote_id, None, None).await {
         Ok(Some(new_series)) => new_series,
         Ok(None) => {
-            anyhow::bail!("empty response")
+            anyhow::bail!("Empty response")
         }
         Err(error) => {
-            tracing::error!("failed to download `{}`: {error}", entry.show.title);
+            tracing::error!("Failed to download `{}`: {error}", entry.show.title);
             return Ok(None);
         }
     };

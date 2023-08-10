@@ -481,7 +481,7 @@ impl Service {
         episode_id: &EpisodeId,
         remaining_season: RemainingSeason,
     ) {
-        tracing::trace!("marking as watched");
+        tracing::trace!("Marking as watched");
 
         let Some(episode) = self.db.episodes.get(episode_id) else {
             tracing::warn!("episode missing");
@@ -510,6 +510,41 @@ impl Service {
 
         self.db.changes.change(Change::Watched);
         self.populate_pending_from(now, &series, &episode);
+    }
+
+    /// Mark an episode as watched.
+    #[tracing::instrument(skip(self))]
+    pub(crate) fn watch_movie(
+        &mut self,
+        now: &DateTime<Utc>,
+        movie: &MovieId,
+        remaining_season: RemainingSeason,
+    ) {
+        tracing::trace!("Marking as watched");
+
+        let Some(m) = self.db.movies.get(movie) else {
+            tracing::warn!("episode missing");
+            return;
+        };
+
+        let timestamp = match remaining_season {
+            RemainingSeason::Aired => *now,
+            RemainingSeason::AirDate => {
+                let Some(release_date) = m.release() else {
+                    return;
+                };
+
+                release_date
+            }
+        };
+
+        self.db.watched.insert(Watched {
+            id: WatchedId::random(),
+            timestamp,
+            kind: WatchedKind::Movie { movie: m.id },
+        });
+
+        self.db.changes.change(Change::Watched);
     }
 
     /// Skip an episode.

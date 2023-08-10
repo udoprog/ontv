@@ -35,7 +35,6 @@ impl MovieActions {
     pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, message: Message) {
         match message {
             Message::RefreshMovie(remote_id) => {
-                // TODO: Implement this.
                 cx.service.push_task_without_delay(TaskKind::DownloadMovie {
                     movie_id: self.movie_id,
                     remote_id,
