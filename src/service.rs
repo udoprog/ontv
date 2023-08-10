@@ -234,6 +234,15 @@ impl Service {
         self.db.watched.by_episode(episode_id)
     }
 
+    /// Get all the watches for the given movie.
+    #[inline]
+    pub(crate) fn watched_by_movie(
+        &self,
+        movie_id: &MovieId,
+    ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone {
+        self.db.watched.by_movie(movie_id)
+    }
+
     /// Get task queue.
     pub(crate) fn pending_tasks(&self) -> impl ExactSizeIterator<Item = &Task> {
         self.db.tasks.pending()
@@ -554,13 +563,13 @@ impl Service {
         }
     }
 
-    /// Remove all watches of the given episode.
+    /// Remove a watch of the given episode.
     #[tracing::instrument(skip(self))]
     pub(crate) fn remove_episode_watch(&mut self, episode_id: &EpisodeId, watch_id: &WatchedId) {
-        tracing::trace!("removing episode watch");
+        tracing::trace!("Removing episode watch");
 
         let Some(w) = self.db.watched.remove_watch(watch_id) else {
-            tracing::warn!("watch missing");
+            tracing::warn!("Watch missing");
             return;
         };
 
@@ -579,6 +588,30 @@ impl Service {
         }
     }
 
+    /// Remove a single watch for the given movie.
+    #[tracing::instrument(skip(self))]
+    pub(crate) fn remove_movie_watch(&mut self, movie_id: &MovieId, watch_id: &WatchedId) {
+        tracing::trace!("Removing episode watch");
+
+        let Some(..) = self.db.watched.remove_watch(watch_id) else {
+            tracing::warn!("Watch missing");
+            return;
+        };
+
+        self.db.changes.change(Change::Watched);
+        // if let Some(m) = self.db.movies.get(movie_id) {
+        //     if self.db.watched.by_movie(&m.id).len() == 0 {
+        //         self.db.pending.extend([Pending {
+        //             series: *m.series(),
+        //             episode: m.id,
+        //             timestamp: w.timestamp,
+        //         }]);
+
+        //         self.db.changes.change(Change::Pending);
+        //     }
+        // }
+    }
+
     /// Remove all watches of the given episode.
     #[tracing::instrument(skip(self))]
     pub(crate) fn remove_season_watches(
@@ -587,7 +620,7 @@ impl Service {
         series_id: &SeriesId,
         season: &SeasonNumber,
     ) {
-        tracing::trace!("removing season watches");
+        tracing::trace!("Removing season watches");
 
         let mut removed = 0;
 

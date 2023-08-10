@@ -797,6 +797,8 @@ pub(crate) enum WatchedKind {
         /// Identifier of watched episode.
         episode: EpisodeId,
     },
+    /// The watched movie.
+    Movie { movie: MovieId },
 }
 
 /// A season in a series.

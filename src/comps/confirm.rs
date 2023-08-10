@@ -4,8 +4,12 @@ use crate::comps::ordering::Ordering;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Kind {
-    RemoveWatch {
+    RemoveEpisodeWatch {
         episode_id: EpisodeId,
+        watch_id: WatchedId,
+    },
+    RemoveMovieWatch {
+        movie_id: MovieId,
         watch_id: WatchedId,
     },
     RemoveSeason {
@@ -76,11 +80,14 @@ impl Confirm {
                 self.confirm = false;
 
                 match &self.props.kind {
-                    Kind::RemoveWatch {
+                    Kind::RemoveEpisodeWatch {
                         episode_id,
                         watch_id,
                     } => {
                         cx.service.remove_episode_watch(episode_id, watch_id);
+                    }
+                    Kind::RemoveMovieWatch { movie_id, watch_id } => {
+                        cx.service.remove_movie_watch(movie_id, watch_id);
                     }
                     Kind::RemoveSeason { series_id, season } => {
                         let now = Utc::now();

@@ -47,7 +47,7 @@ where
             watch: comps::Watch::new(comps::watch::Props::new(props.episode_id)),
             remove_last_watch: props.watched.clone().next_back().map(move |w| {
                 comps::Confirm::new(comps::confirm::Props::new(
-                    comps::confirm::Kind::RemoveWatch {
+                    comps::confirm::Kind::RemoveEpisodeWatch {
                         episode_id: props.episode_id,
                         watch_id: w.id,
                     },
@@ -57,7 +57,7 @@ where
                 .watched
                 .map(move |w| {
                     comps::Confirm::new(
-                        comps::confirm::Props::new(comps::confirm::Kind::RemoveWatch {
+                        comps::confirm::Props::new(comps::confirm::Kind::RemoveEpisodeWatch {
                             episode_id: props.episode_id,
                             watch_id: w.id,
                         })
@@ -76,13 +76,13 @@ where
             .changed(comps::watch::Props::new(props.episode_id));
         self.remove_last_watch
             .init_from_iter(props.watched.clone().next_back().map(move |w| {
-                comps::confirm::Props::new(comps::confirm::Kind::RemoveWatch {
+                comps::confirm::Props::new(comps::confirm::Kind::RemoveEpisodeWatch {
                     episode_id: props.episode_id,
                     watch_id: w.id,
                 })
             }));
         self.remove_watches.init_from_iter(props.watched.map(|w| {
-            comps::confirm::Props::new(comps::confirm::Kind::RemoveWatch {
+            comps::confirm::Props::new(comps::confirm::Kind::RemoveEpisodeWatch {
                 episode_id: props.episode_id,
                 watch_id: w.id,
             })

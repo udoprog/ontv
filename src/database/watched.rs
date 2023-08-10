@@ -5,11 +5,12 @@ use serde::Serialize;
 
 use crate::database::episodes;
 use crate::database::iter::Iter;
-use crate::model::{EpisodeId, SeasonNumber, SeriesId, Watched, WatchedId, WatchedKind};
+use crate::model::{EpisodeId, MovieId, SeasonNumber, SeriesId, Watched, WatchedId, WatchedKind};
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub(crate) enum Place {
     Episode(SeasonNumber, u32),
+    Movie,
 }
 
 impl Serialize for Place {
@@ -22,6 +23,7 @@ impl Serialize for Place {
             Place::Episode(season, number) => {
                 serializer.collect_str(&format_args!("{season}x{number}", season = season.short()))
             }
+            Place::Movie => serializer.serialize_unit(),
         }
     }
 }
@@ -39,6 +41,7 @@ pub(crate) struct Database {
     data: HashMap<WatchedId, Watched>,
     by_episode: HashMap<EpisodeId, Vec<WatchedId>>,
     by_series: HashMap<SeriesId, Vec<WatchedId>>,
+    by_movie: HashMap<MovieId, Vec<WatchedId>>,
 }
 
 impl Database {
@@ -59,13 +62,23 @@ impl Database {
     /// Get all watches for the given series.
     pub(crate) fn by_series(
         &self,
-        series_id: &SeriesId,
+        id: &SeriesId,
     ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone {
         let indexes = self
             .by_series
-            .get(series_id)
+            .get(id)
             .map(Vec::as_slice)
             .unwrap_or_default();
+
+        Iter::new(indexes.iter(), &self.data)
+    }
+
+    /// Get all watches for the given movie.
+    pub(crate) fn by_movie(
+        &self,
+        id: &MovieId,
+    ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone {
+        let indexes = self.by_movie.get(id).map(Vec::as_slice).unwrap_or_default();
 
         Iter::new(indexes.iter(), &self.data)
     }
@@ -81,6 +94,9 @@ impl Database {
                     self.clear_series_by_id(series, &w.id);
                     self.clear_episode_by_id(episode, &w.id);
                 }
+                WatchedKind::Movie { movie } => {
+                    self.clear_movie_by_id(movie, &w.id);
+                }
             }
         }
 
@@ -88,6 +104,9 @@ impl Database {
             WatchedKind::Series { series, episode } => {
                 self.by_episode.entry(episode).or_default().push(w.id);
                 self.by_series.entry(series).or_default().push(w.id);
+            }
+            WatchedKind::Movie { movie } => {
+                self.by_movie.entry(movie).or_default().push(w.id);
             }
         }
     }
@@ -106,6 +125,10 @@ impl Database {
             match w.kind {
                 WatchedKind::Series { episode, .. } => {
                     let _ = self.by_episode.remove(&episode);
+                }
+                WatchedKind::Movie { movie } => {
+                    // This is odd, but okay.
+                    let _ = self.by_movie.remove(&movie);
                 }
             }
         }
@@ -128,6 +151,10 @@ impl Database {
                 WatchedKind::Series { series, .. } => {
                     self.clear_series_by_id(&series, &w.id);
                 }
+                WatchedKind::Movie { movie } => {
+                    // This is odd, but okay.
+                    self.clear_movie_by_id(&movie, &w.id);
+                }
             }
         }
 
@@ -142,6 +169,9 @@ impl Database {
             WatchedKind::Series { series, episode } => {
                 self.clear_series_by_id(&series, &w.id);
                 self.clear_episode_by_id(&episode, &w.id);
+            }
+            WatchedKind::Movie { movie } => {
+                self.clear_movie_by_id(&movie, &w.id);
             }
         }
 
@@ -164,6 +194,7 @@ impl Database {
                         .unwrap_or_default();
                     Place::Episode(season, number)
                 }
+                WatchedKind::Movie { .. } => Place::Movie,
             };
 
             export.insert((w.timestamp, place, w.id), Export { watched: *w, place });
@@ -186,6 +217,18 @@ impl Database {
 
     fn clear_episode_by_id(&mut self, episode_id: &EpisodeId, id: &WatchedId) {
         let hash_map::Entry::Occupied(mut e) = self.by_episode.entry(*episode_id) else {
+            return;
+        };
+
+        e.get_mut().retain(|&this| this != *id);
+
+        if e.get().is_empty() {
+            e.remove();
+        }
+    }
+
+    fn clear_movie_by_id(&mut self, movie_id: &MovieId, id: &WatchedId) {
+        let hash_map::Entry::Occupied(mut e) = self.by_movie.entry(*movie_id) else {
             return;
         };
 

@@ -537,9 +537,9 @@ impl Client {
         struct Details {
             id: u32,
             #[serde(default)]
-            name: Option<String>,
+            title: Option<String>,
             #[serde(default)]
-            original_name: Option<String>,
+            original_title: Option<String>,
             #[serde(default)]
             original_language: Option<String>,
             #[serde(default)]
@@ -631,7 +631,7 @@ impl Client {
 
         let series = UpdateMovie {
             id,
-            title: details.original_name.or(details.name).unwrap_or_default(),
+            title: details.original_title.or(details.title).unwrap_or_default(),
             language,
             release_date: details.release_date,
             overview: details.overview.unwrap_or_default(),

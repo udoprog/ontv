@@ -256,9 +256,9 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<
             ..
         } => {
             let text = match t {
-                Temporal::Past => "Downloaded series",
-                Temporal::Now => "Updating series",
-                Temporal::Future => "Update series",
+                Temporal::Past => "Downloaded movie",
+                Temporal::Now => "Updating movie",
+                Temporal::Future => "Update movie",
             };
 
             update = update.push(w::text(text).size(SMALL_SIZE));
