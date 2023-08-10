@@ -335,7 +335,7 @@ where
 
         let m = e.metadata()?;
 
-        if !m.is_file() {
+        if !m.is_file() || m.len() == 0 {
             continue;
         }
 
@@ -389,6 +389,12 @@ where
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(Error::from(e)).with_context(|| anyhow!("{}", path.display())),
     };
+
+    let m = f.metadata()?;
+
+    if m.len() == 0 {
+        return Ok(None);
+    }
 
     let format = Format::from_path(&path)
         .with_context(|| anyhow!("{}: unsupported file extension", path.display()))?;
