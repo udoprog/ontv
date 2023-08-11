@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -254,7 +255,7 @@ impl Client {
         let last_modified = common::parse_last_modified(&details)?;
         let last_etag = common::parse_etag(&details);
 
-        let details = response::<Details>("tv/{id}/details", details).await?;
+        let details = response::<Details, _>(format!("tv/{id}"), details).await?;
 
         let language = details.original_language.filter(|s| !s.is_empty());
 
@@ -284,8 +285,8 @@ impl Client {
             .await?;
 
         let (external_ids, images) = tokio::try_join!(
-            response::<ExternalIds>("tv/{id}/external_ids", external_ids),
-            response::<Images>("tv/{id}/images", images)
+            response::<ExternalIds, _>(format!("tv/{id}/external_ids"), external_ids),
+            response::<Images, _>(format!("tv/{id}/images"), images)
         )?;
 
         let remote_id = RemoteId::Tmdb { id: details.id };
@@ -511,8 +512,8 @@ impl Client {
             return Ok(None);
         }
 
-        let external_ids = response::<ExternalIds>(
-            "tv/{id}/season/{season}/episode/{episode}/external_ids",
+        let external_ids = response::<ExternalIds, _>(
+            format!("tv/{season_id}/season/{season_number}/episode/{episode_number}/external_ids"),
             external_ids,
         )
         .await?;
@@ -569,7 +570,7 @@ impl Client {
         let last_modified = common::parse_last_modified(&details)?;
         let last_etag = common::parse_etag(&details);
 
-        let details = response::<Details>("movie/{id}", details).await?;
+        let details = response::<Details, _>(format!("movie/{id}"), details).await?;
 
         let language = details.original_language.filter(|s| !s.is_empty());
 
@@ -599,8 +600,8 @@ impl Client {
             .await?;
 
         let (external_ids, images) = tokio::try_join!(
-            response::<ExternalIds>("movie/{id}/external_ids", external_ids),
-            response::<Images>("movie/{id}/images", images)
+            response::<ExternalIds, _>(format!("movie/{id}/external_ids"), external_ids),
+            response::<Images, _>(format!("movie/{id}/images"), images)
         )?;
 
         let remote_id = RemoteId::Tmdb { id: details.id };
@@ -665,12 +666,14 @@ impl Client {
 }
 
 /// Converting a response from JSON.
-async fn response<T>(what: &'static str, res: Response) -> Result<T>
+async fn response<T, W>(what: W, res: Response) -> Result<T>
 where
+    W: fmt::Display + Send,
     T: DeserializeOwned,
 {
-    async fn inner<T>(what: &'static str, res: Response) -> Result<T>
+    async fn inner<T, W>(what: &W, res: Response) -> Result<T>
     where
+        W: fmt::Display + Send,
         T: DeserializeOwned,
     {
         if !res.status().is_success() {
@@ -687,7 +690,7 @@ where
         Ok(serde_json::from_slice(&output)?)
     }
 
-    inner(what, res).await.with_context(|| anyhow!("{what}"))
+    inner(&what, res).await.with_context(|| anyhow!("{what}"))
 }
 
 #[derive(Default, Deserialize)]
