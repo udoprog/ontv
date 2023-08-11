@@ -83,11 +83,11 @@ impl Season {
         state: &State,
     ) -> Result<Element<'static, Message>> {
         let Some(series) = cx.service.series(&state.series_id) else {
-            bail!("missing series {}", state.series_id);
+            bail!("Missing series {}", state.series_id);
         };
 
         let Some(season) = cx.service.season(&series.id, &state.season) else {
-            bail!("missing series {} season {}", series.id, state.season);
+            bail!("Missing series {} season {}", series.id, state.season);
         };
 
         let mut episodes = w::Column::new();

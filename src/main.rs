@@ -63,8 +63,8 @@ pub fn main() -> Result<()> {
     let cache = dirs.cache_dir();
 
     if opts.paths {
-        tracing::info!("config: {}", config.display());
-        tracing::info!("cache: {}", cache.display());
+        tracing::info!("Config: {}", config.display());
+        tracing::info!("Cache: {}", cache.display());
     }
 
     let mut service = ontv::Service::new(config, cache)?;

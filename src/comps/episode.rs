@@ -142,7 +142,7 @@ impl Episode {
         pending: bool,
     ) -> Result<Element<'static, Message>> {
         let Some(e) = cx.service.episode(&self.episode_id) else {
-            bail!("missing episode {}", self.episode_id);
+            bail!("Missing episode {}", self.episode_id);
         };
 
         let pending_series = if self.pending_series {

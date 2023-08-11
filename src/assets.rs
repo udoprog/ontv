@@ -79,7 +79,7 @@ impl Assets {
         I: IntoIterator<Item = &'a ImageV2>,
     {
         for id in ids {
-            tracing::trace!("mark: {id:?}");
+            tracing::trace!(?id, "mark");
 
             let key = ImageKey {
                 id: id.hash(),
@@ -96,7 +96,7 @@ impl Assets {
         I: IntoIterator<Item = &'a ImageV2>,
     {
         for id in ids {
-            tracing::trace!("mark: {id:?} {hint:?}");
+            tracing::trace!(?id, ?hint, "mark");
 
             let key = ImageKey {
                 id: id.hash(),
@@ -120,7 +120,7 @@ impl Assets {
 
             // Remove assets which are no longer used.
             for image in &self.to_remove {
-                tracing::trace!("unloading: {image:?}");
+                tracing::trace!(?image, "Unloading");
                 let _ = self.images.remove(image);
             }
 

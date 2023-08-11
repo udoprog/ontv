@@ -363,7 +363,7 @@ impl iced::Application for Application {
                         self.assets.insert_images(loaded);
                     }
                     Err(error) => {
-                        tracing::error!("error loading images: {error}");
+                        tracing::error!("Error loading images: {error}");
                     }
                 }
 
@@ -754,7 +754,7 @@ impl Application {
         let now = Utc::now();
 
         while let Some(task) = self.service.next_task(&now, timed_out) {
-            tracing::trace!("running task {}", task.id);
+            tracing::trace!("Running task {}", task.id);
 
             match &task.kind {
                 TaskKind::CheckForUpdates {
@@ -832,7 +832,7 @@ impl Application {
         let now = Utc::now();
 
         if let Some((seconds, id)) = self.service.next_task_sleep(&now) {
-            tracing::trace!("next queue sleep: {seconds}s");
+            tracing::trace!(?seconds, "Next queue sleep");
 
             self.commands.perform(
                 self.queue_timeout.set(Duration::from_secs(seconds)),
@@ -866,7 +866,7 @@ impl Application {
                 page.view(ctxt_ref!(self), state).map(Message::Queue)
             }
             (Current::Errors(page), _) => page.view(ctxt_ref!(self)).map(Message::Errors),
-            _ => return Err(anyhow!("illegal page state")),
+            _ => return Err(anyhow!("Illegal page state")),
         };
 
         Ok(page)

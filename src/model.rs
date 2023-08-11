@@ -330,13 +330,13 @@ impl<'de> Deserialize<'de> for RemoteId {
                             id = Some(map.next_value::<serde_json::Value>()?);
                         }
                         kind => {
-                            return Err(de::Error::custom(format_args!("unsupported key: {kind}")));
+                            return Err(de::Error::custom(format_args!("Unsupported key: {kind}")));
                         }
                     }
                 }
 
                 let (Some(remote), Some(id)) = (remote, id) else {
-                    return Err(de::Error::custom("missing remote or id"));
+                    return Err(de::Error::custom("Missing remote or id"));
                 };
 
                 let id = id.into_deserializer();

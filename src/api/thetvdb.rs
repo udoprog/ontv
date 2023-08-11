@@ -114,7 +114,7 @@ impl Client {
 
         if let Some(c) = &*cached {
             if !c.is_expired() {
-                tracing::debug!("using cached credentials");
+                tracing::debug!("Using cached credentials");
                 return Ok(c.token.clone());
             }
         }

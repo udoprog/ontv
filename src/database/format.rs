@@ -202,11 +202,11 @@ where
     T: 'static + Send + Serialize,
 {
     let path = Box::<Path>::from(path.as_ref());
-    tracing::debug!("saving {what}: {}", path.display());
+    tracing::debug!(path = path.display().to_string(), what, "Saving");
 
     let task = tokio::task::spawn_blocking(move || {
         let Some(dir) = path.parent() else {
-            anyhow::bail!("{what}: missing parent directory: {}", path.display());
+            anyhow::bail!("{what}: Missing parent directory for {}", path.display());
         };
 
         if !matches!(fs::metadata(dir), Ok(m) if m.is_dir()) {
@@ -218,7 +218,7 @@ where
 
         let mut f = tempfile::NamedTempFile::new_in(dir)?;
 
-        tracing::trace!("writing {what}: {}", f.path().display());
+        tracing::trace!(what, path = f.path().display().to_string(), "Writing");
 
         mode.serialize_pretty(&mut f, &data)?;
         let (mut f, temp_path) = f.keep()?;
@@ -270,7 +270,7 @@ where
 {
     let path = path.as_ref();
 
-    tracing::trace!("saving {what}: {}", path.display());
+    tracing::trace!(what, path = path.display().to_string(), "Saving");
 
     let path = Box::<Path>::from(path);
 
@@ -287,7 +287,7 @@ where
             .with_context(|| anyhow!("{}: unsupported mode", path.display()))?;
 
         let f = tempfile::NamedTempFile::new_in(dir)?;
-        tracing::trace!("writing {what}: {}", f.path().display());
+        tracing::trace!(what, path = f.path().display().to_string(), "Writing");
         let mut f = BufWriter::new(f);
 
         let mut writer = mode.start_array(&mut f);

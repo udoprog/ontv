@@ -124,7 +124,7 @@ impl Service {
         let paths = paths::Paths::new(config, cache);
 
         if !paths.images.is_dir() {
-            tracing::debug!("creating images directory: {}", paths.images.display());
+            tracing::debug!("Creating images directory: {}", paths.images.display());
             std::fs::create_dir_all(&paths.images)?;
         }
 
@@ -484,7 +484,7 @@ impl Service {
         tracing::trace!("Marking as watched");
 
         let Some(episode) = self.db.episodes.get(episode_id) else {
-            tracing::warn!("episode missing");
+            tracing::warn!(?episode_id, "Episode missing");
             return;
         };
 
@@ -523,7 +523,7 @@ impl Service {
         tracing::trace!("Marking as watched");
 
         let Some(m) = self.db.movies.get(movie) else {
-            tracing::warn!("episode missing");
+            tracing::warn!(?movie, "Movie missing");
             return;
         };
 
@@ -550,17 +550,17 @@ impl Service {
     /// Skip an episode.
     #[tracing::instrument(skip(self))]
     pub(crate) fn skip(&mut self, now: &DateTime<Utc>, series_id: &SeriesId, id: &EpisodeId) {
-        tracing::trace!("skipping episode");
+        tracing::trace!("Skipping episode");
         self.populate_pending_from(now, series_id, id);
     }
 
     /// Select the next pending episode to use for a show.
     #[tracing::instrument(skip(self))]
     pub(crate) fn select_pending(&mut self, now: &DateTime<Utc>, episode_id: &EpisodeId) {
-        tracing::trace!("selecting pending");
+        tracing::trace!("Selecting pending");
 
         let Some(episode) = self.db.episodes.get(episode_id) else {
-            tracing::warn!("episode missing");
+            tracing::warn!("Episode missing");
             return;
         };
 
@@ -589,7 +589,7 @@ impl Service {
     /// Clear next episode as pending.
     #[tracing::instrument(skip(self))]
     pub(crate) fn clear_pending(&mut self, episode_id: &EpisodeId) {
-        tracing::trace!("clearing pending");
+        tracing::trace!("Clearing pending");
 
         self.db.changes.change(Change::Pending);
 
@@ -713,7 +713,7 @@ impl Service {
     /// populate from.
     #[tracing::instrument(skip(self))]
     pub(crate) fn populate_pending(&mut self, now: &DateTime<Utc>, id: &SeriesId) {
-        tracing::trace!("populate pending");
+        tracing::trace!("Populate pending");
 
         if let Some(pending) = self.db.pending.get(id) {
             // Do nothing since we already have a pending episode.
@@ -724,10 +724,10 @@ impl Service {
         let last = self.db.watched.by_series(id).next_back();
 
         let mut cur = if let Some(WatchedKind::Series { episode, .. }) = last.map(|w| &w.kind) {
-            tracing::trace!(?episode, "episode after watched");
+            tracing::trace!(?episode, "Episode after watched");
             self.db.episodes.get(episode).and_then(EpisodeRef::next)
         } else {
-            tracing::trace!("finding next unwatched episode");
+            tracing::trace!("Finding next unwatched episode");
             self.db.episodes.by_series(id).next()
         };
 
@@ -826,7 +826,7 @@ impl Service {
     /// Remove the given series.
     #[tracing::instrument(skip(self))]
     pub(crate) fn remove_series(&mut self, id: &SeriesId) {
-        tracing::info!("remove series");
+        tracing::info!("Remove series");
 
         let _ = self.db.series.remove(id);
         self.db.episodes.remove(id);
@@ -838,7 +838,7 @@ impl Service {
     /// Remove the given movie.
     #[tracing::instrument(skip(self))]
     pub(crate) fn remove_movie(&mut self, id: &MovieId) {
-        tracing::info!("remove movie");
+        tracing::info!("Remove movie");
 
         let _ = self.db.movies.remove(id);
         self.db.changes.remove_movie(id);
@@ -921,7 +921,7 @@ impl Service {
                     }
                 }
                 RemoteId::Imdb { .. } => {
-                    bail!("cannot download series data from imdb")
+                    bail!("Cannot download series data from IMDB")
                 }
             };
 
@@ -1254,7 +1254,7 @@ impl Service {
     /// Build schedule information.
     #[tracing::instrument(skip(self))]
     pub(crate) fn rebuild_schedule(&mut self) {
-        tracing::trace!("rebuilding schedule");
+        tracing::trace!("Rebuilding schedule");
 
         let mut current = self.now;
 

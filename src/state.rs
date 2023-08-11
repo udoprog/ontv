@@ -39,7 +39,7 @@ impl State {
 
     /// Handle an error.
     pub(crate) fn handle_error(&mut self, error: ErrorInfo) {
-        tracing::error!("error: {error}");
+        tracing::error!(?error, "Error");
 
         self.saving = false;
         self.error_ids.extend(error.id);

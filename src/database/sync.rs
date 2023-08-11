@@ -70,7 +70,7 @@ impl Database {
         id: RemoteId,
         last_modified: Option<DateTime<Utc>>,
     ) -> bool {
-        tracing::trace!("series update last modified");
+        tracing::trace!("Series update last modified");
 
         let e = self.data.entry(id).or_default();
         replace(&mut e.last_modified, last_modified) != last_modified
@@ -85,7 +85,7 @@ impl Database {
         now: DateTime<Utc>,
         last_modified: Option<DateTime<Utc>>,
     ) -> bool {
-        tracing::trace!("series update sync");
+        tracing::trace!("Series update sync");
 
         let e = self.data.entry(id).or_default();
         (e.last_sync.replace(now) != Some(now))

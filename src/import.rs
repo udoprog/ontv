@@ -100,13 +100,13 @@ pub fn import_trakt_watched(
                 }
 
                 any = true;
-                tracing::trace!("{index}: watch: {}", episode.id);
+                tracing::trace!(?index, ?episode.id, "Watch");
                 service.insert_new_watch(series_id, episode.id, import.last_watched_at);
             }
         }
 
         if any {
-            tracing::info!("imported watch history for `{}`", entry.show.title);
+            tracing::info!("Imported watch history for `{}`", entry.show.title);
         }
 
         service.populate_pending(&now, &series_id);
