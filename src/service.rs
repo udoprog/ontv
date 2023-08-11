@@ -78,31 +78,56 @@ pub(crate) struct NewMovie {
 
 /// A pending thing to watch.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct PendingRef<'a> {
-    pub(crate) series: &'a Series,
-    pub(crate) season: Option<SeasonRef<'a>>,
-    pub(crate) episode: EpisodeRef<'a>,
+pub(crate) enum PendingRef<'a> {
+    Episode {
+        series: &'a Series,
+        season: Option<SeasonRef<'a>>,
+        episode: EpisodeRef<'a>,
+    },
+    Movie {
+        movie: &'a Movie,
+    },
 }
+
 impl<'a> PendingRef<'a> {
+    /// Get the date at which the pending item is airs or is released.
+    pub(crate) fn date(&self) -> Option<NaiveDate> {
+        match self {
+            PendingRef::Episode { episode, .. } => episode.aired,
+            PendingRef::Movie { movie } => movie.release_date,
+        }
+    }
+
     /// Get poster for the given pending reference.
     pub(crate) fn poster(&self) -> Option<&'a ImageV2> {
-        if let Some(season) = self.season.map(|s| s.into_season()) {
-            if let Some(image) = season.poster() {
-                return Some(image);
-            }
-        }
+        match self {
+            PendingRef::Episode { series, season, .. } => {
+                if let Some(season) = season.map(|s| s.into_season()) {
+                    if let Some(image) = season.poster() {
+                        return Some(image);
+                    }
+                }
 
-        self.series.poster()
+                series.poster()
+            }
+            PendingRef::Movie { movie } => movie.poster(),
+        }
     }
 
     /// Test if episode will air in the future.
     pub(crate) fn will_air(&self, today: &NaiveDate) -> bool {
-        self.episode.will_air(today)
+        match self {
+            PendingRef::Episode { episode, .. } => episode.will_air(today),
+            PendingRef::Movie { movie } => movie.will_release(today),
+        }
     }
 
     /// Test if pending ref has aired.
     pub(crate) fn has_aired(&self, today: &NaiveDate) -> bool {
-        self.episode.has_aired(today)
+        match self {
+            PendingRef::Episode { episode, .. } => episode.has_aired(today),
+            PendingRef::Movie { movie } => movie.has_released(today),
+        }
     }
 }
 
@@ -227,7 +252,7 @@ impl Service {
 
     /// Get all the watches for the given episode.
     #[inline]
-    pub(crate) fn watched(
+    pub(crate) fn watched_by_episode(
         &self,
         episode_id: &EpisodeId,
     ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone {
@@ -269,14 +294,14 @@ impl Service {
 
         for episode in self.episodes(series_id).filter(|e| e.season == *season) {
             total += 1;
-            watched += usize::from(self.watched(&episode.id).len() != 0);
+            watched += usize::from(self.watched_by_episode(&episode.id).len() != 0);
         }
 
         (watched, total)
     }
 
     /// Get the pending episode for the given series.
-    pub(crate) fn get_pending(&self, series_id: &SeriesId) -> Option<&Pending> {
+    pub(crate) fn pending_by_series(&self, series_id: &SeriesId) -> Option<&Pending> {
         self.db.pending.by_series(series_id)
     }
 
@@ -289,26 +314,35 @@ impl Service {
     }
 
     /// Get pending by series.
-    pub(crate) fn pending_by_series(&self, series_id: &SeriesId) -> Option<PendingRef<'_>> {
+    pub(crate) fn pending_ref_by_series(&self, series_id: &SeriesId) -> Option<PendingRef<'_>> {
         let p = self.db.pending.get(series_id)?;
         self.pending_ref(p)
     }
 
     fn pending_ref(&self, p: &Pending) -> Option<PendingRef<'_>> {
-        let series = self.db.series.get(&p.series)?;
+        match &p.kind {
+            PendingKind::Episode { series, episode } => {
+                let series = self.db.series.get(series)?;
 
-        if !series.tracked {
-            return None;
+                if !series.tracked {
+                    return None;
+                }
+
+                let episode = self.db.episodes.get(episode)?;
+                let season = self.season(&series.id, &episode.season);
+
+                Some(PendingRef::Episode {
+                    series,
+                    season,
+                    episode,
+                })
+            }
+            PendingKind::Movie { movie } => {
+                let movie = self.db.movies.get(movie)?;
+
+                Some(PendingRef::Movie { movie })
+            }
         }
-
-        let episode = self.db.episodes.get(&p.episode)?;
-        let season = self.season(&p.series, &episode.season);
-
-        Some(PendingRef {
-            series,
-            season,
-            episode,
-        })
     }
 
     /// Test if we have changes.
@@ -433,7 +467,7 @@ impl Service {
             .by_series(series_id)
             .filter(|e| e.season == *season)
         {
-            if self.watched(&episode.id).len() > 0 {
+            if self.watched_by_episode(&episode.id).len() > 0 {
                 continue;
             }
 
@@ -468,7 +502,7 @@ impl Service {
 
         if let Some(last) = last {
             self.populate_pending_from(now, series_id, &last);
-        } else if self.db.pending.remove(series_id).is_some() {
+        } else if self.db.pending.remove_series(series_id).is_some() {
             self.db.changes.change(Change::Pending);
         }
     }
@@ -554,10 +588,17 @@ impl Service {
         self.populate_pending_from(now, series_id, id);
     }
 
+    /// Skip an episode.
+    #[tracing::instrument(skip(self))]
+    pub(crate) fn skip_movie(&mut self, now: &DateTime<Utc>, id: &MovieId) {
+        tracing::trace!("Skipping movie");
+        self.db.pending.remove_movie(id);
+    }
+
     /// Select the next pending episode to use for a show.
     #[tracing::instrument(skip(self))]
     pub(crate) fn select_pending(&mut self, now: &DateTime<Utc>, episode_id: &EpisodeId) {
-        tracing::trace!("Selecting pending");
+        tracing::trace!("Selecting pending series");
 
         let Some(episode) = self.db.episodes.get(episode_id) else {
             tracing::warn!("Episode missing");
@@ -578,9 +619,26 @@ impl Service {
             .map(|w| w.timestamp);
 
         self.db.pending.extend([Pending {
-            series: *episode.series(),
-            episode: episode.id,
             timestamp: pending_timestamp(now, [timestamp, aired]),
+            kind: PendingKind::Episode {
+                series: *episode.series(),
+                episode: episode.id,
+            },
+        }]);
+
+        self.db.changes.change(Change::Pending);
+    }
+
+    /// Select the next pending movie.
+    #[tracing::instrument(skip(self))]
+    pub(crate) fn select_pending_movie(&mut self, now: &DateTime<Utc>, movie_id: &MovieId) {
+        tracing::trace!("Selecting pending movie");
+
+        let release = self.db.movies.get(movie_id).and_then(|e| e.release());
+
+        self.db.pending.extend([Pending {
+            timestamp: pending_timestamp(now, [release]),
+            kind: PendingKind::Movie { movie: *movie_id },
         }]);
 
         self.db.changes.change(Change::Pending);
@@ -594,8 +652,17 @@ impl Service {
         self.db.changes.change(Change::Pending);
 
         if let Some(e) = self.db.episodes.get(episode_id) {
-            self.db.pending.remove(e.series());
+            self.db.pending.remove_series(e.series());
         }
+    }
+
+    /// Clear next episode as pending.
+    #[tracing::instrument(skip(self))]
+    pub(crate) fn clear_pending_movie(&mut self, movie_id: &MovieId) {
+        tracing::trace!("Clearing pending movie");
+
+        self.db.changes.change(Change::Pending);
+        self.db.pending.remove_movie(movie_id);
     }
 
     /// Remove a watch of the given episode.
@@ -613,9 +680,11 @@ impl Service {
         if let Some(e) = self.db.episodes.get(episode_id) {
             if self.db.watched.by_episode(&e.id).len() == 0 {
                 self.db.pending.extend([Pending {
-                    series: *e.series(),
-                    episode: e.id,
                     timestamp: w.timestamp,
+                    kind: PendingKind::Episode {
+                        series: *e.series(),
+                        episode: e.id,
+                    },
                 }]);
 
                 self.db.changes.change(Change::Pending);
@@ -669,7 +738,7 @@ impl Service {
             self.db.changes.change(Change::Watched);
         }
 
-        if self.db.pending.remove(series_id).is_some() {
+        if self.db.pending.remove_series(series_id).is_some() {
             self.db.changes.change(Change::Pending);
         }
 
@@ -688,9 +757,11 @@ impl Service {
                 .map(|w| w.timestamp);
 
             self.db.pending.extend([Pending {
-                series: *series_id,
-                episode: e.id,
                 timestamp: pending_timestamp(now, [timestamp, e.aired_timestamp()]),
+                kind: PendingKind::Episode {
+                    series: *series_id,
+                    episode: e.id,
+                },
             }]);
 
             self.db.changes.change(Change::Pending);
@@ -748,16 +819,18 @@ impl Service {
         self.db.changes.change(Change::Pending);
         // Mark the next episode in the show as pending.
         self.db.pending.extend([Pending {
-            series: *id,
-            episode: e.id,
             timestamp: pending_timestamp(now, [last.map(|w| w.timestamp), e.aired_timestamp()]),
+            kind: PendingKind::Episode {
+                series: *id,
+                episode: e.id,
+            },
         }]);
     }
 
     /// Populate pending from a known episode ID.
     fn populate_pending_from(&mut self, now: &DateTime<Utc>, series_id: &SeriesId, id: &EpisodeId) {
         let Some(e) = self.db.episodes.get(id).and_then(|e| e.next()) else {
-            if self.db.pending.remove(series_id).is_some() {
+            if self.db.pending.remove_series(series_id).is_some() {
                 self.db.changes.change(Change::Pending);
             }
 
@@ -768,9 +841,11 @@ impl Service {
         let timestamp = e.aired_timestamp().map(|t| t.max(*now)).unwrap_or(*now);
 
         self.db.pending.extend([Pending {
-            series: *series_id,
-            episode: e.id,
             timestamp,
+            kind: PendingKind::Episode {
+                series: *series_id,
+                episode: e.id,
+            },
         }]);
     }
 

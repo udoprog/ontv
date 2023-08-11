@@ -31,6 +31,13 @@ macro_rules! id {
             pub(crate) fn random() -> Self {
                 Self(Uuid::new_v4())
             }
+
+            /// Access underlying id.
+            #[inline]
+            #[allow(unused)]
+            pub(crate) fn id(&self) -> &Uuid {
+                &self.0
+            }
         }
 
         impl fmt::Display for $name {
@@ -512,6 +519,9 @@ pub(crate) struct MovieGraphics {
     /// Fanart image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) fanart: Option<ImageV2>,
+    /// Screencap for movie.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) screen_capture: Option<ImageV2>,
 }
 
 impl MovieGraphics {
@@ -711,6 +721,11 @@ impl Movie {
         self.remote_id = Some(other.remote_id);
     }
 
+    /// Get screen capture for movie.
+    pub(crate) fn screen_capture(&self) -> Option<&ImageV2> {
+        self.graphics.screen_capture.as_ref()
+    }
+
     /// Get the poster of the movie.
     pub(crate) fn poster(&self) -> Option<&ImageV2> {
         self.graphics.poster.as_ref()
@@ -719,6 +734,24 @@ impl Movie {
     /// Get the banner of the movie.
     pub(crate) fn banner(&self) -> Option<&ImageV2> {
         self.graphics.banner.as_ref()
+    }
+
+    /// Test if episode will release in the future.
+    pub(crate) fn will_release(&self, today: &NaiveDate) -> bool {
+        let Some(release_date) = self.release_date else {
+            return false;
+        };
+
+        release_date > *today
+    }
+
+    /// Test if the given episode will be released.
+    pub(crate) fn has_released(&self, today: &NaiveDate) -> bool {
+        let Some(release_date) = self.release_date else {
+            return false;
+        };
+
+        release_date <= *today
     }
 
     /// Get release timestamp.
@@ -969,20 +1002,20 @@ impl Episode {
     ///
     /// This ignores episodes without an air date.
     pub(crate) fn will_air(&self, today: &NaiveDate) -> bool {
-        let Some(aired) = &self.aired else {
+        let Some(aired) = self.aired else {
             return false;
         };
 
-        *aired > *today
+        aired > *today
     }
 
     /// Test if the given episode has aired by the provided timestamp.
     pub(crate) fn has_aired(&self, today: &NaiveDate) -> bool {
-        let Some(aired) = &self.aired else {
+        let Some(aired) = self.aired else {
             return false;
         };
 
-        *aired <= *today
+        aired <= *today
     }
 
     /// Get aired timestamp.
@@ -1129,12 +1162,43 @@ impl<'de> Deserialize<'de> for ImageV2 {
     }
 }
 
+/// The kind of a pending item.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum PendingKind {
+    Episode {
+        series: SeriesId,
+        episode: EpisodeId,
+    },
+    Movie {
+        movie: MovieId,
+    },
+}
+
 /// A pending thing to watch.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub(crate) struct Pending {
-    pub(crate) series: SeriesId,
-    pub(crate) episode: EpisodeId,
     pub(crate) timestamp: DateTime<Utc>,
+    #[serde(flatten)]
+    pub(crate) kind: PendingKind,
+}
+
+impl Pending {
+    /// Get the underlying episode.
+    pub(crate) fn as_episode(&self) -> Option<&EpisodeId> {
+        match &self.kind {
+            PendingKind::Episode { episode, .. } => Some(episode),
+            PendingKind::Movie { .. } => None,
+        }
+    }
+
+    /// Access the raw id for the pending item.
+    pub(crate) fn id(&self) -> &Uuid {
+        match &self.kind {
+            PendingKind::Episode { series, .. } => series.id(),
+            PendingKind::Movie { movie } => movie.id(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

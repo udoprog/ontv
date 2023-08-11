@@ -1,23 +1,24 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Utc};
+use uuid::Uuid;
 
 use crate::database::iter::Iter;
-use crate::model::{Pending, SeriesId};
+use crate::model::{MovieId, Pending, SeriesId};
 
 #[derive(Default)]
 pub(crate) struct Database {
     /// Pending by series.
-    data: BTreeMap<SeriesId, Pending>,
+    data: BTreeMap<Uuid, Pending>,
     /// Index by timestamp.
-    by_timestamp: BTreeSet<(DateTime<Utc>, SeriesId)>,
+    by_timestamp: BTreeSet<(DateTime<Utc>, Uuid)>,
 }
 
 impl Database {
     /// Get an existing pending element.
     #[inline]
     pub(crate) fn get(&self, id: &SeriesId) -> Option<&Pending> {
-        self.data.get(id)
+        self.data.get(id.id())
     }
 
     /// Export data from the database.
@@ -31,11 +32,19 @@ impl Database {
         export
     }
 
-    /// Remove by previously looked up index.
+    /// Remove by series id.
     #[inline]
-    pub(crate) fn remove(&mut self, id: &SeriesId) -> Option<Pending> {
-        let p = self.data.remove(id)?;
-        self.by_timestamp.remove(&(p.timestamp, p.series));
+    pub(crate) fn remove_series(&mut self, id: &SeriesId) -> Option<Pending> {
+        let p = self.data.remove(id.id())?;
+        self.by_timestamp.remove(&(p.timestamp, *id.id()));
+        Some(p)
+    }
+
+    /// Remove by movie id.
+    #[inline]
+    pub(crate) fn remove_movie(&mut self, id: &MovieId) -> Option<Pending> {
+        let p = self.data.remove(id.id())?;
+        self.by_timestamp.remove(&(p.timestamp, *id.id()));
         Some(p)
     }
 
@@ -48,7 +57,7 @@ impl Database {
     /// Get pending by series.
     #[inline]
     pub(crate) fn by_series(&self, id: &SeriesId) -> Option<&Pending> {
-        self.data.get(id)
+        self.data.get(id.id())
     }
 }
 
@@ -58,12 +67,12 @@ impl Extend<Pending> for Database {
         T: IntoIterator<Item = Pending>,
     {
         for p in iter {
-            if let Some(p) = self.data.remove(&p.series) {
-                let _ = self.by_timestamp.remove(&(p.timestamp, p.series));
+            if let Some(p) = self.data.remove(p.id()) {
+                let _ = self.by_timestamp.remove(&(p.timestamp, *p.id()));
             }
 
-            self.by_timestamp.insert((p.timestamp, p.series));
-            self.data.insert(p.series, p);
+            self.by_timestamp.insert((p.timestamp, *p.id()));
+            self.data.insert(*p.id(), p);
         }
     }
 }

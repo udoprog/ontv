@@ -1,6 +1,6 @@
 use crate::component::{Component, ComponentInitExt};
 use crate::comps;
-use crate::model::{EpisodeId, Watched};
+use crate::model::{MovieId, Watched};
 use crate::params::{GAP, SCREENCAP_HINT, SMALL_SIZE, SPACE};
 use crate::prelude::*;
 
@@ -9,48 +9,38 @@ pub(crate) enum Message {
     RemoveLastWatch(comps::confirm::Message),
     RemoveWatch(usize, comps::confirm::Message),
     Watch(comps::watch::Message),
-    SelectPending(EpisodeId),
-    ClearPending(EpisodeId),
-    Navigate(Page),
+    SelectPending(MovieId),
+    ClearPending(MovieId),
 }
 
 #[derive(PartialEq, Eq)]
 pub(crate) struct Props<I> {
-    pub(crate) include_series: bool,
-    pub(crate) episode_id: EpisodeId,
+    pub(crate) movie_id: MovieId,
     pub(crate) watched: I,
 }
 
-pub(crate) struct Episode {
-    pending_series: bool,
-    episode_id: EpisodeId,
+pub(crate) struct MovieItem {
+    movie_id: MovieId,
     watch: comps::Watch,
     remove_last_watch: Option<comps::Confirm>,
     remove_watches: Vec<comps::Confirm>,
 }
 
-impl Episode {
-    pub(crate) fn episode_id(&self) -> &EpisodeId {
-        &self.episode_id
-    }
-}
-
-impl<'a, I> Component<Props<I>> for Episode
+impl<'a, I> Component<Props<I>> for MovieItem
 where
     I: DoubleEndedIterator<Item = &'a Watched> + Clone,
 {
     #[inline]
     fn new(props: Props<I>) -> Self {
         Self {
-            pending_series: props.include_series,
-            episode_id: props.episode_id,
-            watch: comps::Watch::new(comps::watch::Props::new(comps::watch::Kind::Episode(
-                props.episode_id,
+            movie_id: props.movie_id,
+            watch: comps::Watch::new(comps::watch::Props::new(comps::watch::Kind::Movie(
+                props.movie_id,
             ))),
             remove_last_watch: props.watched.clone().next_back().map(move |w| {
                 comps::Confirm::new(comps::confirm::Props::new(
-                    comps::confirm::Kind::RemoveEpisodeWatch {
-                        episode_id: props.episode_id,
+                    comps::confirm::Kind::RemoveMovieWatch {
+                        movie_id: props.movie_id,
                         watch_id: w.id,
                     },
                 ))
@@ -59,8 +49,8 @@ where
                 .watched
                 .map(move |w| {
                     comps::Confirm::new(
-                        comps::confirm::Props::new(comps::confirm::Kind::RemoveEpisodeWatch {
-                            episode_id: props.episode_id,
+                        comps::confirm::Props::new(comps::confirm::Kind::RemoveMovieWatch {
+                            movie_id: props.movie_id,
                             watch_id: w.id,
                         })
                         .with_ordering(comps::ordering::Ordering::Left),
@@ -72,22 +62,21 @@ where
 
     #[inline]
     fn changed(&mut self, props: Props<I>) {
-        self.pending_series = props.include_series;
-        self.episode_id = props.episode_id;
+        self.movie_id = props.movie_id;
         self.watch
-            .changed(comps::watch::Props::new(comps::watch::Kind::Episode(
-                props.episode_id,
+            .changed(comps::watch::Props::new(comps::watch::Kind::Movie(
+                props.movie_id,
             )));
         self.remove_last_watch
             .init_from_iter(props.watched.clone().next_back().map(move |w| {
-                comps::confirm::Props::new(comps::confirm::Kind::RemoveEpisodeWatch {
-                    episode_id: props.episode_id,
+                comps::confirm::Props::new(comps::confirm::Kind::RemoveMovieWatch {
+                    movie_id: props.movie_id,
                     watch_id: w.id,
                 })
             }));
         self.remove_watches.init_from_iter(props.watched.map(|w| {
-            comps::confirm::Props::new(comps::confirm::Kind::RemoveEpisodeWatch {
-                episode_id: props.episode_id,
+            comps::confirm::Props::new(comps::confirm::Kind::RemoveMovieWatch {
+                movie_id: props.movie_id,
                 watch_id: w.id,
             })
             .with_ordering(comps::ordering::Ordering::Left)
@@ -95,16 +84,10 @@ where
     }
 }
 
-impl Episode {
+impl MovieItem {
     pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>) {
-        if let Some(e) = cx.service.episode(&self.episode_id) {
-            if self.pending_series {
-                if let Some(p) = cx.service.pending_ref_by_series(e.series()) {
-                    cx.assets.mark_with_hint(p.poster(), POSTER_HINT);
-                }
-            } else {
-                cx.assets.mark_with_hint(e.filename(), SCREENCAP_HINT);
-            }
+        if let Some(e) = cx.service.movie(&self.movie_id) {
+            cx.assets.mark_with_hint(e.screen_capture(), SCREENCAP_HINT);
         }
     }
 
@@ -123,15 +106,12 @@ impl Episode {
             Message::Watch(message) => {
                 self.watch.update(cx, message);
             }
-            Message::SelectPending(episode) => {
+            Message::SelectPending(movie) => {
                 let now = Utc::now();
-                cx.service.select_pending(&now, &episode);
+                cx.service.select_pending_movie(&now, &movie);
             }
-            Message::ClearPending(episode) => {
-                cx.service.clear_pending(&episode);
-            }
-            Message::Navigate(page) => {
-                cx.push_history(page);
+            Message::ClearPending(movie) => {
+                cx.service.clear_pending_movie(&movie);
             }
         }
     }
@@ -141,53 +121,26 @@ impl Episode {
         cx: &CtxtRef<'_>,
         pending: bool,
     ) -> Result<Element<'static, Message>> {
-        let Some(episode) = cx.service.episode(&self.episode_id) else {
-            bail!("Missing episode {}", self.episode_id);
+        let Some(movie) = cx.service.movie(&self.movie_id) else {
+            bail!("Missing movie {}", self.movie_id);
         };
 
-        let pending_series = if self.pending_series {
-            cx.service.pending_ref_by_series(episode.series())
-        } else {
-            None
+        let screen_capture = match movie
+            .screen_capture()
+            .and_then(|image| cx.assets.image_with_hint(image, SCREENCAP_HINT))
+        {
+            Some(handle) => handle,
+            None => cx.assets.missing_screen_capture(),
         };
 
-        let (image, (image_fill, rest_fill)) = if let Some(p) = pending_series {
-            let poster = match p
-                .poster()
-                .and_then(|image| cx.assets.image_with_hint(image, POSTER_HINT))
-            {
-                Some(handle) => handle,
-                None => cx.missing_poster(),
-            };
+        let (image, (image_fill, rest_fill)) = (
+            w::container(w::image(screen_capture)).align_x(Horizontal::Center),
+            (4, 8),
+        );
 
-            (
-                w::container(w::image(poster)).align_x(Horizontal::Center),
-                (2, 10),
-            )
-        } else {
-            let screencap = match episode
-                .filename()
-                .and_then(|image| cx.assets.image_with_hint(image, SCREENCAP_HINT))
-            {
-                Some(handle) => handle,
-                None => cx.assets.missing_screen_capture(),
-            };
+        let name = w::text(&movie.title).shaping(w::text::Shaping::Advanced);
 
-            (
-                w::container(w::image(screencap)).align_x(Horizontal::Center),
-                (4, 8),
-            )
-        };
-
-        let mut name = w::Row::new().spacing(SPACE);
-
-        name = name.push(w::text(episode.number));
-
-        if let Some(string) = &episode.name {
-            name = name.push(w::text(string).shaping(w::text::Shaping::Advanced));
-        }
-
-        let watched = cx.service.watched_by_episode(&episode.id);
+        let watched = cx.service.watched_by_movie(&movie.id);
 
         let mut actions = w::Row::new().spacing(SPACE);
 
@@ -236,50 +189,29 @@ impl Episode {
         if !any_confirm {
             if !pending {
                 actions = actions.push(
-                    w::button(w::text("Make next episode").size(SMALL_SIZE))
+                    w::button(w::text("Make next movie").size(SMALL_SIZE))
                         .style(theme::Button::Secondary)
-                        .on_press(Message::SelectPending(episode.id)),
+                        .on_press(Message::SelectPending(movie.id)),
                 );
             } else {
                 actions = actions.push(
-                    w::button(w::text("Clear next episode").size(SMALL_SIZE))
+                    w::button(w::text("Clear next movie").size(SMALL_SIZE))
                         .style(theme::Button::Destructive)
-                        .on_press(Message::ClearPending(episode.id)),
+                        .on_press(Message::ClearPending(movie.id)),
                 );
             }
         }
 
         let mut info = w::Column::new();
 
-        if let Some(crate::service::PendingRef::Episode { series, season, .. }) = pending_series {
-            info = info.push(
-                link(
-                    w::text(&series.title)
-                        .shaping(w::text::Shaping::Advanced)
-                        .size(SUBTITLE_SIZE),
-                )
-                .on_press(Message::Navigate(page::series::page(series.id))),
-            );
-
-            if let Some(season) = season {
-                info = info.push(link(name).on_press(Message::Navigate(page::season::page(
-                    series.id,
-                    season.number,
-                ))));
-            } else {
-                info = info.push(name);
-            }
-        } else {
-            info = info.push(name);
-        }
-
+        info = info.push(name);
         info = info.push(actions);
 
-        if let Some(air_date) = &episode.aired {
+        if let Some(air_date) = &movie.release_date {
             if air_date > cx.state.today() {
-                info = info.push(w::text(format_args!("Airs: {air_date}")).size(SMALL_SIZE));
+                info = info.push(w::text(format_args!("Releases: {air_date}")).size(SMALL_SIZE));
             } else {
-                info = info.push(w::text(format_args!("Aired: {air_date}")).size(SMALL_SIZE));
+                info = info.push(w::text(format_args!("Released: {air_date}")).size(SMALL_SIZE));
             }
         }
 
@@ -303,7 +235,7 @@ impl Episode {
             info = info.push(text.size(SMALL_SIZE));
         };
 
-        info = info.push(w::text(&episode.overview).shaping(w::text::Shaping::Advanced));
+        info = info.push(w::text(&movie.overview).shaping(w::text::Shaping::Advanced));
 
         if watched.len() > 0 {
             let mut history = w::Column::new();

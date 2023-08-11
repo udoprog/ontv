@@ -29,3 +29,9 @@ pub(crate) mod ordering;
 
 pub(crate) mod episode;
 pub(crate) use self::episode::Episode;
+
+pub(crate) mod movie_item;
+pub(crate) use self::movie_item::MovieItem;
+
+pub(crate) mod episode_or_movie;
+pub(crate) use self::episode_or_movie::EpisodeOrMovie;

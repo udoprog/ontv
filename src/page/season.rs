@@ -45,7 +45,7 @@ impl Season {
                 .map(|e| comps::episode::Props {
                     include_series: false,
                     episode_id: e.id,
-                    watched: cx.service.watched(&e.id),
+                    watched: cx.service.watched_by_episode(&e.id),
                 }),
         );
 
@@ -92,7 +92,10 @@ impl Season {
 
         let mut episodes = w::Column::new();
 
-        let pending = cx.service.get_pending(&series.id).map(|p| &p.episode);
+        let pending = cx
+            .service
+            .pending_by_series(&series.id)
+            .and_then(|p| p.as_episode());
 
         for (index, episode) in self.episodes.iter().enumerate() {
             episodes = episodes.push(

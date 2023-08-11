@@ -9,7 +9,9 @@ pub(crate) enum Message {
     /// Hover a scheduled series.
     HoverScheduled(SeriesId),
     /// Skip an episode.
-    Skip(SeriesId, EpisodeId),
+    SkipSeries(SeriesId, EpisodeId),
+    /// Skip a movie.
+    SkipMovie(MovieId),
     /// Watch an episode.
     Watch(usize, comps::watch::Message),
     /// Navigate.
@@ -64,9 +66,12 @@ impl Dashboard {
         cx.assets
             .mark_with_hint(iter.clone().flat_map(|p| p.poster()), POSTER_HINT);
 
-        self.watch.init_from_iter(
-            iter.map(|p| comps::watch::Props::new(comps::watch::Kind::Episode(p.episode.id))),
-        );
+        self.watch.init_from_iter(iter.map(|p| {
+            comps::watch::Props::new(match p {
+                PendingRef::Episode { episode, .. } => comps::watch::Kind::Episode(episode.id),
+                PendingRef::Movie { movie } => comps::watch::Kind::Movie(movie.id),
+            })
+        }));
     }
 
     pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, message: Message) {
@@ -79,9 +84,13 @@ impl Dashboard {
                     self.schedule_focus = Some((series_id, series.poster().cloned()));
                 }
             }
-            Message::Skip(series_id, episode_id) => {
+            Message::SkipSeries(series_id, episode_id) => {
                 let now = Utc::now();
                 cx.service.skip(&now, &series_id, &episode_id);
+            }
+            Message::SkipMovie(movie_id) => {
+                let now = Utc::now();
+                cx.service.skip_movie(&now, &movie_id);
             }
             Message::Watch(index, message) => {
                 if let Some(w) = self.watch.get_mut(index) {
@@ -210,10 +219,6 @@ impl Dashboard {
             .take(limit);
 
         for (index, (watch, pending_ref)) in self.watch.iter().zip(iter).enumerate() {
-            let p @ PendingRef {
-                series, episode, ..
-            } = pending_ref;
-
             if index % page == 0 && index > 0 {
                 cols = cols.push(pending.spacing(GAP));
                 pending = w::Row::new();
@@ -222,7 +227,7 @@ impl Dashboard {
                 count += 1;
             }
 
-            let poster = match p
+            let poster = match pending_ref
                 .poster()
                 .and_then(|i| cx.assets.image_with_hint(i, POSTER_HINT))
             {
@@ -232,9 +237,14 @@ impl Dashboard {
 
             let mut panel = w::Column::new();
 
+            let page = match pending_ref {
+                PendingRef::Episode { series, .. } => page::series::page(series.id),
+                PendingRef::Movie { movie } => page::movie::page(movie.id),
+            };
+
             panel = panel.push(
                 link(w::image(poster).width(Length::Fill))
-                    .on_press(Message::Navigate(page::series::page(series.id))),
+                    .on_press(Message::Navigate(page.clone())),
             );
 
             let mut actions = w::Row::new();
@@ -253,6 +263,13 @@ impl Dashboard {
             );
 
             if !watch.is_confirm() {
+                let skip = match pending_ref {
+                    PendingRef::Episode {
+                        series, episode, ..
+                    } => Message::SkipSeries(series.id, episode.id),
+                    PendingRef::Movie { movie } => Message::SkipMovie(movie.id),
+                };
+
                 actions = actions.push(
                     w::button(
                         w::text("Skip")
@@ -260,11 +277,16 @@ impl Dashboard {
                             .size(SMALL_SIZE),
                     )
                     .style(theme::Button::Secondary)
-                    .on_press(Message::Skip(series.id, episode.id))
+                    .on_press(skip)
                     .width(Length::FillPortion(5)),
                 );
 
-                let len = cx.service.watched(&episode.id).len();
+                let len = match pending_ref {
+                    PendingRef::Episode { episode, .. } => {
+                        cx.service.watched_by_episode(&episode.id).len()
+                    }
+                    PendingRef::Movie { movie } => cx.service.watched_by_movie(&movie.id).len(),
+                };
 
                 let style = match len {
                     0 => theme::Button::Text,
@@ -284,22 +306,24 @@ impl Dashboard {
 
             panel = panel.push(actions.spacing(SPACE));
 
-            let episode_title = episode_title(&episode);
+            let title = match pending_ref {
+                PendingRef::Episode { episode, .. } => episode_title(&episode),
+                PendingRef::Movie { movie } => {
+                    w::text(&movie.title).shaping(w::text::Shaping::Advanced)
+                }
+            };
 
-            if let Some(air_date) = &episode.aired {
-                panel = panel.push(w::text(format!("Aired: {air_date}")).size(SMALL_SIZE));
+            if let Some(date) = pending_ref.date() {
+                panel = panel.push(w::text(format!("{date}")).size(SMALL_SIZE));
             }
 
             panel = panel.push(
                 link(
-                    episode_title
+                    title
                         .size(SMALL_SIZE)
                         .horizontal_alignment(Horizontal::Center),
                 )
-                .on_press(Message::Navigate(page::season::page(
-                    series.id,
-                    episode.season,
-                ))),
+                .on_press(Message::Navigate(page)),
             );
 
             pending = pending.push(

@@ -10,15 +10,15 @@ pub(crate) struct State {
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
-    Future(usize, comps::episode::Message),
-    Episode(usize, comps::episode::Message),
+    Future(usize, comps::episode_or_movie::Message),
+    Episode(usize, comps::episode_or_movie::Message),
     ToggleFuture(bool),
 }
 
 #[derive(Default)]
 pub(crate) struct WatchNext {
-    future: Vec<comps::Episode>,
-    episodes: Vec<comps::Episode>,
+    future: Vec<comps::EpisodeOrMovie>,
+    episodes: Vec<comps::EpisodeOrMovie>,
 }
 
 impl WatchNext {
@@ -28,24 +28,42 @@ impl WatchNext {
         if state.future {
             let future = cx.service.pending().rev().filter(|p| p.will_air(today));
 
-            self.future
-                .init_from_iter(future.map(|p| comps::episode::Props {
-                    include_series: true,
-                    episode_id: p.episode.id,
-                    watched: cx.service.watched(&p.episode.id),
-                }));
+            self.future.init_from_iter(future.map(|p| match p {
+                crate::service::PendingRef::Episode { episode, .. } => {
+                    comps::episode_or_movie::Props::Episode(comps::episode::Props {
+                        include_series: true,
+                        episode_id: episode.id,
+                        watched: cx.service.watched_by_episode(&episode.id),
+                    })
+                }
+                crate::service::PendingRef::Movie { movie } => {
+                    comps::episode_or_movie::Props::Movie(comps::movie_item::Props {
+                        movie_id: movie.id,
+                        watched: cx.service.watched_by_movie(&movie.id),
+                    })
+                }
+            }));
         } else {
             self.future.clear();
         }
 
         let episodes = cx.service.pending().rev().filter(|p| p.has_aired(today));
 
-        self.episodes
-            .init_from_iter(episodes.map(|p| comps::episode::Props {
-                include_series: true,
-                episode_id: p.episode.id,
-                watched: cx.service.watched(&p.episode.id),
-            }));
+        self.episodes.init_from_iter(episodes.map(|p| match p {
+            crate::service::PendingRef::Episode { episode, .. } => {
+                comps::episode_or_movie::Props::Episode(comps::episode::Props {
+                    include_series: true,
+                    episode_id: episode.id,
+                    watched: cx.service.watched_by_episode(&episode.id),
+                })
+            }
+            crate::service::PendingRef::Movie { movie } => {
+                comps::episode_or_movie::Props::Movie(comps::movie_item::Props {
+                    movie_id: movie.id,
+                    watched: cx.service.watched_by_movie(&movie.id),
+                })
+            }
+        }));
 
         for e in self.future.iter_mut().chain(&mut self.episodes) {
             e.prepare(cx);

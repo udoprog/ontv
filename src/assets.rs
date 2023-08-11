@@ -182,7 +182,7 @@ impl Assets {
     }
 
     /// Get a placeholder image for a missing screencap.
-    pub(crate) fn missing_screencap(&self) -> Handle {
+    pub(crate) fn missing_screen_capture(&self) -> Handle {
         self.missing_screencap.clone()
     }
 
