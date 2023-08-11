@@ -54,9 +54,9 @@ impl Database {
         Iter::new(self.by_timestamp.iter().map(|(_, key)| key), &self.data)
     }
 
-    /// Get pending by series.
+    /// Get pending by movie id.
     #[inline]
-    pub(crate) fn by_series(&self, id: &SeriesId) -> Option<&Pending> {
+    pub(crate) fn by_movie(&self, id: &MovieId) -> Option<&Pending> {
         self.data.get(id.id())
     }
 }

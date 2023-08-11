@@ -721,11 +721,6 @@ impl Movie {
         self.remote_id = Some(other.remote_id);
     }
 
-    /// Get screen capture for movie.
-    pub(crate) fn screen_capture(&self) -> Option<&ImageV2> {
-        self.graphics.screen_capture.as_ref()
-    }
-
     /// Get the poster of the movie.
     pub(crate) fn poster(&self) -> Option<&ImageV2> {
         self.graphics.poster.as_ref()
@@ -1184,14 +1179,6 @@ pub(crate) struct Pending {
 }
 
 impl Pending {
-    /// Get the underlying episode.
-    pub(crate) fn as_episode(&self) -> Option<&EpisodeId> {
-        match &self.kind {
-            PendingKind::Episode { episode, .. } => Some(episode),
-            PendingKind::Movie { .. } => None,
-        }
-    }
-
     /// Access the raw id for the pending item.
     pub(crate) fn id(&self) -> &Uuid {
         match &self.kind {

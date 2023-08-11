@@ -300,9 +300,9 @@ impl Service {
         (watched, total)
     }
 
-    /// Get the pending episode for the given series.
-    pub(crate) fn pending_by_series(&self, series_id: &SeriesId) -> Option<&Pending> {
-        self.db.pending.by_series(series_id)
+    /// Get the pending episode for the given movie.
+    pub(crate) fn pending_by_movie(&self, movie_id: &MovieId) -> Option<&Pending> {
+        self.db.pending.by_movie(movie_id)
     }
 
     /// Return list of pending episodes.
@@ -636,8 +636,14 @@ impl Service {
 
         let release = self.db.movies.get(movie_id).and_then(|e| e.release());
 
+        let timestamp = if self.db.watched.by_movie(movie_id).len() == 0 {
+            pending_timestamp(now, [release])
+        } else {
+            *now
+        };
+
         self.db.pending.extend([Pending {
-            timestamp: pending_timestamp(now, [release]),
+            timestamp,
             kind: PendingKind::Movie { movie: *movie_id },
         }]);
 
@@ -814,7 +820,7 @@ impl Service {
             return;
         };
 
-        tracing::trace!(episode = ?e.id, "set pending");
+        tracing::trace!(episode = ?e.id, "Set pending");
 
         self.db.changes.change(Change::Pending);
         // Mark the next episode in the show as pending.
@@ -1191,6 +1197,7 @@ impl Service {
         }
 
         self.db.changes.add_movie(&movie_id);
+        self.select_pending_movie(now, &movie_id);
     }
 
     /// Ensure that a collection of the given image ids are loaded.

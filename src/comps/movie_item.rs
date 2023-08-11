@@ -1,7 +1,7 @@
 use crate::component::{Component, ComponentInitExt};
 use crate::comps;
 use crate::model::{MovieId, Watched};
-use crate::params::{GAP, SCREENCAP_HINT, SMALL_SIZE, SPACE};
+use crate::params::{GAP, POSTER_HINT, SMALL_SIZE, SPACE};
 use crate::prelude::*;
 
 #[derive(Debug, Clone)]
@@ -11,6 +11,7 @@ pub(crate) enum Message {
     Watch(comps::watch::Message),
     SelectPending(MovieId),
     ClearPending(MovieId),
+    Navigate(Page),
 }
 
 #[derive(PartialEq, Eq)]
@@ -87,7 +88,7 @@ where
 impl MovieItem {
     pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>) {
         if let Some(e) = cx.service.movie(&self.movie_id) {
-            cx.assets.mark_with_hint(e.screen_capture(), SCREENCAP_HINT);
+            cx.assets.mark_with_hint(e.poster(), POSTER_HINT);
         }
     }
 
@@ -113,32 +114,30 @@ impl MovieItem {
             Message::ClearPending(movie) => {
                 cx.service.clear_pending_movie(&movie);
             }
+            Message::Navigate(page) => {
+                cx.push_history(page);
+            }
         }
     }
 
-    pub(crate) fn view(
-        &self,
-        cx: &CtxtRef<'_>,
-        pending: bool,
-    ) -> Result<Element<'static, Message>> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>, title: bool) -> Result<Element<'static, Message>> {
         let Some(movie) = cx.service.movie(&self.movie_id) else {
             bail!("Missing movie {}", self.movie_id);
         };
 
-        let screen_capture = match movie
-            .screen_capture()
-            .and_then(|image| cx.assets.image_with_hint(image, SCREENCAP_HINT))
+        let poster = match movie
+            .poster()
+            .and_then(|image| cx.assets.image_with_hint(image, POSTER_HINT))
         {
             Some(handle) => handle,
-            None => cx.assets.missing_screen_capture(),
+            None => cx.missing_poster(),
         };
 
-        let (image, (image_fill, rest_fill)) = (
-            w::container(w::image(screen_capture)).align_x(Horizontal::Center),
-            (4, 8),
-        );
+        let image = link(w::image(poster))
+            .width(Length::Fill)
+            .on_press(Message::Navigate(page::movie::page(movie.id)));
 
-        let name = w::text(&movie.title).shaping(w::text::Shaping::Advanced);
+        let (image_fill, rest_fill) = (2, 10);
 
         let watched = cx.service.watched_by_movie(&movie.id);
 
@@ -187,7 +186,7 @@ impl MovieItem {
         }
 
         if !any_confirm {
-            if !pending {
+            if cx.service.pending_by_movie(&movie.id).is_none() {
                 actions = actions.push(
                     w::button(w::text("Make next movie").size(SMALL_SIZE))
                         .style(theme::Button::Secondary)
@@ -204,7 +203,13 @@ impl MovieItem {
 
         let mut info = w::Column::new();
 
-        info = info.push(name);
+        if title {
+            info = info.push(
+                link(cx.style.text(&movie.title).title())
+                    .on_press(Message::Navigate(page::movie::page(movie.id))),
+            );
+        }
+
         info = info.push(actions);
 
         if let Some(air_date) = &movie.release_date {

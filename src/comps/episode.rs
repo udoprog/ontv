@@ -3,6 +3,7 @@ use crate::comps;
 use crate::model::{EpisodeId, Watched};
 use crate::params::{GAP, SCREENCAP_HINT, SMALL_SIZE, SPACE};
 use crate::prelude::*;
+use crate::service::PendingRef;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
@@ -27,12 +28,6 @@ pub(crate) struct Episode {
     watch: comps::Watch,
     remove_last_watch: Option<comps::Confirm>,
     remove_watches: Vec<comps::Confirm>,
-}
-
-impl Episode {
-    pub(crate) fn episode_id(&self) -> &EpisodeId {
-        &self.episode_id
-    }
 }
 
 impl<'a, I> Component<Props<I>> for Episode
@@ -136,11 +131,7 @@ impl Episode {
         }
     }
 
-    pub(crate) fn view(
-        &self,
-        cx: &CtxtRef<'_>,
-        pending: bool,
-    ) -> Result<Element<'static, Message>> {
+    pub(crate) fn view(&self, cx: &CtxtRef<'_>, title: bool) -> Result<Element<'static, Message>> {
         let Some(episode) = cx.service.episode(&self.episode_id) else {
             bail!("Missing episode {}", self.episode_id);
         };
@@ -234,7 +225,13 @@ impl Episode {
         }
 
         if !any_confirm {
-            if !pending {
+            if pending_series
+                .as_ref()
+                .filter(
+                    |p| matches!(p, PendingRef::Episode { episode: p, .. } if p.id == episode.id),
+                )
+                .is_some()
+            {
                 actions = actions.push(
                     w::button(w::text("Make next episode").size(SMALL_SIZE))
                         .style(theme::Button::Secondary)
@@ -251,15 +248,17 @@ impl Episode {
 
         let mut info = w::Column::new();
 
-        if let Some(crate::service::PendingRef::Episode { series, season, .. }) = pending_series {
-            info = info.push(
-                link(
-                    w::text(&series.title)
-                        .shaping(w::text::Shaping::Advanced)
-                        .size(SUBTITLE_SIZE),
-                )
-                .on_press(Message::Navigate(page::series::page(series.id))),
-            );
+        if let Some(PendingRef::Episode { series, season, .. }) = pending_series {
+            if title {
+                info = info.push(
+                    link(
+                        w::text(&series.title)
+                            .shaping(w::text::Shaping::Advanced)
+                            .size(SUBTITLE_SIZE),
+                    )
+                    .on_press(Message::Navigate(page::series::page(series.id))),
+                );
+            }
 
             if let Some(season) = season {
                 info = info.push(link(name).on_press(Message::Navigate(page::season::page(

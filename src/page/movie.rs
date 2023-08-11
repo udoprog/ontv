@@ -15,83 +15,55 @@ pub(crate) fn page(id: MovieId) -> Page {
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
-    RemoveLastWatch(comps::confirm::Message),
     OpenRemote(RemoteId),
     MovieActions(comps::movie_actions::Message),
+    MovieItem(comps::movie_item::Message),
     MovieBanner(comps::movie_banner::Message),
-    Watch(comps::watch::Message),
     SwitchMovie(MovieId, RemoteId),
-    RemoveWatch(usize, comps::confirm::Message),
 }
 
 pub(crate) struct Movie {
-    movie: comps::MovieActions,
+    movie_actions: comps::MovieActions,
     banner: comps::MovieBanner,
-    watch: comps::Watch,
-    remove_last_watch: Option<comps::Confirm>,
-    remove_watches: Vec<comps::Confirm>,
+    movie_item: comps::MovieItem,
 }
 
 impl Movie {
     #[inline]
-    pub(crate) fn new(state: &State) -> Self {
+    pub(crate) fn new(cx: &CtxtRef<'_>, state: &State) -> Self {
         Self {
-            movie: comps::MovieActions::new(state.id),
+            movie_actions: comps::MovieActions::new(state.id),
             banner: comps::MovieBanner,
-            watch: comps::Watch::new(comps::watch::Props::new(comps::watch::Kind::Movie(
-                state.id,
-            ))),
-            remove_last_watch: None,
-            remove_watches: Vec::new(),
+            movie_item: comps::MovieItem::new(comps::movie_item::Props {
+                movie_id: state.id,
+                watched: cx.service.watched_by_movie(&state.id),
+            }),
         }
     }
 
     pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>, state: &State) {
         self.banner.prepare(cx, &state.id);
-
-        self.watch
-            .changed(comps::watch::Props::new(comps::watch::Kind::Movie(
-                state.id,
-            )));
-
-        self.remove_last_watch
-            .init_from_iter(cx.service.watched_by_movie(&state.id).rev().map(|w| {
-                comps::confirm::Props::new(comps::confirm::Kind::RemoveMovieWatch {
-                    movie_id: state.id,
-                    watch_id: w.id,
-                })
-                .with_ordering(comps::ordering::Ordering::Left)
-            }));
-
-        self.remove_watches
-            .init_from_iter(cx.service.watched_by_movie(&state.id).map(|w| {
-                comps::confirm::Props::new(comps::confirm::Kind::RemoveMovieWatch {
-                    movie_id: state.id,
-                    watch_id: w.id,
-                })
-                .with_ordering(comps::ordering::Ordering::Left)
-            }));
+        self.movie_item.changed(comps::movie_item::Props {
+            movie_id: state.id,
+            watched: cx.service.watched_by_movie(&state.id),
+        });
+        self.movie_item.prepare(cx);
     }
 
     pub(crate) fn update(&mut self, cx: &mut Ctxt<'_>, message: Message) {
         match message {
-            Message::RemoveLastWatch(message) => {
-                if let Some(c) = &mut self.remove_last_watch {
-                    c.update(cx, message);
-                }
-            }
             Message::OpenRemote(remote_id) => {
                 let url = remote_id.url();
                 let _ = webbrowser::open_browser(webbrowser::Browser::Default, &url);
             }
             Message::MovieActions(message) => {
-                self.movie.update(cx, message);
+                self.movie_actions.update(cx, message);
+            }
+            Message::MovieItem(message) => {
+                self.movie_item.update(cx, message);
             }
             Message::MovieBanner(message) => {
                 self.banner.update(cx, message);
-            }
-            Message::Watch(message) => {
-                self.watch.update(cx, message);
             }
             Message::SwitchMovie(movie_id, remote_id) => {
                 cx.service.push_task_without_delay(TaskKind::DownloadMovie {
@@ -100,11 +72,6 @@ impl Movie {
                     last_modified: None,
                     force: true,
                 });
-            }
-            Message::RemoveWatch(n, m) => {
-                if let Some(remove_watch) = self.remove_watches.get_mut(n) {
-                    remove_watch.update(cx, m);
-                }
             }
         }
     }
@@ -158,129 +125,16 @@ impl Movie {
             top = top.push(remotes.spacing(GAP));
         }
 
-        let watched = cx.service.watched_by_movie(&movie.id);
-
-        let mut actions = w::Row::new().spacing(SPACE);
-
-        let any_confirm = self.watch.is_confirm()
-            || self
-                .remove_last_watch
-                .as_ref()
-                .map(comps::Confirm::is_confirm)
-                .unwrap_or_default();
-
-        if let Some(remove_last_watch) = &self.remove_last_watch {
-            if !any_confirm || remove_last_watch.is_confirm() {
-                let watch_text = match watched.len() {
-                    1 => "Remove watch",
-                    _ => "Remove last watch",
-                };
-
-                actions = actions.push(
-                    remove_last_watch
-                        .view(watch_text, theme::Button::Destructive)
-                        .map(Message::RemoveLastWatch),
-                );
-            }
-        }
-
-        let watch_text = match watched.len() {
-            0 => "First watch",
-            _ => "Watch again",
-        };
-
-        if !any_confirm || self.watch.is_confirm() {
-            actions = actions.push(
-                self.watch
-                    .view(
-                        watch_text,
-                        theme::Button::Positive,
-                        theme::Button::Positive,
-                        Length::Shrink,
-                        Horizontal::Center,
-                        true,
-                    )
-                    .map(Message::Watch),
-            );
-        }
-
-        let mut info = w::Column::new()
+        let info = w::Column::new()
             .push(top.align_items(Alignment::Center).spacing(GAP))
-            .push(self.movie.view(cx, movie).map(Message::MovieActions))
-            .push(actions);
-
-        if let Some(release_date) = &movie.release_date {
-            let text = if release_date > cx.state.today() {
-                w::text(format_args!("Releases: {release_date}"))
-            } else {
-                w::text(format_args!("Released: {release_date}"))
-            };
-
-            info = info.push(text.size(SMALL_SIZE));
-        }
-
-        if !movie.overview.is_empty() {
-            info = info.push(w::text(&movie.overview).shaping(w::text::Shaping::Advanced));
-        }
-
-        {
-            let mut it = watched.clone();
-            let len = it.len();
-
-            let watched_text = match (len, it.next(), it.next_back()) {
-                (1, Some(once), _) => w::text(format_args!(
-                    "Watched once on {}",
-                    once.timestamp.date_naive()
-                )),
-                (len, _, Some(last)) if len > 0 => w::text(format_args!(
-                    "Watched {} times, last on {}",
-                    len,
-                    last.timestamp.date_naive()
-                )),
-                _ => w::text("Never watched").style(cx.warning_text()),
-            };
-
-            info = info.push(watched_text.size(SMALL_SIZE));
-        }
-
-        if watched.len() > 0 {
-            let mut history = w::Column::new();
-
-            history = history.push(w::text("Watch history"));
-
-            for (n, (watch, c)) in watched.zip(&self.remove_watches).enumerate() {
-                let mut row = w::Row::new();
-
-                row = row.push(
-                    w::text(format!("#{}", n + 1))
-                        .size(SMALL_SIZE)
-                        .width(24.0)
-                        .horizontal_alignment(Horizontal::Left),
-                );
-
-                row = row.push(
-                    w::text(watch.timestamp.date_naive())
-                        .size(SMALL_SIZE)
-                        .width(Length::Fill),
-                );
-
-                row = row.push(
-                    c.view("Remove", theme::Button::Destructive)
-                        .map(move |m| Message::RemoveWatch(n, m)),
-                );
-
-                history = history.push(row.width(Length::Fill).spacing(SPACE));
-            }
-
-            info = info.push(history.width(Length::Fill).spacing(SPACE));
-        }
+            .push(
+                self.movie_actions
+                    .view(cx, movie)
+                    .map(Message::MovieActions),
+            )
+            .push(self.movie_item.view(cx, false)?.map(Message::MovieItem));
 
         let info = centered(info.spacing(GAP), None).padding(GAP);
-
-        Ok(w::Column::new()
-            .push(info)
-            .width(Length::Fill)
-            .spacing(GAP2)
-            .into())
+        Ok(info.into())
     }
 }

@@ -424,7 +424,7 @@ impl iced::Application for Application {
                 Page::SeriesList => Current::SeriesList(page::SeriesList::default()),
                 Page::MoviesList => Current::MoviesList(page::MoviesList::default()),
                 Page::Series(state) => Current::Series(page::Series::new(state)),
-                Page::Movie(state) => Current::Movie(page::Movie::new(state)),
+                Page::Movie(state) => Current::Movie(page::Movie::new(ctxt_ref!(self), state)),
                 Page::Settings => Current::Settings(page::Settings),
                 Page::Season(state) => Current::Season(page::Season::new(state)),
                 Page::Queue(..) => {

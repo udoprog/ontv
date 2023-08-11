@@ -92,16 +92,11 @@ impl Season {
 
         let mut episodes = w::Column::new();
 
-        let pending = cx
-            .service
-            .pending_by_series(&series.id)
-            .and_then(|p| p.as_episode());
-
         for (index, episode) in self.episodes.iter().enumerate() {
             episodes = episodes.push(
                 centered(
                     episode
-                        .view(cx, pending == Some(episode.episode_id()))?
+                        .view(cx, true)?
                         .map(move |m| Message::Episode(index, m)),
                     Some(style::weak),
                 )
