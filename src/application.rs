@@ -17,6 +17,7 @@ use crate::prelude::*;
 use crate::queue::{Task, TaskKind};
 use crate::service::{NewMovie, NewSeries, Service};
 use crate::state::State;
+use crate::style::Style;
 use crate::utils::{Singleton, TimedOut, Timeout};
 
 macro_rules! ctxt {
@@ -36,6 +37,7 @@ macro_rules! ctxt_ref {
             state: &$self.state,
             service: &$self.service,
             assets: &$self.assets,
+            style: &$self.style,
         }
     };
 }
@@ -129,6 +131,8 @@ pub(crate) struct Application {
     images: Vec<(ImageKey, ImageV2)>,
     /// The identifier used for the main scrollable.
     scrollable_id: w::scrollable::Id,
+    /// Current style.
+    style: Style,
 }
 
 pub(crate) struct Flags {
@@ -162,6 +166,7 @@ impl iced::Application for Application {
             exit_after_save: false,
             images: Vec::new(),
             scrollable_id: w::scrollable::Id::unique(),
+            style: Style,
         };
 
         this.prepare();
@@ -792,7 +797,7 @@ impl Application {
                     );
                 }
                 TaskKind::DownloadSeriesByRemoteId { remote_id } => {
-                    if self.service.set_series_tracked_by_remote(remote_id) {
+                    if self.service.is_series_by_remote(remote_id) {
                         self.service.complete_task(&now, task);
                     } else {
                         self.commands.perform(

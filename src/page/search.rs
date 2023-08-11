@@ -234,13 +234,12 @@ impl Search {
             match status {
                 Some(TaskStatus::Pending) => {
                     actions = actions.push(
-                        w::button(w::text("Queued...").size(SMALL_SIZE))
-                            .style(theme::Button::Primary),
+                        w::button(cx.style.text("Queued...").sm()).style(theme::Button::Primary),
                     );
                 }
                 Some(TaskStatus::Running) => {
                     actions = actions.push(
-                        w::button(w::text("Downloading...").size(SMALL_SIZE))
+                        w::button(cx.style.text("Downloading...").sm())
                             .style(theme::Button::Primary),
                     );
                 }
@@ -248,20 +247,20 @@ impl Search {
                     if let Some(local) = local_series {
                         if local.remote_id != Some(s.id) {
                             actions = actions.push(
-                                w::button(w::text("Switch").size(SMALL_SIZE))
+                                w::button(cx.style.text("Switch").sm())
                                     .style(theme::Button::Primary)
                                     .on_press(Message::SwitchSeries(local.id, s.id)),
                             );
                         }
 
                         actions = actions.push(
-                            w::button(w::text("Remove").size(SMALL_SIZE))
+                            w::button(cx.style.text("Remove").sm())
                                 .style(theme::Button::Destructive)
                                 .on_press(Message::RemoveSeries(local.id)),
                         );
                     } else {
                         actions = actions.push(
-                            w::button(w::text("Add").size(SMALL_SIZE))
+                            w::button(cx.style.text("Add").sm())
                                 .style(theme::Button::Positive)
                                 .on_press(Message::AddSeriesByRemote(s.id)),
                         );
@@ -272,15 +271,12 @@ impl Search {
             let mut first_aired = w::Column::new();
 
             if let Some(date) = s.first_aired {
-                first_aired =
-                    first_aired.push(w::text(format!("First aired: {date}")).size(SMALL_SIZE));
+                first_aired = first_aired.push(cx.style.text(format!("First aired: {date}")).sm());
             }
 
             let mut result = w::Column::new();
 
-            let series_name = w::text(&s.name)
-                .shaping(w::text::Shaping::Advanced)
-                .size(SUBTITLE_SIZE);
+            let series_name = cx.style.text(&s.name).sub();
 
             if let Some(local_series) = local_series {
                 result = result.push(
@@ -300,7 +296,7 @@ impl Search {
                     .push(
                         w::Column::new()
                             .push(result.spacing(SPACE))
-                            .push(w::text(&s.overview).shaping(w::text::Shaping::Advanced))
+                            .push(cx.style.text(&s.overview))
                             .spacing(GAP),
                     )
                     .spacing(GAP),
@@ -308,6 +304,7 @@ impl Search {
         }
 
         series = series.push(paginate(
+            cx,
             state.series_page,
             self.series.len(),
             Message::SeriesPage,
@@ -340,13 +337,12 @@ impl Search {
             match status {
                 Some(TaskStatus::Pending) => {
                     actions = actions.push(
-                        w::button(w::text("Queued...").size(SMALL_SIZE))
-                            .style(theme::Button::Primary),
+                        w::button(cx.style.text("Queued...").sm()).style(theme::Button::Primary),
                     );
                 }
                 Some(TaskStatus::Running) => {
                     actions = actions.push(
-                        w::button(w::text("Downloading...").size(SMALL_SIZE))
+                        w::button(cx.style.text("Downloading...").sm())
                             .style(theme::Button::Primary),
                     );
                 }
@@ -354,20 +350,20 @@ impl Search {
                     if let Some(local) = local_movie {
                         if local.remote_id != Some(m.id) {
                             actions = actions.push(
-                                w::button(w::text("Switch").size(SMALL_SIZE))
+                                w::button(cx.style.text("Switch").sm())
                                     .style(theme::Button::Primary)
                                     .on_press(Message::SwitchMovie(local.id, m.id)),
                             );
                         }
 
                         actions = actions.push(
-                            w::button(w::text("Remove").size(SMALL_SIZE))
+                            w::button(cx.style.text("Remove").sm())
                                 .style(theme::Button::Destructive)
                                 .on_press(Message::RemoveMovie(local.id)),
                         );
                     } else {
                         actions = actions.push(
-                            w::button(w::text("Add").size(SMALL_SIZE))
+                            w::button(cx.style.text("Add").sm())
                                 .style(theme::Button::Positive)
                                 .on_press(Message::AddMovieByRemote(m.id)),
                         );
@@ -379,14 +375,12 @@ impl Search {
 
             if let Some(date) = m.release_date {
                 release_date =
-                    release_date.push(w::text(format!("First aired: {date}")).size(SMALL_SIZE));
+                    release_date.push(cx.style.text(format_args!("First aired: {date}")).sm());
             }
 
             let mut result = w::Column::new();
 
-            let movie_title = w::text(&m.title)
-                .shaping(w::text::Shaping::Advanced)
-                .size(SUBTITLE_SIZE);
+            let movie_title = cx.style.text(&m.title).sub();
 
             if let Some(local_movie) = local_movie {
                 result = result.push(
@@ -406,7 +400,7 @@ impl Search {
                     .push(
                         w::Column::new()
                             .push(result.spacing(SPACE))
-                            .push(w::text(&m.overview).shaping(w::text::Shaping::Advanced))
+                            .push(cx.style.text(&m.overview))
                             .spacing(GAP),
                     )
                     .spacing(GAP),
@@ -414,6 +408,7 @@ impl Search {
         }
 
         movies = movies.push(paginate(
+            cx,
             state.movies_page,
             self.movies.len(),
             Message::MoviesPage,
@@ -423,7 +418,7 @@ impl Search {
             .on_input(Message::Change)
             .on_submit(Message::Search);
 
-        let submit = w::button("Search");
+        let submit = w::button(cx.style.text("Search"));
 
         let submit = if !state.text.is_empty() {
             submit.on_press(Message::Search)
@@ -431,7 +426,7 @@ impl Search {
             submit
         };
 
-        let mut search_kind = w::Column::new().push(w::text("Source:").size(SMALL_SIZE));
+        let mut search_kind = w::Column::new().push(cx.style.text("Source:").sm());
 
         search_kind =
             [SearchKind::Tvdb, SearchKind::Tmdb]
@@ -450,12 +445,12 @@ impl Search {
 
         let mut page = w::Column::new();
 
-        page = page.push(w::text("Search").size(TITLE_SIZE));
+        page = page.push(cx.style.text("Search").title());
         page = page.push(w::Row::new().push(query).push(submit));
 
         if let Some(e) = cx.state.get_error(ErrorId::Search(state.search_id)) {
             page = page.push(
-                w::button(w::text(format!("Error: {}", e.message)))
+                w::button(cx.style.text(format_args!("Error: {}", e.message)))
                     .width(Length::Fill)
                     .style(theme::Button::Destructive)
                     .on_press(Message::Navigate(Page::Errors)),
@@ -472,15 +467,15 @@ impl Search {
     }
 }
 
-fn paginate<M>(page: usize, len: usize, m: M) -> w::Row<'static, Message>
+fn paginate<M>(cx: &CtxtRef<'_>, page: usize, len: usize, m: M) -> w::Row<'static, Message>
 where
     M: FnOnce(usize) -> Message + Copy,
 {
     let mut row = w::Row::new();
 
     if len > PER_PAGE {
-        let mut prev = w::button("previous page").style(theme::Button::Positive);
-        let mut next = w::button("next page").style(theme::Button::Positive);
+        let mut prev = w::button(cx.style.text("previous page")).style(theme::Button::Positive);
+        let mut next = w::button(cx.style.text("next page")).style(theme::Button::Positive);
 
         if let Some(page) = page.checked_sub(1) {
             prev = prev.on_press(m(page));
@@ -490,7 +485,7 @@ where
             next = next.on_press(m(page + 1));
         }
 
-        let text = w::text(format!(
+        let text = cx.style.text(format!(
             "{}-{} ({})",
             page * PER_PAGE,
             ((page + 1) * PER_PAGE).min(len),

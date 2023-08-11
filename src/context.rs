@@ -7,12 +7,14 @@ use crate::history::{HistoryMutations, Page};
 use crate::model::{MovieId, RemoteId, SeriesId};
 use crate::service::{NewMovie, NewSeries, Service};
 use crate::state::State;
+use crate::style::Style;
 
 /// Context reference.
 pub(crate) struct CtxtRef<'a> {
     pub(crate) state: &'a State,
     pub(crate) service: &'a Service,
     pub(crate) assets: &'a Assets,
+    pub(crate) style: &'a Style,
 }
 
 impl<'a> CtxtRef<'a> {

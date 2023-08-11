@@ -985,7 +985,7 @@ impl Service {
     }
 
     /// If the series is already loaded in the local database, simply mark it as tracked.
-    pub(crate) fn set_series_tracked_by_remote(&mut self, id: &RemoteId) -> bool {
+    pub(crate) fn is_series_by_remote(&mut self, id: &RemoteId) -> bool {
         let Some(id) = self.db.remotes.get_series(id) else {
             return false;
         };
@@ -999,7 +999,7 @@ impl Service {
             return false;
         };
 
-        self.db.movies.get_mut(&id).is_none()
+        self.db.movies.get_mut(&id).is_some()
     }
 
     /// Set the given show as tracked.
