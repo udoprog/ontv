@@ -11,6 +11,7 @@ use reqwest::header;
 use reqwest::{Method, RequestBuilder, Response, StatusCode, Url};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
+use serde_repr::Deserialize_repr;
 
 use crate::api::common;
 use crate::model::*;
@@ -574,11 +575,16 @@ impl Client {
 
         let language = details.original_language.filter(|s| !s.is_empty());
 
+        let release_dates = self
+            .request_with_auth(Method::GET, &["movie", &id.to_string(), "release_dates"])
+            .await;
+
         let external_ids = self
             .request_with_auth(Method::GET, &["movie", &id.to_string(), "external_ids"])
-            .await
-            .send()
-            .await?;
+            .await;
+
+        let (release_dates, external_ids) =
+            tokio::try_join!(release_dates.send(), external_ids.send())?;
 
         let languages;
         let images_query;
@@ -599,7 +605,8 @@ impl Client {
             .send()
             .await?;
 
-        let (external_ids, images) = tokio::try_join!(
+        let (release_dates, external_ids, images) = tokio::try_join!(
+            response::<ReleaseDates, _>(format!("movie/{id}/release_dates"), release_dates),
             response::<ExternalIds, _>(format!("movie/{id}/external_ids"), external_ids),
             response::<Images, _>(format!("movie/{id}/images"), images)
         )?;
@@ -630,6 +637,35 @@ impl Client {
             graphics.banners.extend(ImageV2::tmdb(&image.file_path));
         }
 
+        let release_dates = {
+            let mut out = Vec::new();
+
+            for result in release_dates.results {
+                let mut release_dates = Vec::with_capacity(result.release_dates.len());
+
+                for release_date in result.release_dates {
+                    release_dates.push(MovieReleaseDate {
+                        date: release_date.release_date,
+                        kind: match release_date.ty_ {
+                            ReleaseType::Premiere => MovieReleaseKind::Premiere,
+                            ReleaseType::TheatricalLimited => MovieReleaseKind::TheatricalLimited,
+                            ReleaseType::Theatrical => MovieReleaseKind::Theatrical,
+                            ReleaseType::Digital => MovieReleaseKind::Digital,
+                            ReleaseType::Physical => MovieReleaseKind::Physical,
+                            ReleaseType::Tv => MovieReleaseKind::Tv,
+                        },
+                    });
+                }
+
+                out.push(MovieReleaseDates {
+                    country: result.iso_3166_1,
+                    dates: release_dates,
+                });
+            }
+
+            out
+        };
+
         let series = UpdateMovie {
             id,
             title: details.original_title.or(details.title).unwrap_or_default(),
@@ -638,6 +674,7 @@ impl Client {
             overview: details.overview.unwrap_or_default(),
             graphics,
             remote_id,
+            release_dates,
         };
 
         Ok(Some((series, remote_ids, last_etag, last_modified)))
@@ -691,6 +728,44 @@ where
     }
 
     inner(&what, res).await.with_context(|| anyhow!("{what}"))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize_repr)]
+#[repr(u8)]
+enum ReleaseType {
+    Premiere = 1,
+    TheatricalLimited = 2,
+    Theatrical = 3,
+    Digital = 4,
+    Physical = 5,
+    Tv = 6,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseDate {
+    #[serde(default)]
+    certification: String,
+    descriptors: Vec<serde_json::Value>,
+    #[serde(default)]
+    iso_639_1: String,
+    note: String,
+    release_date: DateTime<Utc>,
+    #[serde(rename = "type")]
+    ty_: ReleaseType,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseDateResult {
+    #[serde(default)]
+    iso_3166_1: String,
+    #[serde(default)]
+    release_dates: Vec<ReleaseDate>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseDates {
+    id: u32,
+    results: Vec<ReleaseDateResult>,
 }
 
 #[derive(Default, Deserialize)]

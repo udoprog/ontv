@@ -35,6 +35,7 @@ pub(crate) struct UpdateMovie {
     pub(crate) overview: String,
     pub(crate) graphics: MovieGraphics,
     pub(crate) remote_id: RemoteId,
+    pub(crate) release_dates: Vec<MovieReleaseDates>,
 }
 
 /// A series update as produced by an API.

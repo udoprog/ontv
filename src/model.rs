@@ -678,6 +678,48 @@ impl Series {
     }
 }
 
+/// Movie release kind.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum MovieReleaseKind {
+    Premiere,
+    TheatricalLimited,
+    Theatrical,
+    Digital,
+    Physical,
+    Tv,
+}
+
+impl fmt::Display for MovieReleaseKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MovieReleaseKind::Premiere => write!(f, "premiere"),
+            MovieReleaseKind::TheatricalLimited => write!(f, "theatrical (limited)"),
+            MovieReleaseKind::Theatrical => write!(f, "theatrical"),
+            MovieReleaseKind::Digital => write!(f, "digital"),
+            MovieReleaseKind::Physical => write!(f, "physical"),
+            MovieReleaseKind::Tv => write!(f, "tv"),
+        }
+    }
+}
+
+/// A movie release date.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) struct MovieReleaseDate {
+    pub(crate) date: DateTime<Utc>,
+    pub(crate) kind: MovieReleaseKind,
+}
+
+/// Release dates for a given country.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) struct MovieReleaseDates {
+    pub(crate) country: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) dates: Vec<MovieReleaseDate>,
+}
+
 /// A movie.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -697,6 +739,9 @@ pub(crate) struct Movie {
     /// The remote identifier that is used to synchronize this movie.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) remote_id: Option<RemoteId>,
+    /// Release dates.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) release_dates: Vec<MovieReleaseDates>,
 }
 
 impl Movie {
@@ -709,6 +754,7 @@ impl Movie {
             overview: update.overview,
             graphics: update.graphics,
             remote_id: Some(update.remote_id),
+            release_dates: update.release_dates,
         }
     }
 
