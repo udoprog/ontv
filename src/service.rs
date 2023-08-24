@@ -95,7 +95,7 @@ impl<'a> PendingRef<'a> {
     pub(crate) fn date(&self) -> Option<NaiveDate> {
         match self {
             PendingRef::Episode { episode, .. } => episode.aired,
-            PendingRef::Movie { movie } => movie.release_date,
+            PendingRef::Movie { movie } => Some(movie.earliest_release_date()?.date_naive()),
         }
     }
 
@@ -395,6 +395,39 @@ impl Service {
 
             self.db.tasks.push(now, kind);
         }
+
+        for m in self.db.movies.iter() {
+            let Some(remote_id) = m.remote_id else {
+                continue;
+            };
+
+            // Reduce the number of API requests by ensuring we don't check for
+            // updates more than each CACHE_TIME interval.
+            if let Some(last_sync) = self.db.sync.last_sync(&remote_id) {
+                if now.signed_duration_since(*last_sync).num_seconds() < CACHE_TIME {
+                    continue;
+                }
+            }
+
+            let last_modified = self.db.sync.last_modified(&remote_id).copied();
+
+            if matches!(last_modified, Some(last_modified) if now.signed_duration_since(last_modified).num_seconds() < CACHE_TIME)
+            {
+                continue;
+            }
+
+            let kind = match remote_id {
+                RemoteId::Tmdb { .. } => TaskKind::DownloadMovie {
+                    movie_id: m.id,
+                    remote_id,
+                    last_modified,
+                    force: false,
+                },
+                _ => continue,
+            };
+
+            self.db.tasks.push(now, kind);
+        }
     }
 
     /// Check for update for the given series.
@@ -620,7 +653,7 @@ impl Service {
             .map(|w| w.timestamp);
 
         self.db.pending.extend([Pending {
-            timestamp: pending_timestamp(now, [timestamp, aired]),
+            timestamp: pending_timestamp(now, &[timestamp, aired]),
             kind: PendingKind::Episode {
                 series: *episode.series(),
                 episode: episode.id,
@@ -635,20 +668,19 @@ impl Service {
     pub(crate) fn select_pending_movie(&mut self, now: &DateTime<Utc>, movie_id: &MovieId) {
         tracing::trace!("Selecting pending movie");
 
-        let release = self.db.movies.get(movie_id).and_then(|e| e.release());
+        let m = self.db.movies.get(movie_id);
+        let earliest = m.and_then(|m| m.earliest());
 
-        let timestamp = if self.db.watched.by_movie(movie_id).len() == 0 {
-            pending_timestamp(now, [release])
-        } else {
-            *now
-        };
+        if self.db.watched.by_movie(movie_id).len() == 0 {
+            let timestamp = pending_timestamp(now, &[earliest]);
 
-        self.db.pending.extend([Pending {
-            timestamp,
-            kind: PendingKind::Movie { movie: *movie_id },
-        }]);
+            self.db.pending.extend([Pending {
+                timestamp,
+                kind: PendingKind::Movie { movie: *movie_id },
+            }]);
 
-        self.db.changes.change(Change::Pending);
+            self.db.changes.change(Change::Pending);
+        }
     }
 
     /// Clear next episode as pending.
@@ -764,7 +796,7 @@ impl Service {
                 .map(|w| w.timestamp);
 
             self.db.pending.extend([Pending {
-                timestamp: pending_timestamp(now, [timestamp, e.aired_timestamp()]),
+                timestamp: pending_timestamp(now, &[timestamp, e.aired_timestamp()]),
                 kind: PendingKind::Episode {
                     series: *series_id,
                     episode: e.id,
@@ -826,7 +858,7 @@ impl Service {
         self.db.changes.change(Change::Pending);
         // Mark the next episode in the show as pending.
         self.db.pending.extend([Pending {
-            timestamp: pending_timestamp(now, [last.map(|w| w.timestamp), e.aired_timestamp()]),
+            timestamp: pending_timestamp(now, &[last.map(|w| w.timestamp), e.aired_timestamp()]),
             kind: PendingKind::Episode {
                 series: *id,
                 episode: e.id,
@@ -1508,12 +1540,9 @@ fn episodes_into_seasons(episodes: &[NewEpisode]) -> Vec<Season> {
 }
 
 /// Calculate pending timestamp.
-fn pending_timestamp<const N: usize>(
-    now: &DateTime<Utc>,
-    candidates: [Option<DateTime<Utc>>; N],
-) -> DateTime<Utc> {
+fn pending_timestamp(now: &DateTime<Utc>, candidates: &[Option<DateTime<Utc>>]) -> DateTime<Utc> {
     if let Some(timestamp) = candidates.into_iter().flatten().max() {
-        timestamp
+        *timestamp
     } else {
         *now
     }

@@ -212,19 +212,19 @@ impl MovieItem {
 
         info = info.push(actions);
 
-        for release_dates in &movie.release_dates {
-            for d in &release_dates.dates {
-                info = info.push(
-                    cx.style
-                        .text(format_args!(
-                            "{} / {} / {}",
-                            release_dates.country,
-                            d.kind,
-                            d.date.date_naive()
-                        ))
-                        .sm(),
-                );
-            }
+        let earliest = movie.earliest_by_kind();
+
+        for d in earliest {
+            info = info.push(
+                cx.style
+                    .text(format_args!(
+                        "{} / {} / {}",
+                        d.country,
+                        d.kind,
+                        d.date.date_naive()
+                    ))
+                    .sm(),
+            );
         }
 
         {

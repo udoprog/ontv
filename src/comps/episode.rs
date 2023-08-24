@@ -230,7 +230,7 @@ impl Episode {
                 .filter(
                     |p| matches!(p, PendingRef::Episode { episode: p, .. } if p.id == episode.id),
                 )
-                .is_some()
+                .is_none()
             {
                 actions = actions.push(
                     w::button(w::text("Make next episode").size(SMALL_SIZE))

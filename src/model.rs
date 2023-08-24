@@ -1,6 +1,8 @@
 mod etag;
 mod raw;
 
+use core::cmp::Ordering;
+use std::collections::btree_map;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::str::FromStr;
@@ -679,7 +681,7 @@ impl Series {
 }
 
 /// Movie release kind.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum MovieReleaseKind {
     Premiere,
@@ -688,6 +690,16 @@ pub(crate) enum MovieReleaseKind {
     Digital,
     Physical,
     Tv,
+}
+
+impl MovieReleaseKind {
+    /// Test if release kind is digital or equivalent.
+    pub(crate) fn is_digital(&self) -> bool {
+        matches!(
+            self,
+            MovieReleaseKind::Digital | MovieReleaseKind::Physical | MovieReleaseKind::Tv
+        )
+    }
 }
 
 impl fmt::Display for MovieReleaseKind {
@@ -720,6 +732,14 @@ pub(crate) struct MovieReleaseDates {
     pub(crate) dates: Vec<MovieReleaseDate>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) struct MovieEarliestReleaseDate {
+    pub(crate) country: String,
+    pub(crate) kind: MovieReleaseKind,
+    pub(crate) date: DateTime<Utc>,
+}
+
 /// A movie.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -742,11 +762,15 @@ pub(crate) struct Movie {
     /// Release dates.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) release_dates: Vec<MovieReleaseDates>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) earliest_releases: Vec<MovieEarliestReleaseDate>,
 }
 
 impl Movie {
     /// Construct a new series from a series update.
     pub(crate) fn new_movie(update: crate::service::UpdateMovie) -> Self {
+        let earliest_releases = build_earliest_releases(&update.release_dates);
+
         Self {
             id: update.id,
             title: update.title,
@@ -755,16 +779,40 @@ impl Movie {
             graphics: update.graphics,
             remote_id: Some(update.remote_id),
             release_dates: update.release_dates,
+            earliest_releases,
         }
+    }
+
+    /// Get the earliest relase date.
+    pub(crate) fn earliest(&self) -> Option<DateTime<Utc>> {
+        self.earliest_release_date().or(self.release())
+    }
+
+    /// Get earliest actual release date.
+    pub(crate) fn earliest_release_date(&self) -> Option<DateTime<Utc>> {
+        self.earliest_by_kind()
+            .into_iter()
+            .filter(|e| e.kind.is_digital())
+            .map(|e| e.date)
+            .min()
+    }
+
+    /// Get a batch of earliest release dates.
+    pub(crate) fn earliest_by_kind(&self) -> &[MovieEarliestReleaseDate] {
+        &self.earliest_releases
     }
 
     /// Merge this movie from an update.
     pub(crate) fn merge_from(&mut self, other: crate::service::UpdateMovie) {
+        let earliest_releases = build_earliest_releases(&other.release_dates);
+
         self.title = other.title;
         self.release_date = other.release_date;
         self.overview = other.overview;
         self.graphics.merge_from(other.graphics);
         self.remote_id = Some(other.remote_id);
+        self.release_dates = other.release_dates;
+        self.earliest_releases = earliest_releases;
     }
 
     /// Get the poster of the movie.
@@ -779,20 +827,20 @@ impl Movie {
 
     /// Test if episode will release in the future.
     pub(crate) fn will_release(&self, today: &NaiveDate) -> bool {
-        let Some(release_date) = self.release_date else {
+        let Some(release_date) = self.earliest_release_date() else {
             return false;
         };
 
-        release_date > *today
+        release_date.date_naive() > *today
     }
 
     /// Test if the given episode will be released.
     pub(crate) fn has_released(&self, today: &NaiveDate) -> bool {
-        let Some(release_date) = self.release_date else {
+        let Some(release_date) = self.earliest_release_date() else {
             return false;
         };
 
-        release_date <= *today
+        release_date.date_naive() <= *today
     }
 
     /// Get release timestamp.
@@ -801,6 +849,55 @@ impl Movie {
             .as_ref()
             .and_then(|&d| Some(DateTime::from_utc(d.and_hms_opt(12, 0, 0)?, Utc)))
     }
+}
+
+fn build_earliest_releases(release_dates: &[MovieReleaseDates]) -> Vec<MovieEarliestReleaseDate> {
+    fn country_to_prio(country: &str) -> u32 {
+        match country {
+            "US" => 10,
+            "GB" => 9,
+            _ => 0,
+        }
+    }
+
+    fn less_important(a: &str, b: &str) -> bool {
+        country_to_prio(a) < country_to_prio(b)
+    }
+
+    let mut by_kind = BTreeMap::<MovieReleaseKind, MovieEarliestReleaseDate>::new();
+
+    for country in release_dates {
+        for date in &country.dates {
+            match by_kind.entry(date.kind) {
+                btree_map::Entry::Occupied(e) => {
+                    let e = e.into_mut();
+
+                    match e.date.cmp(&date.date) {
+                        ordering @ (Ordering::Less | Ordering::Equal) => {
+                            if matches!(ordering, Ordering::Equal if less_important(&e.country, &country.country))
+                            {
+                                *e = MovieEarliestReleaseDate {
+                                    country: country.country.clone(),
+                                    date: date.date,
+                                    kind: date.kind,
+                                };
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                btree_map::Entry::Vacant(e) => {
+                    e.insert(MovieEarliestReleaseDate {
+                        country: country.country.clone(),
+                        date: date.date,
+                        kind: date.kind,
+                    });
+                }
+            }
+        }
+    }
+
+    by_kind.into_values().collect()
 }
 
 pub(crate) mod btree_as_vec {

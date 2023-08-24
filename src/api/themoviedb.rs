@@ -611,6 +611,8 @@ impl Client {
             response::<Images, _>(format!("movie/{id}/images"), images)
         )?;
 
+        tracing::trace!(?release_dates);
+
         let remote_id = RemoteId::Tmdb { id: details.id };
 
         let mut remote_ids = BTreeSet::from([remote_id]);
@@ -744,10 +746,14 @@ enum ReleaseType {
 #[derive(Debug, Deserialize)]
 struct ReleaseDate {
     #[serde(default)]
+    #[allow(unused)]
     certification: String,
+    #[allow(unused)]
     descriptors: Vec<serde_json::Value>,
     #[serde(default)]
+    #[allow(unused)]
     iso_639_1: String,
+    #[allow(unused)]
     note: String,
     release_date: DateTime<Utc>,
     #[serde(rename = "type")]
@@ -764,6 +770,7 @@ struct ReleaseDateResult {
 
 #[derive(Debug, Deserialize)]
 struct ReleaseDates {
+    #[allow(unused)]
     id: u32,
     results: Vec<ReleaseDateResult>,
 }
