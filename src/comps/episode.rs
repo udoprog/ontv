@@ -23,7 +23,7 @@ pub(crate) struct Props<I> {
 }
 
 pub(crate) struct Episode {
-    pending_series: bool,
+    include_series: bool,
     episode_id: EpisodeId,
     watch: comps::Watch,
     remove_last_watch: Option<comps::Confirm>,
@@ -37,7 +37,7 @@ where
     #[inline]
     fn new(props: Props<I>) -> Self {
         Self {
-            pending_series: props.include_series,
+            include_series: props.include_series,
             episode_id: props.episode_id,
             watch: comps::Watch::new(comps::watch::Props::new(comps::watch::Kind::Episode(
                 props.episode_id,
@@ -67,7 +67,7 @@ where
 
     #[inline]
     fn changed(&mut self, props: Props<I>) {
-        self.pending_series = props.include_series;
+        self.include_series = props.include_series;
         self.episode_id = props.episode_id;
         self.watch
             .changed(comps::watch::Props::new(comps::watch::Kind::Episode(
@@ -93,10 +93,12 @@ where
 impl Episode {
     pub(crate) fn prepare(&mut self, cx: &mut Ctxt<'_>) {
         if let Some(e) = cx.service.episode(&self.episode_id) {
-            if self.pending_series {
-                if let Some(p) = cx.service.pending_ref_by_series(e.series()) {
-                    cx.assets.mark_with_hint(p.poster(), POSTER_HINT);
-                }
+            if let Some(p) = cx
+                .service
+                .pending_ref_by_series(e.series())
+                .filter(|_| self.include_series)
+            {
+                cx.assets.mark_with_hint(p.poster(), POSTER_HINT);
             } else {
                 cx.assets.mark_with_hint(e.filename(), SCREENCAP_HINT);
             }
@@ -136,39 +138,36 @@ impl Episode {
             bail!("Missing episode {}", self.episode_id);
         };
 
-        let pending_series = if self.pending_series {
-            cx.service.pending_ref_by_series(episode.series())
-        } else {
-            None
-        };
+        let pending_series = cx.service.pending_ref_by_series(episode.series());
 
-        let (image, (image_fill, rest_fill)) = if let Some(p) = pending_series {
-            let poster = match p
-                .poster()
-                .and_then(|image| cx.assets.image_with_hint(image, POSTER_HINT))
-            {
-                Some(handle) => handle,
-                None => cx.missing_poster(),
+        let (image, (image_fill, rest_fill)) =
+            if let Some(p) = pending_series.filter(|_| self.include_series) {
+                let poster = match p
+                    .poster()
+                    .and_then(|image| cx.assets.image_with_hint(image, POSTER_HINT))
+                {
+                    Some(handle) => handle,
+                    None => cx.missing_poster(),
+                };
+
+                (
+                    w::container(w::image(poster)).align_x(Horizontal::Center),
+                    (2, 10),
+                )
+            } else {
+                let screencap = match episode
+                    .filename()
+                    .and_then(|image| cx.assets.image_with_hint(image, SCREENCAP_HINT))
+                {
+                    Some(handle) => handle,
+                    None => cx.assets.missing_screen_capture(),
+                };
+
+                (
+                    w::container(w::image(screencap)).align_x(Horizontal::Center),
+                    (4, 8),
+                )
             };
-
-            (
-                w::container(w::image(poster)).align_x(Horizontal::Center),
-                (2, 10),
-            )
-        } else {
-            let screencap = match episode
-                .filename()
-                .and_then(|image| cx.assets.image_with_hint(image, SCREENCAP_HINT))
-            {
-                Some(handle) => handle,
-                None => cx.assets.missing_screen_capture(),
-            };
-
-            (
-                w::container(w::image(screencap)).align_x(Horizontal::Center),
-                (4, 8),
-            )
-        };
 
         let mut name = w::Row::new().spacing(SPACE);
 
@@ -225,23 +224,18 @@ impl Episode {
         }
 
         if !any_confirm {
-            if pending_series
-                .as_ref()
-                .filter(
-                    |p| matches!(p, PendingRef::Episode { episode: p, .. } if p.id == episode.id),
-                )
-                .is_none()
+            if matches!(pending_series, Some(PendingRef::Episode { episode: p, .. }) if p.id == episode.id)
             {
-                actions = actions.push(
-                    w::button(w::text("Make next episode").size(SMALL_SIZE))
-                        .style(theme::Button::Secondary)
-                        .on_press(Message::SelectPending(episode.id)),
-                );
-            } else {
                 actions = actions.push(
                     w::button(w::text("Clear next episode").size(SMALL_SIZE))
                         .style(theme::Button::Destructive)
                         .on_press(Message::ClearPending(episode.id)),
+                );
+            } else {
+                actions = actions.push(
+                    w::button(w::text("Make next episode").size(SMALL_SIZE))
+                        .style(theme::Button::Secondary)
+                        .on_press(Message::SelectPending(episode.id)),
                 );
             }
         }

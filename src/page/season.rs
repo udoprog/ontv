@@ -96,7 +96,7 @@ impl Season {
             episodes = episodes.push(
                 centered(
                     episode
-                        .view(cx, true)?
+                        .view(cx, false)?
                         .map(move |m| Message::Episode(index, m)),
                     Some(style::weak),
                 )
