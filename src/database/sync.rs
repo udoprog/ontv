@@ -76,10 +76,10 @@ impl Database {
         replace(&mut e.last_modified, last_modified) != last_modified
     }
 
-    /// Update series.
+    /// Update remote sync.
     #[must_use]
     #[tracing::instrument(skip(self))]
-    pub(crate) fn series_update_sync(
+    pub(crate) fn update_sync(
         &mut self,
         id: RemoteId,
         now: DateTime<Utc>,

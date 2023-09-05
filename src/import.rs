@@ -57,7 +57,13 @@ pub fn import_trakt_watched(
         let series_id = match service.existing_by_remote_ids(ids) {
             Some(series_id) => {
                 if service.series(&series_id).is_none() && import_missing {
-                    let Some(..) = runtime.block_on(download_series(service, &now, &entry, &tmdb_remote_id))? else {
+                    let Some(..) = runtime.block_on(download_series(
+                        service,
+                        &now,
+                        &entry,
+                        &tmdb_remote_id,
+                    ))?
+                    else {
                         continue;
                     };
                 }
@@ -73,7 +79,9 @@ pub fn import_trakt_watched(
                     continue;
                 };
 
-                let Some(id) = runtime.block_on(download_series(service, &now, &entry, &tmdb_remote_id))? else {
+                let Some(id) =
+                    runtime.block_on(download_series(service, &now, &entry, &tmdb_remote_id))?
+                else {
                     continue;
                 };
 
@@ -91,7 +99,9 @@ pub fn import_trakt_watched(
 
         for season in &entry.seasons {
             for import in &season.episodes {
-                let Some(episode) = service.find_episode_by(&series_id, |e| e.season == SeasonNumber::Number(season.number) && e.number == import.number) else {
+                let Some(episode) = service.find_episode_by(&series_id, |e| {
+                    e.season == SeasonNumber::Number(season.number) && e.number == import.number
+                }) else {
                     continue;
                 };
 

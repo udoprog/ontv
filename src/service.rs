@@ -1005,7 +1005,10 @@ impl Service {
                     }
                 }
                 RemoteId::Tmdb { id } => {
-                    let Some((series, remote_ids, last_etag, last_modified, seasons)) = tmdb.series(id, lookup_series, if_none_match.as_ref()).await? else {
+                    let Some((series, remote_ids, last_etag, last_modified, seasons)) = tmdb
+                        .series(id, lookup_series, if_none_match.as_ref())
+                        .await?
+                    else {
                         tracing::trace!("{remote_id}: not changed");
                         return Ok(None);
                     };
@@ -1072,7 +1075,9 @@ impl Service {
 
             let data = match remote_id {
                 RemoteId::Tmdb { id } => {
-                    let Some((movie, remote_ids, last_etag, last_modified)) = tmdb.movie(id, lookup_movie, if_none_match.as_ref()).await? else {
+                    let Some((movie, remote_ids, last_etag, last_modified)) =
+                        tmdb.movie(id, lookup_movie, if_none_match.as_ref()).await?
+                    else {
                         tracing::trace!("{remote_id}: not changed");
                         return Ok(None);
                     };
@@ -1478,13 +1483,14 @@ impl Service {
             remote_id,
             last_modified,
             ..
+        }
+        | TaskKind::DownloadMovie {
+            remote_id,
+            last_modified,
+            ..
         } = &task.kind
         {
-            if self
-                .db
-                .sync
-                .series_update_sync(*remote_id, *now, *last_modified)
-            {
+            if self.db.sync.update_sync(*remote_id, *now, *last_modified) {
                 self.db.changes.change(Change::Sync);
             }
         }
