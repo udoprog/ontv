@@ -1,0 +1,8 @@
+#!/bin/sh
+
+set -e
+
+cargo build --release
+cargo generate-rpm
+sudo dnf remove --assumeyes ontv
+sudo dnf install --assumeyes target/generate-rpm/ontv-0.0.0-1.x86_64.rpm

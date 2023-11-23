@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Keywords=ontv;
+Name=OnTV
+Comment=A rich desktop application for tracking tv shows
+Exec=/usr/bin/ontv
+Icon=se.tedro.OnTV
+StartupNotify=true
+Terminal=false
