@@ -169,6 +169,12 @@ mod prelude {
 pub fn run(service: service::Service) -> anyhow::Result<()> {
     use iced::Application;
     let mut settings = iced::Settings::with_flags(application::Flags { service });
+
+    #[cfg(unix)]
+    {
+        settings.window.platform_specific.application_id = String::from("se.tedro.OnTV");
+    }
+
     settings.exit_on_close_request = false;
     application::Application::run(settings)?;
     Ok(())

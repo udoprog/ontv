@@ -7,3 +7,4 @@ Exec=/usr/bin/ontv
 Icon=se.tedro.OnTV
 StartupNotify=true
 Terminal=false
+SingleMainWindow=true
