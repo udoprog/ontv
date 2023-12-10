@@ -1,16 +1,13 @@
 #[cfg(windows)]
 mod sys {
-    use core::ptr;
-    use std::ffi::CString;
-    use std::io;
-
+    use anyhow::Result;
     use winctx::NamedMutex;
 
     pub struct Lock {
         handle: NamedMutex,
     }
 
-    pub fn try_global_lock(name: &str) -> io::Result<Option<Lock>> {
+    pub fn try_global_lock(name: &str) -> Result<Option<Lock>> {
         match NamedMutex::create_acquired(name)? {
             Some(handle) => Ok(Some(Lock { handle })),
             None => Ok(None),
@@ -20,7 +17,7 @@ mod sys {
 
 #[cfg(not(windows))]
 mod sys {
-    use std::io;
+    use anyhow::Result;
 
     pub struct Lock;
 
@@ -28,7 +25,7 @@ mod sys {
         fn drop(&mut self) {}
     }
 
-    pub fn try_global_lock(_: &str) -> io::Result<Option<Lock>> {
+    pub fn try_global_lock(_: &str) -> Result<Option<Lock>> {
         Ok(Some(Lock))
     }
 }
