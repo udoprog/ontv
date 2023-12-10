@@ -4,34 +4,16 @@ mod sys {
     use std::ffi::CString;
     use std::io;
 
-    use windows_sys::core::PCSTR;
-    use windows_sys::Win32::Foundation::{
-        CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, TRUE,
-    };
-    use windows_sys::Win32::System::Threading::CreateMutexA;
+    use winctx::NamedMutex;
 
     pub struct Lock {
-        handle: HANDLE,
+        handle: NamedMutex,
     }
 
-    impl Drop for Lock {
-        fn drop(&mut self) {
-            unsafe {
-                let _ = CloseHandle(self.handle);
-            }
-        }
-    }
-
-    pub fn try_global_lock(name: &str) -> io::Result<Lock> {
-        unsafe {
-            let name = CString::new(name)?;
-            let handle = CreateMutexA(ptr::null(), TRUE, name.as_ptr() as PCSTR);
-
-            if GetLastError() == ERROR_ALREADY_EXISTS || handle == 0 {
-                return Err(io::Error::last_os_error());
-            }
-
-            Ok(Lock { handle })
+    pub fn try_global_lock(name: &str) -> io::Result<Option<Lock>> {
+        match NamedMutex::create_acquired(name)? {
+            Some(handle) => Ok(Some(Lock { handle })),
+            None => Ok(None),
         }
     }
 }
@@ -46,8 +28,8 @@ mod sys {
         fn drop(&mut self) {}
     }
 
-    pub fn try_global_lock(_: &str) -> io::Result<Lock> {
-        Ok(Lock)
+    pub fn try_global_lock(_: &str) -> io::Result<Option<Lock>> {
+        Ok(Some(Lock))
     }
 }
 

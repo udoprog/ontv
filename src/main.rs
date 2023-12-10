@@ -39,15 +39,9 @@ pub fn main() -> Result<()> {
         .try_init()
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    let _lock = match ontv::lock::try_global_lock("OnTV") {
-        Ok(lock) => lock,
-        Err(error) => {
-            tracing::error!(
-                "Failed to lock process, it's possible multiple processes are running: {}",
-                error
-            );
-            return Err(anyhow::anyhow!("Failed to start process"));
-        }
+    let Some(_lock) = ontv::lock::try_global_lock("se.tedro.OnTV")? else {
+        tracing::error!("Failed to lock process, it's possible multiple processes are running",);
+        return Ok(());
     };
 
     let opts = Opts::try_parse()?;
