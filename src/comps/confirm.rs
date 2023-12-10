@@ -3,6 +3,7 @@ use crate::prelude::*;
 use crate::comps::ordering::Ordering;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::enum_variant_names)]
 pub(crate) enum Kind {
     RemoveEpisodeWatch {
         episode_id: EpisodeId,

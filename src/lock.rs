@@ -46,7 +46,7 @@ mod sys {
         fn drop(&mut self) {}
     }
 
-    pub fn try_global_lock(name: &str) -> io::Result<Lock> {
+    pub fn try_global_lock(_: &str) -> io::Result<Lock> {
         Ok(Lock)
     }
 }

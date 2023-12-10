@@ -12,7 +12,10 @@ pub(crate) fn parse_last_modified(res: &Response) -> Result<Option<DateTime<Utc>
 
     let last_modified = DateTime::parse_from_rfc2822(last_modified.to_str()?)?;
     let last_modified = last_modified.naive_utc();
-    Ok(Some(DateTime::from_utc(last_modified, Utc)))
+    Ok(Some(DateTime::from_naive_utc_and_offset(
+        last_modified,
+        Utc,
+    )))
 }
 
 /// Parse out etag if available.

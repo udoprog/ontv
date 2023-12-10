@@ -44,12 +44,12 @@ impl<T> TextBuilder<'_, T> {
     }
 }
 
-impl<M, T> Into<Element<'static, M>> for TextBuilder<'_, T>
+impl<M, T> From<TextBuilder<'_, T>> for Element<'static, M>
 where
     T: ToString,
 {
-    fn into(self) -> Element<'static, M> {
-        let string = self.text.to_string();
+    fn from(builder: TextBuilder<'_, T>) -> Element<'static, M> {
+        let string = builder.text.to_string();
         let all_ascii = string.chars().all(|c| c.is_ascii());
 
         let mut text = w::text(string);
@@ -58,7 +58,7 @@ where
             text = text.shaping(w::text::Shaping::Advanced);
         }
 
-        if let Some(size) = self.size {
+        if let Some(size) = builder.size {
             text = text.size(size);
         }
 

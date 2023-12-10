@@ -791,7 +791,7 @@ impl Movie {
     /// Get earliest actual release date.
     pub(crate) fn earliest_release_date(&self) -> Option<DateTime<Utc>> {
         self.earliest_by_kind()
-            .into_iter()
+            .iter()
             .filter(|e| e.kind.is_digital())
             .map(|e| e.date)
             .min()
@@ -845,9 +845,12 @@ impl Movie {
 
     /// Get release timestamp.
     pub(crate) fn release(&self) -> Option<DateTime<Utc>> {
-        self.release_date
-            .as_ref()
-            .and_then(|&d| Some(DateTime::from_utc(d.and_hms_opt(12, 0, 0)?, Utc)))
+        self.release_date.as_ref().and_then(|&d| {
+            Some(DateTime::from_naive_utc_and_offset(
+                d.and_hms_opt(12, 0, 0)?,
+                Utc,
+            ))
+        })
     }
 }
 
@@ -872,18 +875,15 @@ fn build_earliest_releases(release_dates: &[MovieReleaseDates]) -> Vec<MovieEarl
                 btree_map::Entry::Occupied(e) => {
                     let e = e.into_mut();
 
-                    match e.date.cmp(&date.date) {
-                        ordering @ (Ordering::Less | Ordering::Equal) => {
-                            if matches!(ordering, Ordering::Equal if less_important(&e.country, &country.country))
-                            {
-                                *e = MovieEarliestReleaseDate {
-                                    country: country.country.clone(),
-                                    date: date.date,
-                                    kind: date.kind,
-                                };
-                            }
+                    if let ordering @ (Ordering::Less | Ordering::Equal) = e.date.cmp(&date.date) {
+                        if matches!(ordering, Ordering::Equal if less_important(&e.country, &country.country))
+                        {
+                            *e = MovieEarliestReleaseDate {
+                                country: country.country.clone(),
+                                date: date.date,
+                                kind: date.kind,
+                            };
                         }
-                        _ => {}
                     }
                 }
                 btree_map::Entry::Vacant(e) => {
@@ -1158,9 +1158,12 @@ impl Episode {
 
     /// Get aired timestamp.
     pub(crate) fn aired_timestamp(&self) -> Option<DateTime<Utc>> {
-        self.aired
-            .as_ref()
-            .and_then(|&d| Some(DateTime::from_utc(d.and_hms_opt(12, 0, 0)?, Utc)))
+        self.aired.as_ref().and_then(|&d| {
+            Some(DateTime::from_naive_utc_and_offset(
+                d.and_hms_opt(12, 0, 0)?,
+                Utc,
+            ))
+        })
     }
 }
 

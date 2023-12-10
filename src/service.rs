@@ -1547,7 +1547,7 @@ fn episodes_into_seasons(episodes: &[NewEpisode]) -> Vec<Season> {
 
 /// Calculate pending timestamp.
 fn pending_timestamp(now: &DateTime<Utc>, candidates: &[Option<DateTime<Utc>>]) -> DateTime<Utc> {
-    if let Some(timestamp) = candidates.into_iter().flatten().max() {
+    if let Some(timestamp) = candidates.iter().flatten().max() {
         *timestamp
     } else {
         *now
