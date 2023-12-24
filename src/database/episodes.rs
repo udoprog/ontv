@@ -89,7 +89,9 @@ pub(crate) struct Database {
 impl Database {
     /// Insert a database.
     #[tracing::instrument(skip(self, episodes))]
-    pub(crate) fn insert(&mut self, series: SeriesId, episodes: Vec<Episode>) {
+    pub(crate) fn insert(&mut self, series: SeriesId, mut episodes: Vec<Episode>) {
+        episodes.sort_by_cached_key(|e| e.watch_order_key());
+
         let len = episodes.len();
         let mut first = None;
         let mut prev = None;

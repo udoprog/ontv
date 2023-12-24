@@ -4,12 +4,12 @@ mod sys {
     use winctx::NamedMutex;
 
     pub struct Lock {
-        handle: NamedMutex,
+        _handle: NamedMutex,
     }
 
     pub fn try_global_lock(name: &str) -> Result<Option<Lock>> {
         match NamedMutex::create_acquired(name)? {
-            Some(handle) => Ok(Some(Lock { handle })),
+            Some(handle) => Ok(Some(Lock { _handle: handle })),
             None => Ok(None),
         }
     }

@@ -1165,6 +1165,16 @@ impl Episode {
             ))
         })
     }
+
+    /// A sort key used for episodes.
+    pub(crate) fn watch_order_key(&self) -> WatchOrderKey {
+        WatchOrderKey {
+            absolute_number: self.absolute_number.unwrap_or(u32::MAX),
+            aired: self.aired.unwrap_or(NaiveDate::MAX),
+            season: self.season,
+            number: self.number,
+        }
+    }
 }
 
 impl fmt::Display for Episode {
@@ -1172,6 +1182,19 @@ impl fmt::Display for Episode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} / {}", self.season, self.number)
     }
+}
+
+/// A key used to sort episodes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct WatchOrderKey {
+    /// Absolute number in the series.
+    pub(crate) absolute_number: u32,
+    /// Air date of the episode.
+    pub(crate) aired: NaiveDate,
+    /// Season number.
+    pub(crate) season: SeasonNumber,
+    /// Episode number inside of its season.
+    pub(crate) number: u32,
 }
 
 /// Image format in use.

@@ -613,6 +613,10 @@ impl Service {
         });
 
         self.db.changes.change(Change::Watched);
+
+        if self.db.pending.remove_movie(&movie).is_some() {
+            self.db.changes.change(Change::Pending);
+        }
     }
 
     /// Skip an episode.
