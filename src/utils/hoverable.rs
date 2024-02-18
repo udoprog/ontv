@@ -5,6 +5,8 @@ use iced::advanced::{Clipboard, Layout, Shell, Widget};
 use iced::event::{self, Event};
 use iced::mouse::Cursor;
 use iced::overlay;
+use iced::Size;
+use iced::Vector;
 use iced::{Element, Length, Rectangle};
 
 const WIDTH: Length = Length::Shrink;
@@ -15,16 +17,16 @@ struct State {
     hovered: bool,
 }
 
-pub(crate) struct Hoverable<'a, Message, Renderer> {
-    content: Element<'a, Message, Renderer>,
+pub(crate) struct Hoverable<'a, Message, Theme, Renderer> {
+    content: Element<'a, Message, Theme, Renderer>,
     on_hover: Option<Message>,
 }
 
-impl<'a, Message, Renderer> Hoverable<'a, Message, Renderer>
+impl<'a, Message, Theme, Renderer> Hoverable<'a, Message, Theme, Renderer>
 where
     Renderer: iced::advanced::Renderer,
 {
-    pub(crate) fn new(content: impl Into<Element<'a, Message, Renderer>>) -> Self {
+    pub(crate) fn new(content: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self {
         Self {
             content: content.into(),
             on_hover: None,
@@ -37,11 +39,16 @@ where
     }
 }
 
-impl<'a, Message: 'a, Renderer> Widget<Message, Renderer> for Hoverable<'a, Message, Renderer>
+impl<'a, Message: 'a, Theme, Renderer> Widget<Message, Theme, Renderer>
+    for Hoverable<'a, Message, Theme, Renderer>
 where
     Message: Clone,
     Renderer: iced::advanced::Renderer,
 {
+    fn size(&self) -> Size<Length> {
+        Size::new(WIDTH, HEIGHT)
+    }
+
     #[inline]
     fn tag(&self) -> tree::Tag {
         tree::Tag::of::<State>()
@@ -108,28 +115,26 @@ where
         event::Status::Ignored
     }
 
-    fn layout(&self, renderer: &Renderer, limits: &layout::Limits) -> layout::Node {
+    fn layout(
+        &self,
+        tree: &mut Tree,
+        renderer: &Renderer,
+        limits: &layout::Limits,
+    ) -> layout::Node {
         let limits = limits.width(WIDTH).height(HEIGHT);
-        let content_layout = self.content.as_widget().layout(renderer, &limits);
-        let size = limits.resolve(content_layout.size());
+        let content_layout =
+            self.content
+                .as_widget()
+                .layout(&mut tree.children[0], renderer, &limits);
+        let size = limits.resolve(WIDTH, HEIGHT, content_layout.size());
         layout::Node::with_children(size, vec![content_layout])
-    }
-
-    #[inline]
-    fn width(&self) -> Length {
-        WIDTH
-    }
-
-    #[inline]
-    fn height(&self) -> Length {
-        HEIGHT
     }
 
     fn draw(
         &self,
         state: &Tree,
         renderer: &mut Renderer,
-        theme: &<Renderer as iced::advanced::Renderer>::Theme,
+        theme: &Theme,
         style: &renderer::Style,
         layout: Layout<'_>,
         cursor_position: Cursor,
@@ -171,23 +176,25 @@ where
         tree: &'b mut Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
-    ) -> Option<overlay::Element<'b, Message, Renderer>> {
+        translation: Vector,
+    ) -> Option<overlay::Element<'b, Message, Theme, Renderer>> {
         self.content.as_widget_mut().overlay(
             &mut tree.children[0],
             layout.children().next().unwrap(),
             renderer,
+            translation,
         )
     }
 }
 
-impl<'a, Message: 'a, Renderer: 'a> From<Hoverable<'a, Message, Renderer>>
-    for Element<'a, Message, Renderer>
+impl<'a, Message: 'a, Theme: 'a, Renderer: 'a> From<Hoverable<'a, Message, Theme, Renderer>>
+    for Element<'a, Message, Theme, Renderer>
 where
     Message: Clone,
     Renderer: iced::advanced::Renderer,
 {
     #[inline]
-    fn from(hoverable: Hoverable<'a, Message, Renderer>) -> Self {
+    fn from(hoverable: Hoverable<'a, Message, Theme, Renderer>) -> Self {
         Self::new(hoverable)
     }
 }

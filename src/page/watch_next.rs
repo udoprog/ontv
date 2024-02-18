@@ -95,7 +95,7 @@ impl WatchNext {
     ) -> Result<Element<'static, Message>> {
         let mut list = w::Column::new();
 
-        list = list.push(w::vertical_space(Length::Shrink));
+        list = list.push(w::vertical_space().height(Length::Shrink));
 
         list = list.push(centered(
             w::text("Watch next").size(TITLE_SIZE).width(Length::Fill),
@@ -106,11 +106,10 @@ impl WatchNext {
 
         options = options.push(centered(
             w::Row::new()
-                .push(w::checkbox(
-                    "Show future episodes",
-                    state.future,
-                    Message::ToggleFuture,
-                ))
+                .push(
+                    w::checkbox("Show future episodes", state.future)
+                        .on_toggle(Message::ToggleFuture),
+                )
                 .width(Length::Fill),
             None,
         ));

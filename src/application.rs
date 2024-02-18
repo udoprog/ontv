@@ -49,6 +49,7 @@ const IMAGE_BATCH: usize = 10;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
+    Ignore,
     /// Platform-specific events.
     CloseRequested,
     Settings(page::settings::Message),
@@ -236,6 +237,9 @@ impl iced::Application for Application {
         tracing::trace!("{message:?}");
 
         match (message, &mut self.current, self.history.page_mut()) {
+            (Message::Ignore, _, _) => {
+                return self.commands.build();
+            }
             (Message::Settings(message), Current::Settings(page), _) => {
                 page.update(ctxt!(self), message);
             }
@@ -287,7 +291,7 @@ impl iced::Application for Application {
                 if self.database_timeout.is_set() {
                     self.database_timeout.clear();
                 } else {
-                    self.commands.command(window::close());
+                    self.commands.command(window::close(window::Id::MAIN));
                 }
 
                 return self.commands.build();
@@ -313,7 +317,7 @@ impl iced::Application for Application {
                 }
 
                 if self.exit_after_save {
-                    self.commands.command(window::close());
+                    self.commands.command(window::close(window::Id::MAIN));
                 }
 
                 self.state.set_saving(false);
@@ -452,23 +456,19 @@ impl iced::Application for Application {
     #[inline]
     fn subscription(&self) -> iced::Subscription<Self::Message> {
         use iced::{event, mouse, Event};
-        return iced::subscription::events_with(handle_event);
+        return event::listen().map(handle_event);
 
-        fn handle_event(event: Event, status: event::Status) -> Option<Message> {
-            let event::Status::Ignored = status else {
-                return None;
-            };
-
+        fn handle_event(event: Event) -> Message {
             tracing::trace!(?event);
 
             match event {
-                Event::Window(window::Event::CloseRequested) => Some(Message::CloseRequested),
+                Event::Window(_, window::Event::CloseRequested) => Message::CloseRequested,
                 Event::Mouse(mouse::Event::ButtonPressed(button)) => match button {
-                    mouse::Button::Other(1) => Some(Message::History(-1)),
-                    mouse::Button::Other(2) => Some(Message::History(1)),
-                    _ => None,
+                    mouse::Button::Other(1) => Message::History(-1),
+                    mouse::Button::Other(2) => Message::History(1),
+                    _ => Message::Ignore,
                 },
-                _ => None,
+                _ => Message::Ignore,
             }
         }
     }

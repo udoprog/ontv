@@ -210,7 +210,7 @@ impl Queue {
         default_container(
             w::Column::new()
                 .push(queue)
-                .push(w::vertical_space(Length::Shrink))
+                .push(w::vertical_space().height(Length::Shrink))
                 .padding(GAP)
                 .spacing(GAP),
         )

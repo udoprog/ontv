@@ -189,7 +189,7 @@ impl Dashboard {
 
         w::Column::new()
             // .push(self.calendar.view().map(Message::Calendar))
-            .push(w::vertical_space(Length::Shrink))
+            .push(w::vertical_space().height(Length::Shrink))
             .push(centered(up_next_title, None))
             .push(centered(
                 pending.padding(GAP).spacing(GAP),
@@ -197,7 +197,7 @@ impl Dashboard {
             ))
             .push(centered(scheduled_title, None))
             .push(centered(scheduled.padding(GAP).spacing(GAP), None))
-            .push(w::vertical_space(Length::Shrink))
+            .push(w::vertical_space().height(Length::Shrink))
             .spacing(GAP2)
             .into()
     }

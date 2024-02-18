@@ -175,7 +175,7 @@ pub fn run(service: service::Service) -> anyhow::Result<()> {
         settings.window.platform_specific.application_id = String::from("se.tedro.OnTV");
     }
 
-    settings.exit_on_close_request = false;
+    settings.window.exit_on_close_request = false;
     application::Application::run(settings)?;
     Ok(())
 }
