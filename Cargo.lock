@@ -3892,7 +3892,7 @@ dependencies = [
  "js-sys",
  "log",
  "naga",
- "parking_lot 0.12.1",
+ "parking_lot 0.11.2",
  "profiling",
  "raw-window-handle 0.6.0",
  "smallvec",
@@ -3920,7 +3920,7 @@ dependencies = [
  "log",
  "naga",
  "once_cell",
- "parking_lot 0.12.1",
+ "parking_lot 0.11.2",
  "profiling",
  "raw-window-handle 0.6.0",
  "rustc-hash",
@@ -3961,7 +3961,7 @@ dependencies = [
  "naga",
  "objc",
  "once_cell",
- "parking_lot 0.12.1",
+ "parking_lot 0.11.2",
  "profiling",
  "range-alloc",
  "raw-window-handle 0.6.0",
@@ -4025,9 +4025,9 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "winctx"
-version = "0.0.8"
+version = "0.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67649f6d14f6561b34c1b3f6c57f497262d6b51a69a00ea8773ec4dea995d79b"
+checksum = "17c3b846acc90e4393fa450b2934b9a3ec2d8fb2fd2148a026294138279ac0e3"
 dependencies = [
  "tokio",
  "windows-core",
