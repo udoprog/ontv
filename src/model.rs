@@ -847,7 +847,7 @@ impl Movie {
     pub(crate) fn release(&self) -> Option<DateTime<Utc>> {
         self.release_date.as_ref().and_then(|&d| {
             Some(DateTime::from_naive_utc_and_offset(
-                d.and_hms_opt(12, 0, 0)?,
+                d.and_hms_opt(0, 0, 0)?,
                 Utc,
             ))
         })
@@ -1160,7 +1160,7 @@ impl Episode {
     pub(crate) fn aired_timestamp(&self) -> Option<DateTime<Utc>> {
         self.aired.as_ref().and_then(|&d| {
             Some(DateTime::from_naive_utc_and_offset(
-                d.and_hms_opt(12, 0, 0)?,
+                d.and_hms_opt(0, 0, 0)?,
                 Utc,
             ))
         })
