@@ -122,7 +122,7 @@ impl Watch {
                         .size(SMALL_SIZE),
                 )
                 .style(theme::Button::Secondary)
-                .width(width)
+                .width(Length::Fill)
                 .on_press(Message::Cancel),
             ];
 
@@ -151,11 +151,9 @@ impl Watch {
                 w::button(
                     w::text(title)
                         .size(SMALL_SIZE)
-                        .width(Length::Fill)
                         .horizontal_alignment(alignment),
                 )
                 .style(right_now)
-                .width(width)
                 .on_press(Message::Start),
             );
         }

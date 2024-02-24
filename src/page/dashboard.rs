@@ -255,7 +255,7 @@ impl Dashboard {
                         "Mark",
                         theme::Button::Positive,
                         theme::Button::Positive,
-                        Length::FillPortion(5),
+                        Length::Shrink,
                         Horizontal::Center,
                         false,
                     )
