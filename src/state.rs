@@ -4,6 +4,11 @@ use chrono::{Duration, NaiveDate, Utc};
 
 use crate::error::{ErrorId, ErrorInfo};
 
+const TEN_MINUTES: Duration = match Duration::try_minutes(10) {
+    Some(duration) => duration,
+    None => panic!("Bad duration"),
+};
+
 pub(crate) struct State {
     /// Current error identifiers.
     error_ids: HashSet<ErrorId>,
@@ -45,7 +50,7 @@ impl State {
         self.error_ids.extend(error.id);
         self.errors.push_front(error);
 
-        let expires_at = Utc::now() - Duration::minutes(10);
+        let expires_at = Utc::now() - TEN_MINUTES;
 
         while let Some(e) = self.errors.back() {
             if e.timestamp > expires_at {

@@ -6,7 +6,10 @@ use chrono::{DateTime, Duration, Utc};
 use crate::prelude::{MovieId, RemoteId, SeriesId, TaskId};
 
 /// Number of milliseconds of delay to add by default to scheduled tasks.
-const DELAY_MILLIS: i64 = 5000;
+const DELAY: Duration = match Duration::try_milliseconds(5000) {
+    Some(duration) => duration,
+    None => panic!("Bad duration"),
+};
 
 /// The current task status.
 #[derive(Debug, Clone, Copy)]
@@ -311,7 +314,7 @@ impl Queue {
         self.pending.push_back(Task {
             id,
             kind,
-            scheduled: Some(scheduled + Duration::milliseconds(DELAY_MILLIS)),
+            scheduled: Some(scheduled + DELAY),
         });
 
         self.modified = true;
