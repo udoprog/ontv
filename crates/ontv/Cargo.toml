@@ -1,0 +1,77 @@
+[package]
+name = "ontv"
+version = "0.0.0"
+authors = ["John-John Tedro <udoprog@tedro.se>"]
+edition = "2021"
+rust-version = "1.74"
+description = "A rich desktop application for tracking tv shows"
+documentation = "https://docs.rs/ontv"
+readme = "README.md"
+homepage = "https://github.com/udoprog/ontv"
+repository = "https://github.com/udoprog/ontv"
+license = "MIT OR Apache-2.0"
+keywords = ["gui", "iced", "tmdb", "tvdb"]
+categories = ["gui"]
+
+exclude = [
+    "assets/*.xcf",
+    "images/",
+]
+
+[features]
+default = []
+cli = []
+bundle = ["dep:rust-embed", "dep:mime_guess"]
+
+[dependencies]
+api = { path = "../api" }
+
+anyhow = "1.0.83"
+arrayvec = "0.7.4"
+axum = { version = "0.8.1", features = ["http1", "json", "query", "tracing", "http2", "ws"] }
+base64 = "0.22.1"
+bstr = "1.9.1"
+bytes = { version = "1.6.0", features = ["serde"] }
+chrono = { version = "0.4.38", features = ["serde"] }
+clap = { version = "4.5.4", features = ["derive"] }
+directories-next = "2.0.0"
+fixed-map = "0.9.5"
+futures = "0.3.30"
+leaky-bucket = "1.0.1"
+musli = { version = "0.0.126", features = ["storage"] }
+musli-axum = "0.0.126"
+parking_lot = "0.12.2"
+relative-path = { version = "1.9.3", features = ["serde"] }
+reqwest = { version = "0.12.4", features = ["json"] }
+serde = { version = "1.0.201", features = ["derive"] }
+serde_json = "1.0.117"
+serde_repr = "0.1.19"
+serde_yaml = "0.9.34"
+tempfile = "3.10.1"
+tokio = { version = "1.37.0", features = ["full"] }
+tower-http = { version = "0.6.2", features = ["cors"] }
+tracing = "0.1.40"
+tracing-futures = "0.2.5"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+twox-hash = { version = "2.1.0", features = ["alloc"] }
+uuid = { version = "1.8.0", features = ["v4", "serde"] }
+webbrowser = "1.0.1"
+rand = { version = "0.9.0", features = ["small_rng"] }
+image = "0.25.1"
+tokio-stream = { version = "0.1.15", default-features = false }
+rust-embed = { version = "8.3.0", default-features = false, optional = true }
+mime_guess = { version = "2.0.4", default-features = false, optional = true }
+
+[target.'cfg(windows)'.dependencies]
+winctx = "0.0.19"
+
+[build-dependencies]
+anyhow = "1.0.83"
+winres = "0.1.12"
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/ontv", dest = "/usr/bin/", mode = "755" },
+    { source = "desktop/se.tedro.OnTV.desktop", dest = "/usr/share/applications/", mode = "644" },
+    { source = "desktop/se.tedro.OnTV.svg", dest = "/usr/share/icons/hicolor/scalable/apps/", mode = "644" }
+]

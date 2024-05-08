@@ -1,0 +1,10 @@
+[package]
+name = "api"
+edition = "2021"
+publish = false
+
+[dependencies]
+borrowme = "0.0.15"
+musli = "0.0.126"
+musli-axum = { version = "0.0.126", default-features = false }
+serde = { version = "1.0.201", features = ["derive"] }
