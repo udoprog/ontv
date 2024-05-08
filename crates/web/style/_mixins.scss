@@ -1,0 +1,14 @@
+@mixin from($breakpoint) {
+    @media screen and (min-width: $breakpoint) {
+        @content;
+    }
+}
+
+@mixin until($breakpoint) {
+    @media screen and (max-width: $breakpoint) {
+        @content;
+    }
+}
+
+$desktop: 1024px;
+$mobile: 768px;
