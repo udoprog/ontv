@@ -23,8 +23,8 @@ pub(crate) enum Message {
     SwitchSeries(SeriesId, RemoteId),
     RemoveSeries(SeriesId),
     AddMovieByRemote(RemoteId),
-    SwitchMovie(MovieId, RemoteId),
-    RemoveMovie(MovieId),
+    SwitchMovie(#[allow(unused)] MovieId, #[allow(unused)] RemoteId),
+    RemoveMovie(#[allow(unused)] MovieId),
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
