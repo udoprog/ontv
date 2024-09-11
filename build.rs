@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 
 fn main() -> Result<()> {
     if cfg!(target_os = "windows") {
-        use winres::VersionInfo::*;
+        use winres::VersionInfo::{FILEVERSION, PRODUCTVERSION};
 
         let mut res = winres::WindowsResource::new();
         res.set_icon("assets/icon.ico");
@@ -21,9 +21,8 @@ fn main() -> Result<()> {
 }
 
 fn file_version() -> Option<(String, u64)> {
-    let version = match std::env::var("ONTV_FILE_VERSION") {
-        Ok(version) => version,
-        Err(_) => return None,
+    let Ok(version) = std::env::var("ONTV_FILE_VERSION") else {
+        return None;
     };
 
     let mut info = 0u64;

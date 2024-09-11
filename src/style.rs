@@ -50,7 +50,7 @@ where
 {
     fn from(builder: TextBuilder<'_, T>) -> Element<'static, M> {
         let string = builder.text.to_string();
-        let all_ascii = string.chars().all(|c| c.is_ascii());
+        let all_ascii = string.is_ascii();
 
         let mut text = w::text(string);
 

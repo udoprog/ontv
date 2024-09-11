@@ -102,11 +102,11 @@ impl Format {
         match self {
             Format::Yaml => {
                 serde_yaml::to_writer(&mut *f, data)?;
-                f.write_all(&[b'\n'])?;
+                f.write_all(b"\n")?;
             }
             Format::Json => {
                 serde_json::to_writer_pretty(&mut *f, data)?;
-                f.write_all(&[b'\n'])?;
+                f.write_all(b"\n")?;
             }
         }
 
