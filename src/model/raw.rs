@@ -84,7 +84,7 @@ impl<const N: usize> ser::Serialize for Raw<N> {
 
 struct Visitor<const N: usize>;
 
-impl<'de, const N: usize> de::Visitor<'de> for Visitor<N> {
+impl<const N: usize> de::Visitor<'_> for Visitor<N> {
     type Value = Raw<N>;
 
     #[inline]

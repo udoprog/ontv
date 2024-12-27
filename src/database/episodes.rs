@@ -60,7 +60,7 @@ impl<'a> EpisodeRef<'a> {
     }
 }
 
-impl<'a> Deref for EpisodeRef<'a> {
+impl Deref for EpisodeRef<'_> {
     type Target = Episode;
 
     #[inline]
@@ -229,7 +229,7 @@ impl<'a> Iterator for Iter<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for Iter<'a> {
+impl DoubleEndedIterator for Iter<'_> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         let id = self.tail.take()?;

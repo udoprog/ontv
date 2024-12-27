@@ -77,7 +77,7 @@ impl<'de, const N: usize> de::Deserialize<'de> for Hex<N> {
 
 struct Visitor<const N: usize>;
 
-impl<'de, const N: usize> de::Visitor<'de> for Visitor<N> {
+impl<const N: usize> de::Visitor<'_> for Visitor<N> {
     type Value = Hex<N>;
 
     #[inline]

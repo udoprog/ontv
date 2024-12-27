@@ -209,7 +209,10 @@ where
     C: Commands<T>,
     M: MaybeSend + Sync + Clone + Fn(U) -> T,
 {
-    type ByRef<'this> = &'this mut Self where Self: 'this;
+    type ByRef<'this>
+        = &'this mut Self
+    where
+        Self: 'this;
 
     #[inline]
     fn by_ref(&mut self) -> Self::ByRef<'_> {
@@ -237,7 +240,10 @@ impl<C, M> Commands<M> for &mut C
 where
     C: Commands<M>,
 {
-    type ByRef<'this> = C::ByRef<'this> where Self: 'this;
+    type ByRef<'this>
+        = C::ByRef<'this>
+    where
+        Self: 'this;
 
     #[inline]
     fn by_ref(&mut self) -> Self::ByRef<'_> {

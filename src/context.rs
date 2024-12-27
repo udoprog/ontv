@@ -17,7 +17,7 @@ pub(crate) struct CtxtRef<'a> {
     pub(crate) style: &'a Style,
 }
 
-impl<'a> CtxtRef<'a> {
+impl CtxtRef<'_> {
     #[inline]
     pub(crate) fn warning_text(&self) -> iced::theme::Text {
         crate::style::warning_text(self.service.theme())
@@ -76,7 +76,7 @@ pub(crate) struct Ctxt<'a> {
     pub(crate) assets: &'a mut Assets,
 }
 
-impl<'a> Ctxt<'a> {
+impl Ctxt<'_> {
     /// Push history.
     pub(crate) fn push_history(&mut self, page: Page) {
         self.history.push_history(self.assets, page);

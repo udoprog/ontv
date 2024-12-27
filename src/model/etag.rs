@@ -67,7 +67,7 @@ impl ser::Serialize for Etag {
 
 struct Visitor;
 
-impl<'de> de::Visitor<'de> for Visitor {
+impl de::Visitor<'_> for Visitor {
     type Value = Etag;
 
     #[inline]

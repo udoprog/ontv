@@ -60,7 +60,7 @@ impl fmt::Debug for SeasonRef<'_> {
     }
 }
 
-impl<'a> Deref for SeasonRef<'a> {
+impl Deref for SeasonRef<'_> {
     type Target = Season;
 
     #[inline]
@@ -202,7 +202,7 @@ impl<'a> Iterator for Iter<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for Iter<'a> {
+impl DoubleEndedIterator for Iter<'_> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         let id = self.tail.take()?;

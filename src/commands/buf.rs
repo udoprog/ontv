@@ -23,7 +23,10 @@ impl<M> CommandsBuf<M> {
 }
 
 impl<M> Commands<M> for CommandsBuf<M> {
-    type ByRef<'this> = &'this mut Self where Self: 'this;
+    type ByRef<'this>
+        = &'this mut Self
+    where
+        Self: 'this;
 
     #[inline]
     fn by_ref(&mut self) -> Self::ByRef<'_> {

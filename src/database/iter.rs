@@ -87,7 +87,7 @@ where
     }
 }
 
-impl<'a, I, M> Clone for Iter<'a, I, M>
+impl<I, M> Clone for Iter<'_, I, M>
 where
     I: Clone,
     M: Map,

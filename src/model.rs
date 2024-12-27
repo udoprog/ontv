@@ -933,7 +933,7 @@ pub(crate) mod btree_as_vec {
         K: Ord + de::Deserialize<'de>,
         V: de::Deserialize<'de>,
     {
-        return deserializer.deserialize_seq(Visitor(BTreeMap::new()));
+        deserializer.deserialize_seq(Visitor(BTreeMap::new()))
     }
 
     impl<'de, K, V> de::Visitor<'de> for Visitor<K, V>
@@ -1297,7 +1297,7 @@ impl<'de> Deserialize<'de> for ImageV2 {
     {
         struct ImageV2Visitor;
 
-        impl<'de> de::Visitor<'de> for ImageV2Visitor {
+        impl de::Visitor<'_> for ImageV2Visitor {
             type Value = ImageV2;
 
             #[inline]
