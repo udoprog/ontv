@@ -52,7 +52,7 @@ where
 pub(crate) fn link<M>(content: impl Into<Element<'static, M>>) -> iced::widget::Button<'static, M> {
     iced::widget::Button::new(content)
         .padding(0)
-        .style(iced::theme::Button::Text)
+        .style(iced::widget::button::text)
 }
 
 /// Alternate container with background color.

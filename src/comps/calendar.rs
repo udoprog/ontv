@@ -88,11 +88,11 @@ impl Calendar {
             );
 
             if date == self.date {
-                button = button.style(theme::Button::Positive);
+                button = button.style(w::button::success);
             } else if date.month() != self.month.month() {
-                button = button.style(theme::Button::Secondary);
+                button = button.style(w::button::secondary);
             } else {
-                button = button.style(theme::Button::Primary);
+                button = button.style(w::button::primary);
             }
 
             button = button.width(Length::Fill).on_press(Message::PickDay(date));

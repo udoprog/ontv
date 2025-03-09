@@ -160,8 +160,8 @@ impl MovieItem {
                 self.watch
                     .view(
                         watch_text,
-                        theme::Button::Positive,
-                        theme::Button::Positive,
+                        w::button::success,
+                        w::button::success,
                         Length::Shrink,
                         Horizontal::Center,
                         true,
@@ -179,7 +179,7 @@ impl MovieItem {
 
                 actions = actions.push(
                     remove_last_watch
-                        .view(watch_text, theme::Button::Destructive)
+                        .view(watch_text, w::button::danger)
                         .map(Message::RemoveLastWatch),
                 );
             }
@@ -189,13 +189,13 @@ impl MovieItem {
             if cx.service.pending_by_movie(&movie.id).is_none() {
                 actions = actions.push(
                     w::button(w::text("Make next movie").size(SMALL_SIZE))
-                        .style(theme::Button::Secondary)
+                        .style(w::button::secondary)
                         .on_press(Message::SelectPending(movie.id)),
                 );
             } else {
                 actions = actions.push(
                     w::button(w::text("Clear next movie").size(SMALL_SIZE))
-                        .style(theme::Button::Destructive)
+                        .style(w::button::danger)
                         .on_press(Message::ClearPending(movie.id)),
                 );
             }
@@ -271,7 +271,7 @@ impl MovieItem {
                 );
 
                 row = row.push(
-                    c.view("Remove", theme::Button::Destructive)
+                    c.view("Remove", w::button::danger)
                         .map(move |m| Message::RemoveWatch(n, m)),
                 );
 

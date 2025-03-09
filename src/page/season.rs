@@ -124,7 +124,7 @@ impl Season {
             for remote_id in remote_ids {
                 remotes = remotes.push(
                     w::button(w::text(remote_id).size(SMALL_SIZE))
-                        .style(theme::Button::Primary)
+                        .style(w::button::primary)
                         .on_press(Message::OpenRemote(remote_id)),
                 );
             }

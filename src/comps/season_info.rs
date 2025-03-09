@@ -63,11 +63,7 @@ impl SeasonInfo {
         if watched < total && !any_confirm || self.watch_remaining.is_confirm() {
             actions = actions.push(
                 self.watch_remaining
-                    .view(
-                        "Watch remaining",
-                        theme::Button::Positive,
-                        theme::Button::Positive,
-                    )
+                    .view("Watch remaining", w::button::success, w::button::success)
                     .map(Message::WatchRemaining),
             );
         }
@@ -75,7 +71,7 @@ impl SeasonInfo {
         if watched != 0 && !any_confirm || self.remove_watches.is_confirm() {
             actions = actions.push(
                 self.remove_watches
-                    .view("Remove watches", theme::Button::Destructive)
+                    .view("Remove watches", w::button::danger)
                     .map(Message::RemoveWatches),
             );
         }

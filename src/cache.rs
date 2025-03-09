@@ -121,7 +121,7 @@ where
             let image = image_rs::load_from_memory_with_format(&data, format)?;
             let (width, height) = image.dimensions();
             let pixels = image.to_rgba8();
-            return Ok(Handle::from_pixels(width, height, pixels.to_vec()));
+            return Ok(Handle::from_rgba(width, height, pixels.to_vec()));
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
         Err(e) => return Err(e.into()),
@@ -155,7 +155,7 @@ where
 
     let (width, height) = image.dimensions();
     let pixels = image.to_rgba8();
-    Ok(Handle::from_pixels(width, height, pixels.to_vec()))
+    Ok(Handle::from_rgba(width, height, pixels.to_vec()))
 }
 
 /// Generate a 16-byte hash.
