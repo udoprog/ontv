@@ -462,7 +462,7 @@ impl iced::Application for Application {
             tracing::trace!(?event);
 
             match event {
-                Event::Window(_, window::Event::CloseRequested) => Message::CloseRequested,
+                Event::Window(window::Event::CloseRequested) => Message::CloseRequested,
                 Event::Mouse(mouse::Event::ButtonPressed(button)) => match button {
                     mouse::Button::Other(1) => Message::History(-1),
                     mouse::Button::Other(2) => Message::History(1),
@@ -623,7 +623,7 @@ impl iced::Application for Application {
         if errors != 0 {
             status_bar = status_bar.push(
                 w::button(w::text(format_args!("Errors ({errors})")).size(SMALL_SIZE))
-                    .style(theme::Button::Destructive)
+                    .style(w::button::danger)
                     .on_press(Message::Navigate(Page::Errors)),
             );
             any = true;

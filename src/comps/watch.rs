@@ -1,3 +1,5 @@
+use iced::Theme;
+
 use crate::comps::ordering::Ordering;
 use crate::prelude::*;
 use crate::service::RemainingSeason;
@@ -100,8 +102,8 @@ impl Watch {
     pub(crate) fn view(
         &self,
         title: &str,
-        right_now: theme::Button,
-        air_date: theme::Button,
+        right_now: fn(&Theme, w::button::Status) -> w::button::Style,
+        air_date: fn(&Theme, w::button::Status) -> w::button::Style,
         width: Length,
         alignment: Horizontal,
         reminder: bool,
@@ -121,13 +123,13 @@ impl Watch {
                         .horizontal_alignment(Horizontal::Center)
                         .size(SMALL_SIZE),
                 )
-                .style(theme::Button::Secondary)
+                .style(w::button::secondary)
                 .width(Length::Fill)
                 .on_press(Message::Cancel),
             ];
 
             let head = if reminder {
-                Some(w::button(w::text(title).size(SMALL_SIZE)).style(theme::Button::Secondary))
+                Some(w::button(w::text(title).size(SMALL_SIZE)).style(w::button::secondary))
             } else {
                 None
             };

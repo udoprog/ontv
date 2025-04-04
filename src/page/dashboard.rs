@@ -140,7 +140,7 @@ impl Dashboard {
                         .size(SMALL_SIZE)
                         .horizontal_alignment(Horizontal::Center),
                 )
-                .style(theme::Button::Secondary)
+                .style(w::button::secondary)
                 .on_press(Message::DecrementPage),
             );
         }
@@ -152,27 +152,27 @@ impl Dashboard {
                     .size(SMALL_SIZE)
                     .horizontal_alignment(Horizontal::Center),
             )
-            .style(theme::Button::Secondary)
+            .style(w::button::secondary)
             .on_press(Message::IncrementPage),
         );
 
         if cx.service.config().dashboard_limit > 1 {
             modify = modify.push(
                 w::button(w::text("reset").size(SMALL_SIZE))
-                    .style(theme::Button::Secondary)
+                    .style(w::button::secondary)
                     .on_press(Message::ResetPending),
             );
 
             modify = modify.push(
                 w::button(w::text("show less...").size(SMALL_SIZE))
-                    .style(theme::Button::Secondary)
+                    .style(w::button::secondary)
                     .on_press(Message::ShowLessPending),
             );
         }
 
         modify = modify.push(
             w::button(w::text("show more...").size(SMALL_SIZE))
-                .style(theme::Button::Secondary)
+                .style(w::button::secondary)
                 .on_press(Message::ShowMorePending),
         );
 
@@ -253,8 +253,8 @@ impl Dashboard {
                 watch
                     .view(
                         "Mark",
-                        theme::Button::Positive,
-                        theme::Button::Positive,
+                        w::button::primary,
+                        w::button::primary,
                         Length::Shrink,
                         Horizontal::Center,
                         false,
@@ -276,7 +276,7 @@ impl Dashboard {
                             .horizontal_alignment(Horizontal::Center)
                             .size(SMALL_SIZE),
                     )
-                    .style(theme::Button::Secondary)
+                    .style(w::button::secondary)
                     .on_press(skip)
                     .width(Length::FillPortion(5)),
                 );
@@ -289,8 +289,8 @@ impl Dashboard {
                 };
 
                 let style = match len {
-                    0 => theme::Button::Text,
-                    _ => theme::Button::Positive,
+                    0 => w::button::text,
+                    _ => w::button::success,
                 };
 
                 actions = actions.push(

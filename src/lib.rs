@@ -176,6 +176,6 @@ pub fn run(service: service::Service) -> anyhow::Result<()> {
     }
 
     settings.window.exit_on_close_request = false;
-    application::Application::run(settings)?;
+    iced::application("OnTV", Application::update, Application::view).run();
     Ok(())
 }

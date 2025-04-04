@@ -1,3 +1,5 @@
+use iced::Theme;
+
 use crate::comps::ordering::Ordering;
 use crate::prelude::*;
 use crate::service::RemainingSeason;
@@ -90,14 +92,14 @@ impl WatchRemaining {
     pub(crate) fn view(
         &self,
         title: &str,
-        right_now: theme::Button,
-        air_date: theme::Button,
+        right_now: fn(&Theme, w::button::Status) -> w::button::Style,
+        air_date: fn(&Theme, w::button::Status) -> w::button::Style,
     ) -> Element<'static, Message> {
         let mut row = w::Row::new();
 
         if self.confirm {
             let buttons = [
-                w::button(w::text(title).size(SMALL_SIZE)).style(theme::Button::Secondary),
+                w::button(w::text(title).size(SMALL_SIZE)).style(w::button::secondary),
                 w::button(w::text("Right now").size(SMALL_SIZE))
                     .style(right_now)
                     .on_press(Message::RightNow),
@@ -105,7 +107,7 @@ impl WatchRemaining {
                     .style(air_date)
                     .on_press(Message::AirDate),
                 w::button(w::text("Cancel").size(SMALL_SIZE))
-                    .style(theme::Button::Secondary)
+                    .style(w::button::secondary)
                     .on_press(Message::Cancel),
             ];
 

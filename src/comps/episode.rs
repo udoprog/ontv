@@ -198,8 +198,8 @@ impl Episode {
                 self.watch
                     .view(
                         watch_text,
-                        theme::Button::Positive,
-                        theme::Button::Positive,
+                        w::button::success,
+                        w::button::success,
                         Length::Shrink,
                         Horizontal::Center,
                         true,
@@ -217,7 +217,7 @@ impl Episode {
 
                 actions = actions.push(
                     remove_last_watch
-                        .view(watch_text, theme::Button::Destructive)
+                        .view(watch_text, w::button::danger)
                         .map(Message::RemoveLastWatch),
                 );
             }
@@ -228,13 +228,13 @@ impl Episode {
             {
                 actions = actions.push(
                     w::button(w::text("Clear next episode").size(SMALL_SIZE))
-                        .style(theme::Button::Destructive)
+                        .style(w::button::danger)
                         .on_press(Message::ClearPending(episode.id)),
                 );
             } else {
                 actions = actions.push(
                     w::button(w::text("Make next episode").size(SMALL_SIZE))
-                        .style(theme::Button::Secondary)
+                        .style(w::button::secondary)
                         .on_press(Message::SelectPending(episode.id)),
                 );
             }
@@ -320,7 +320,7 @@ impl Episode {
                 );
 
                 row = row.push(
-                    c.view("Remove", theme::Button::Destructive)
+                    c.view("Remove", w::button::danger)
                         .map(move |m| Message::RemoveWatch(n, m)),
                 );
 

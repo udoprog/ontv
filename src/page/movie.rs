@@ -95,15 +95,15 @@ impl Movie {
             for remote_id in remote_ids {
                 let mut row = w::Row::new().push(
                     w::button(w::text(remote_id).size(SMALL_SIZE))
-                        .style(theme::Button::Primary)
+                        .style(w::button::primary)
                         .on_press(Message::OpenRemote(remote_id)),
                 );
 
                 if movie.remote_id.as_ref() == Some(&remote_id) {
                     row = row.push(w::button(w::text("Current").size(SMALL_SIZE)));
                 } else if remote_id.is_supported() {
-                    let button = w::button(w::text("Switch").size(SMALL_SIZE))
-                        .style(theme::Button::Positive);
+                    let button =
+                        w::button(w::text("Switch").size(SMALL_SIZE)).style(w::button::primary);
 
                     let status = cx.service.task_status_any([
                         TaskRef::RemoteMovie { remote_id },
