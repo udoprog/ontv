@@ -473,7 +473,7 @@ impl iced::Application for Application {
         }
     }
 
-    fn view(&self) -> Element<Message> {
+    fn view(&self) -> Element<'_, Message> {
         let mut top_menu = w::Row::new().spacing(GAP).align_items(Alignment::Center);
 
         let Some(page) = self.history.page() else {
