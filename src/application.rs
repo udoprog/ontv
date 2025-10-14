@@ -132,7 +132,7 @@ pub(crate) struct Application {
     // Images to load.
     images: Vec<(ImageKey, ImageV2)>,
     /// The identifier used for the main scrollable.
-    scrollable_id: w::scrollable::Id,
+    scrollable_id: w::Id,
     /// Current style.
     style: Style,
 }
@@ -158,7 +158,7 @@ impl Application {
             image_loader: Singleton::default(),
             exit_after_save: false,
             images: Vec::new(),
-            scrollable_id: w::scrollable::Id::unique(),
+            scrollable_id: w::Id::unique(),
             style: Style,
         };
 
@@ -284,7 +284,7 @@ impl Application {
                     self.database_timeout.clear();
                 } else {
                     self.commands
-                        .command(window::get_latest().and_then(window::close));
+                        .command(window::latest().and_then(window::close));
                 }
 
                 return self.commands.build();
@@ -311,7 +311,7 @@ impl Application {
 
                 if self.exit_after_save {
                     self.commands
-                        .command(window::get_latest().and_then(window::close));
+                        .command(window::latest().and_then(window::close));
                 }
 
                 self.state.set_saving(false);
@@ -433,7 +433,7 @@ impl Application {
             };
 
             self.commands
-                .command(w::scrollable::snap_to(self.scrollable_id.clone(), *scroll));
+                .command(w::operation::snap_to(self.scrollable_id.clone(), *scroll));
         }
 
         self.prepare();
@@ -458,6 +458,8 @@ impl Application {
             match event {
                 Event::Window(window::Event::CloseRequested) => Message::CloseRequested,
                 Event::Mouse(mouse::Event::ButtonPressed(button)) => match button {
+                    mouse::Button::Back => Message::History(-1),
+                    mouse::Button::Forward => Message::History(1),
                     mouse::Button::Other(1) => Message::History(-1),
                     mouse::Button::Other(2) => Message::History(1),
                     _ => Message::Ignore,
@@ -589,7 +591,7 @@ impl Application {
             }
         };
 
-        window = window.push(w::horizontal_rule(1));
+        window = window.push(w::rule::horizontal(1));
         window = window.push(
             w::scrollable(page)
                 .id(self.scrollable_id.clone())
@@ -606,7 +608,7 @@ impl Application {
             any = true;
         }
 
-        status_bar = status_bar.push(w::Space::new(Length::Fill, Length::Shrink));
+        status_bar = status_bar.push(w::Space::new().width(Length::Fill).height(Length::Shrink));
 
         let errors = self.state.errors().len();
 
@@ -619,7 +621,7 @@ impl Application {
             any = true;
         }
 
-        window = window.push(w::horizontal_rule(1));
+        window = window.push(w::rule::horizontal(1));
 
         if any {
             window = window.push(

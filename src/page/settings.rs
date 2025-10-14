@@ -68,7 +68,7 @@ impl Settings {
                 .spacing(SPACE),
         );
 
-        page = page.push(w::horizontal_rule(1));
+        page = page.push(w::rule::horizontal(1));
         page = page.push(w::button("Clear sync information").on_press(Message::ClearSync));
         default_container(page.spacing(GAP).padding(GAP)).into()
     }

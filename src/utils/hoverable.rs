@@ -2,7 +2,7 @@ use iced::advanced::layout;
 use iced::advanced::renderer;
 use iced::advanced::widget::tree::{self, Tree};
 use iced::advanced::{Clipboard, Layout, Shell, Widget};
-use iced::event::{self, Event};
+use iced::event::Event;
 use iced::mouse::Cursor;
 use iced::overlay;
 use iced::Size;
@@ -69,30 +69,17 @@ where
         tree.diff_children(std::slice::from_ref(&self.content));
     }
 
-    fn on_event(
+    fn update(
         &mut self,
         tree: &mut Tree,
-        event: Event,
+        event: &Event,
         layout: Layout<'_>,
         cursor_position: Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
-    ) -> event::Status {
-        if let event::Status::Captured = self.content.as_widget_mut().on_event(
-            &mut tree.children[0],
-            event,
-            layout.children().next().unwrap(),
-            cursor_position,
-            renderer,
-            clipboard,
-            shell,
-            viewport,
-        ) {
-            return event::Status::Captured;
-        }
-
+    ) {
         let state = tree.state.downcast_mut::<State>();
 
         match (
@@ -112,11 +99,20 @@ where
             _ => {}
         }
 
-        event::Status::Ignored
+        self.content.as_widget_mut().update(
+            &mut tree.children[0],
+            event,
+            layout.children().next().unwrap(),
+            cursor_position,
+            renderer,
+            clipboard,
+            shell,
+            viewport,
+        )
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -124,7 +120,7 @@ where
         let limits = limits.width(WIDTH).height(HEIGHT);
         let content_layout =
             self.content
-                .as_widget()
+                .as_widget_mut()
                 .layout(&mut tree.children[0], renderer, &limits);
         let size = limits.resolve(WIDTH, HEIGHT, content_layout.size());
         layout::Node::with_children(size, vec![content_layout])
@@ -173,15 +169,17 @@ where
 
     fn overlay<'b>(
         &'b mut self,
-        tree: &'b mut Tree,
-        layout: Layout<'_>,
+        state: &'b mut Tree,
+        layout: Layout<'b>,
         renderer: &Renderer,
+        viewport: &Rectangle,
         translation: Vector,
     ) -> Option<overlay::Element<'b, Message, Theme, Renderer>> {
         self.content.as_widget_mut().overlay(
-            &mut tree.children[0],
+            &mut state.children[0],
             layout.children().next().unwrap(),
             renderer,
+            viewport,
             translation,
         )
     }

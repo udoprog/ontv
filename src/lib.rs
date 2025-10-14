@@ -141,6 +141,8 @@ mod state;
 pub mod style;
 mod utils;
 
+use core::cell::RefCell;
+
 use crate::application::Application;
 
 pub use self::service::Service;
@@ -174,12 +176,25 @@ pub fn run(service: service::Service) -> anyhow::Result<()> {
         settings.id = Some(String::from("se.tedro.OnTV"));
     }
 
-    iced::application(Application::title, Application::update, Application::view)
-        .subscription(Application::subscription)
-        .theme(Application::theme)
-        .settings(settings)
-        .exit_on_close_request(false)
-        .run_with(|| Application::new(service))?;
+    let service = RefCell::new(Some(service));
+
+    iced::application(
+        move || {
+            let service = service
+                .borrow_mut()
+                .take()
+                .expect("Application::new called more than once");
+            Application::new(service)
+        },
+        Application::update,
+        Application::view,
+    )
+    .title(Application::title)
+    .subscription(Application::subscription)
+    .theme(Application::theme)
+    .settings(settings)
+    .exit_on_close_request(false)
+    .run()?;
 
     Ok(())
 }

@@ -106,7 +106,7 @@ impl Queue {
                             );
 
                             if peek!() {
-                                list = list.push(w::horizontal_rule(1));
+                                list = list.push(w::rule::horizontal(1));
                             }
                         }
                     }
@@ -117,13 +117,13 @@ impl Queue {
                 ($iter:ident, $title:expr, $empty:expr) => {
                     list = list
                         .push(w::text($title).size(SUBTITLE_SIZE))
-                        .push(w::horizontal_rule(1));
+                        .push(w::rule::horizontal(1));
 
                     if $iter.len() == 0 {
                         list = list.push(w::text($empty).size(SMALL_SIZE));
 
                         if peek!() {
-                            list = list.push(w::horizontal_rule(1));
+                            list = list.push(w::rule::horizontal(1));
                         }
                     }
                 };
@@ -144,7 +144,7 @@ impl Queue {
                     list = list.push(row.width(Length::Fill).spacing(GAP));
 
                     if peek!() {
-                        list = list.push(w::horizontal_rule(1));
+                        list = list.push(w::rule::horizontal(1));
                     }
                 }
 
@@ -173,7 +173,7 @@ impl Queue {
                     list = list.push(row.width(Length::Fill).spacing(GAP));
 
                     if peek!() {
-                        list = list.push(w::horizontal_rule(1));
+                        list = list.push(w::rule::horizontal(1));
                     }
                 }
 
@@ -197,7 +197,7 @@ impl Queue {
                     list = list.push(row.width(Length::Fill).spacing(GAP));
 
                     if peek!() {
-                        list = list.push(w::horizontal_rule(1));
+                        list = list.push(w::rule::horizontal(1));
                     }
                 }
 
@@ -210,7 +210,7 @@ impl Queue {
         default_container(
             w::Column::new()
                 .push(queue)
-                .push(w::vertical_space().height(Length::Shrink))
+                .push(w::space().height(Length::Shrink))
                 .padding(GAP)
                 .spacing(GAP),
         )

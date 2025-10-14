@@ -2,6 +2,9 @@ use crate::service::PendingRef;
 use crate::utils::Hoverable;
 use crate::{prelude::*, Service};
 
+const DEFAULT_LIMIT: usize = 1;
+const DEFAULT_PAGE: usize = 6;
+
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     #[allow(unused)]
@@ -101,8 +104,8 @@ impl Dashboard {
                 cx.push_history(page);
             }
             Message::ResetPending => {
-                cx.service.config_mut().dashboard_limit = 1;
-                cx.service.config_mut().dashboard_page = 6;
+                cx.service.config_mut().dashboard_limit = DEFAULT_LIMIT;
+                cx.service.config_mut().dashboard_page = DEFAULT_PAGE;
             }
             Message::ShowLessPending => {
                 let limit = cx.service.config().dashboard_limit.saturating_sub(1).max(1);
@@ -130,7 +133,8 @@ impl Dashboard {
             )))
             .width(Length::Fill);
 
-        let mut modify = w::Row::new().push(w::Space::new(Length::Fill, Length::Shrink));
+        let mut modify =
+            w::Row::new().push(w::Space::new().width(Length::Fill).height(Length::Shrink));
 
         if cx.service.config().dashboard_page > 1 {
             modify = modify.push(
@@ -156,25 +160,29 @@ impl Dashboard {
             .on_press(Message::IncrementPage),
         );
 
-        if cx.service.config().dashboard_limit > 1 {
+        if cx.service.config().dashboard_limit != DEFAULT_LIMIT
+            || cx.service.config().dashboard_page != DEFAULT_PAGE
+        {
             modify = modify.push(
                 w::button(w::text("reset").size(SMALL_SIZE))
                     .style(w::button::secondary)
                     .on_press(Message::ResetPending),
             );
+        }
 
+        modify = modify.push(
+            w::button(w::text("more").size(SMALL_SIZE))
+                .style(w::button::secondary)
+                .on_press(Message::ShowMorePending),
+        );
+
+        if cx.service.config().dashboard_limit > DEFAULT_LIMIT {
             modify = modify.push(
-                w::button(w::text("show less...").size(SMALL_SIZE))
+                w::button(w::text("less").size(SMALL_SIZE))
                     .style(w::button::secondary)
                     .on_press(Message::ShowLessPending),
             );
         }
-
-        modify = modify.push(
-            w::button(w::text("show more...").size(SMALL_SIZE))
-                .style(w::button::secondary)
-                .on_press(Message::ShowMorePending),
-        );
 
         let pending = w::Column::new()
             .push(modify.spacing(SPACE).width(Length::Fill))
@@ -189,12 +197,12 @@ impl Dashboard {
 
         w::Column::new()
             // .push(self.calendar.view().map(Message::Calendar))
-            .push(w::vertical_space().height(Length::Shrink))
+            .push(w::space().height(Length::Shrink))
             .push(centered(up_next_title))
             .push(centered(pending.padding(GAP).spacing(GAP)))
             .push(centered(scheduled_title))
             .push(centered(scheduled.padding(GAP).spacing(GAP)))
-            .push(w::vertical_space().height(Length::Shrink))
+            .push(w::space().height(Length::Shrink))
             .spacing(GAP2)
             .into()
     }
@@ -431,7 +439,7 @@ impl Dashboard {
                 column = column.push(series_column.spacing(SPACE));
 
                 if it.peek().is_some() {
-                    column = column.push(w::horizontal_rule(1));
+                    column = column.push(w::rule::horizontal(1));
                 }
             }
 
