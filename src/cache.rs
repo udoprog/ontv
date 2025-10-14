@@ -121,7 +121,7 @@ where
             let image = image_rs::load_from_memory_with_format(&data, format)?;
             let (width, height) = image.dimensions();
             let pixels = image.to_rgba8();
-            return Ok(Handle::from_pixels(width, height, pixels.to_vec()));
+            return Ok(Handle::from_rgba(width, height, pixels.to_vec()));
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
         Err(e) => return Err(e.into()),
@@ -155,18 +155,16 @@ where
 
     let (width, height) = image.dimensions();
     let pixels = image.to_rgba8();
-    Ok(Handle::from_pixels(width, height, pixels.to_vec()))
+    Ok(Handle::from_rgba(width, height, pixels.to_vec()))
 }
 
 /// Generate a 16-byte hash.
-pub(crate) fn hash128<T>(value: &T) -> u128
-where
-    T: std::hash::Hash,
-{
-    use twox_hash::xxh3::HasherExt;
-    let mut hasher = twox_hash::Xxh3Hash128::default();
-    std::hash::Hash::hash(value, &mut hasher);
-    hasher.finish_ext()
+pub(crate) fn hash128(id: u32, uri: &RelativePath) -> u128 {
+    let mut hasher = twox_hash::XxHash3_128::new();
+    let id = id.to_le_bytes();
+    hasher.write(&id);
+    hasher.write(uri.as_str().as_bytes());
+    hasher.finish_128()
 }
 
 /// Resize to fill but preserves the top of the image rather than centers it.

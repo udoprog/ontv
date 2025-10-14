@@ -1,7 +1,7 @@
 use std::fmt;
 use std::future::Future;
 
-use iced::Command;
+use iced::Task as Command;
 use iced_futures::MaybeSend;
 
 use crate::commands::Commands;
@@ -11,9 +11,12 @@ pub struct CommandsBuf<M> {
     commands: Vec<Command<M>>,
 }
 
-impl<M> CommandsBuf<M> {
+impl<T> CommandsBuf<T>
+where
+    T: 'static,
+{
     /// Build a single command out of the command buffer.
-    pub(crate) fn build(&mut self) -> Command<M> {
+    pub(crate) fn build(&mut self) -> Command<T> {
         if self.commands.is_empty() {
             return Command::none();
         }
@@ -22,7 +25,10 @@ impl<M> CommandsBuf<M> {
     }
 }
 
-impl<M> Commands<M> for CommandsBuf<M> {
+impl<T> Commands<T> for CommandsBuf<T>
+where
+    T: 'static + MaybeSend,
+{
     type ByRef<'this>
         = &'this mut Self
     where
@@ -34,15 +40,15 @@ impl<M> Commands<M> for CommandsBuf<M> {
     }
 
     #[inline]
-    fn perform<F>(&mut self, future: F, map: impl Fn(F::Output) -> M + MaybeSend + 'static)
+    fn perform<F>(&mut self, future: F, map: impl 'static + MaybeSend + Fn(F::Output) -> T)
     where
-        F: Future + 'static + MaybeSend,
+        F: 'static + MaybeSend + Future<Output: 'static + MaybeSend>,
     {
         self.commands.push(Command::perform(future, map));
     }
 
     #[inline]
-    fn command(&mut self, command: Command<M>) {
+    fn command(&mut self, command: Command<T>) {
         self.commands.push(command);
     }
 }
@@ -62,7 +68,7 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("LocalCommands")
-            .field("commands", &self.commands)
+            .field("commands", &self.commands.len())
             .finish_non_exhaustive()
     }
 }

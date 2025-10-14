@@ -233,14 +233,12 @@ impl Search {
 
             match status {
                 Some(TaskStatus::Pending) => {
-                    actions = actions.push(
-                        w::button(cx.style.text("Queued...").sm()).style(theme::Button::Primary),
-                    );
+                    actions = actions
+                        .push(w::button(cx.style.text("Queued...").sm()).style(w::button::primary));
                 }
                 Some(TaskStatus::Running) => {
                     actions = actions.push(
-                        w::button(cx.style.text("Downloading...").sm())
-                            .style(theme::Button::Primary),
+                        w::button(cx.style.text("Downloading...").sm()).style(w::button::primary),
                     );
                 }
                 None => {
@@ -248,20 +246,20 @@ impl Search {
                         if local.remote_id != Some(s.id) {
                             actions = actions.push(
                                 w::button(cx.style.text("Switch").sm())
-                                    .style(theme::Button::Primary)
+                                    .style(w::button::primary)
                                     .on_press(Message::SwitchSeries(local.id, s.id)),
                             );
                         }
 
                         actions = actions.push(
                             w::button(cx.style.text("Remove").sm())
-                                .style(theme::Button::Destructive)
+                                .style(w::button::danger)
                                 .on_press(Message::RemoveSeries(local.id)),
                         );
                     } else {
                         actions = actions.push(
                             w::button(cx.style.text("Add").sm())
-                                .style(theme::Button::Positive)
+                                .style(w::button::success)
                                 .on_press(Message::AddSeriesByRemote(s.id)),
                         );
                     }
@@ -336,14 +334,12 @@ impl Search {
 
             match status {
                 Some(TaskStatus::Pending) => {
-                    actions = actions.push(
-                        w::button(cx.style.text("Queued...").sm()).style(theme::Button::Primary),
-                    );
+                    actions = actions
+                        .push(w::button(cx.style.text("Queued...").sm()).style(w::button::primary));
                 }
                 Some(TaskStatus::Running) => {
                     actions = actions.push(
-                        w::button(cx.style.text("Downloading...").sm())
-                            .style(theme::Button::Primary),
+                        w::button(cx.style.text("Downloading...").sm()).style(w::button::primary),
                     );
                 }
                 None => {
@@ -351,20 +347,20 @@ impl Search {
                         if local.remote_id != Some(m.id) {
                             actions = actions.push(
                                 w::button(cx.style.text("Switch").sm())
-                                    .style(theme::Button::Primary)
+                                    .style(w::button::primary)
                                     .on_press(Message::SwitchMovie(local.id, m.id)),
                             );
                         }
 
                         actions = actions.push(
                             w::button(cx.style.text("Remove").sm())
-                                .style(theme::Button::Destructive)
+                                .style(w::button::danger)
                                 .on_press(Message::RemoveMovie(local.id)),
                         );
                     } else {
                         actions = actions.push(
                             w::button(cx.style.text("Add").sm())
-                                .style(theme::Button::Positive)
+                                .style(w::button::success)
                                 .on_press(Message::AddMovieByRemote(m.id)),
                         );
                     }
@@ -375,7 +371,7 @@ impl Search {
 
             if let Some(date) = m.release_date {
                 release_date =
-                    release_date.push(cx.style.text(format_args!("First aired: {date}")).sm());
+                    release_date.push(cx.style.text(format!("First aired: {date}")).sm());
             }
 
             let mut result = w::Column::new();
@@ -450,9 +446,9 @@ impl Search {
 
         if let Some(e) = cx.state.get_error(ErrorId::Search(state.search_id)) {
             page = page.push(
-                w::button(cx.style.text(format_args!("Error: {}", e.message)))
+                w::button(cx.style.text(format!("Error: {}", e.message)))
                     .width(Length::Fill)
-                    .style(theme::Button::Destructive)
+                    .style(w::button::danger)
                     .on_press(Message::Navigate(Page::Errors)),
             );
         }
@@ -474,8 +470,8 @@ where
     let mut row = w::Row::new();
 
     if len > PER_PAGE {
-        let mut prev = w::button(cx.style.text("previous page")).style(theme::Button::Positive);
-        let mut next = w::button(cx.style.text("next page")).style(theme::Button::Positive);
+        let mut prev = w::button(cx.style.text("previous page")).style(w::button::success);
+        let mut next = w::button(cx.style.text("next page")).style(w::button::success);
 
         if let Some(page) = page.checked_sub(1) {
             prev = prev.on_press(m(page));
@@ -496,7 +492,7 @@ where
             .push(prev)
             .push(next)
             .push(text)
-            .align_items(Alignment::Center)
+            .align_y(Vertical::Center)
             .spacing(GAP);
     }
 

@@ -34,10 +34,15 @@ pub(crate) struct EpisodeRef<'a> {
     data: &'a HashMap<EpisodeId, EpisodeData>,
 }
 
-impl EpisodeRef<'_> {
+impl<'a> EpisodeRef<'a> {
     /// Get series episode belongs to.
     pub(crate) fn series(&self) -> &SeriesId {
         &self.series
+    }
+
+    /// Get a reference to the episode.
+    pub(crate) fn as_episode(&self) -> &'a Episode {
+        self.episode
     }
 }
 

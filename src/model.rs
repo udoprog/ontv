@@ -9,6 +9,7 @@ use std::str::FromStr;
 
 use anyhow::Result;
 use chrono::{DateTime, NaiveDate, Utc};
+use iced::widget::text::IntoFragment;
 use relative_path::RelativePath;
 use serde::de::IntoDeserializer;
 use serde::{de, ser, Deserialize, Serialize};
@@ -206,6 +207,13 @@ impl RemoteSeasonId {
     }
 }
 
+impl<'a> IntoFragment<'a> for RemoteSeasonId {
+    #[inline]
+    fn into_fragment(self) -> iced::widget::text::Fragment<'a> {
+        self.to_string().into_fragment()
+    }
+}
+
 impl fmt::Display for RemoteSeasonId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -253,6 +261,13 @@ impl RemoteId {
     /// Test if the remote is supported for syncing.
     pub(crate) fn is_supported(&self) -> bool {
         matches!(self, RemoteId::Tmdb { .. } | RemoteId::Tvdb { .. })
+    }
+}
+
+impl<'a> IntoFragment<'a> for RemoteId {
+    #[inline]
+    fn into_fragment(self) -> iced::widget::text::Fragment<'a> {
+        self.to_string().into_fragment()
     }
 }
 
@@ -1017,6 +1032,13 @@ impl SeasonNumber {
     }
 }
 
+impl<'a> IntoFragment<'a> for SeasonNumber {
+    #[inline]
+    fn into_fragment(self) -> iced::widget::text::Fragment<'a> {
+        self.to_string().into_fragment()
+    }
+}
+
 pub(crate) struct SeasonShort<'a> {
     season: &'a SeasonNumber,
 }
@@ -1244,8 +1266,8 @@ impl ImageV2 {
     /// Generate an image hash.
     pub(crate) fn hash(&self) -> ImageHash {
         ImageHash(match self {
-            ImageV2::Tvdb { uri } => crate::cache::hash128(&(0xd410b8f4u32, uri)),
-            ImageV2::Tmdb { uri } => crate::cache::hash128(&(0xc66bff3eu32, uri)),
+            ImageV2::Tvdb { uri } => crate::cache::hash128(0xd410b8f4u32, uri),
+            ImageV2::Tmdb { uri } => crate::cache::hash128(0xc66bff3eu32, uri),
         })
     }
 

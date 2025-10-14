@@ -19,11 +19,6 @@ pub(crate) struct CtxtRef<'a> {
 
 impl CtxtRef<'_> {
     #[inline]
-    pub(crate) fn warning_text(&self) -> iced::theme::Text {
-        crate::style::warning_text(self.service.theme())
-    }
-
-    #[inline]
     pub(crate) fn missing_poster(&self) -> iced::advanced::image::Handle {
         self.assets.missing_poster(self.service.theme())
     }

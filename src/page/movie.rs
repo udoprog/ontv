@@ -76,11 +76,7 @@ impl Movie {
         }
     }
 
-    pub(crate) fn view(
-        &self,
-        cx: &CtxtRef<'_>,
-        state: &State,
-    ) -> Result<Element<'static, Message>> {
+    pub(crate) fn view<'a>(&self, cx: &CtxtRef<'a>, state: &State) -> Result<Element<'a, Message>> {
         let Some(movie) = cx.service.movie(&state.id) else {
             bail!("Missing movie {}", state.id);
         };
@@ -95,15 +91,15 @@ impl Movie {
             for remote_id in remote_ids {
                 let mut row = w::Row::new().push(
                     w::button(w::text(remote_id).size(SMALL_SIZE))
-                        .style(theme::Button::Primary)
+                        .style(w::button::primary)
                         .on_press(Message::OpenRemote(remote_id)),
                 );
 
                 if movie.remote_id.as_ref() == Some(&remote_id) {
                     row = row.push(w::button(w::text("Current").size(SMALL_SIZE)));
                 } else if remote_id.is_supported() {
-                    let button = w::button(w::text("Switch").size(SMALL_SIZE))
-                        .style(theme::Button::Positive);
+                    let button =
+                        w::button(w::text("Switch").size(SMALL_SIZE)).style(w::button::success);
 
                     let status = cx.service.task_status_any([
                         TaskRef::RemoteMovie { remote_id },
@@ -126,7 +122,7 @@ impl Movie {
         }
 
         let info = w::Column::new()
-            .push(top.align_items(Alignment::Center).spacing(GAP))
+            .push(top.align_x(Horizontal::Center).spacing(GAP))
             .push(
                 self.movie_actions
                     .view(cx, movie)
@@ -134,7 +130,7 @@ impl Movie {
             )
             .push(self.movie_item.view(cx, false)?.map(Message::MovieItem));
 
-        let info = centered(info.spacing(GAP), None).padding(GAP);
+        let info = centered(info.spacing(GAP)).padding(GAP);
         Ok(info.into())
     }
 }

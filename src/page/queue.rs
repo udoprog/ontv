@@ -80,7 +80,7 @@ impl Queue {
         }
     }
 
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>, state: &State) -> Element<'static, Message> {
+    pub(crate) fn view<'a>(&self, cx: &CtxtRef<'a>, state: &State) -> Element<'a, Message> {
         let now = Utc::now();
 
         let queue = {
@@ -218,10 +218,10 @@ impl Queue {
     }
 }
 
-fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<'a, Message> {
+fn build_task_row<'a>(cx: &CtxtRef<'a>, kind: &TaskKind, t: Temporal) -> w::Row<'a, Message> {
     let mut update = w::Row::new();
 
-    match kind {
+    match *kind {
         TaskKind::CheckForUpdates {
             series_id,
             remote_id,
@@ -234,7 +234,7 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<
             };
 
             update = update.push(w::text(text).size(SMALL_SIZE));
-            update = decorate_series(cx, *series_id, *remote_id, update);
+            update = decorate_series(cx, series_id, remote_id, update);
         }
         TaskKind::DownloadSeries {
             series_id,
@@ -248,7 +248,7 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<
             };
 
             update = update.push(w::text(text).size(SMALL_SIZE));
-            update = decorate_series(cx, *series_id, *remote_id, update);
+            update = decorate_series(cx, series_id, remote_id, update);
         }
         TaskKind::DownloadMovie {
             movie_id,
@@ -262,7 +262,7 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<
             };
 
             update = update.push(w::text(text).size(SMALL_SIZE));
-            update = decorate_movie(cx, *movie_id, *remote_id, update);
+            update = decorate_movie(cx, movie_id, remote_id, update);
         }
         TaskKind::DownloadSeriesByRemoteId { remote_id, .. } => {
             let text = match t {
@@ -275,7 +275,7 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<
             update = update.push(
                 link(w::text(remote_id).size(SMALL_SIZE))
                     .width(Length::Fill)
-                    .on_press(Message::OpenRemoteSeries(*remote_id)),
+                    .on_press(Message::OpenRemoteSeries(remote_id)),
             );
         }
         TaskKind::DownloadMovieByRemoteId { remote_id } => {
@@ -289,7 +289,7 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<
             update = update.push(
                 link(w::text(remote_id).size(SMALL_SIZE))
                     .width(Length::Fill)
-                    .on_press(Message::OpenRemoteMovie(*remote_id)),
+                    .on_press(Message::OpenRemoteMovie(remote_id)),
             );
         }
     }
@@ -298,7 +298,7 @@ fn build_task_row<'a>(cx: &CtxtRef<'_>, kind: &TaskKind, t: Temporal) -> w::Row<
 }
 
 fn decorate_series<'a>(
-    cx: &CtxtRef<'_>,
+    cx: &CtxtRef<'a>,
     series_id: SeriesId,
     remote_id: RemoteId,
     mut row: w::Row<'a, Message>,
@@ -321,7 +321,7 @@ fn decorate_series<'a>(
 }
 
 fn decorate_movie<'a>(
-    cx: &CtxtRef<'_>,
+    cx: &CtxtRef<'a>,
     movie_id: MovieId,
     remote_id: RemoteId,
     mut row: w::Row<'a, Message>,

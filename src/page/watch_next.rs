@@ -88,18 +88,13 @@ impl WatchNext {
         }
     }
 
-    pub(crate) fn view(
-        &self,
-        cx: &CtxtRef<'_>,
-        state: &State,
-    ) -> Result<Element<'static, Message>> {
+    pub(crate) fn view<'a>(&self, cx: &CtxtRef<'a>, state: &State) -> Result<Element<'a, Message>> {
         let mut list = w::Column::new();
 
         list = list.push(w::vertical_space().height(Length::Shrink));
 
         list = list.push(centered(
             w::text("Watch next").size(TITLE_SIZE).width(Length::Fill),
-            None,
         ));
 
         let mut options = w::Row::new();
@@ -111,7 +106,6 @@ impl WatchNext {
                         .on_toggle(Message::ToggleFuture),
                 )
                 .width(Length::Fill),
-            None,
         ));
 
         list = list.push(options.width(Length::Fill));
@@ -121,7 +115,6 @@ impl WatchNext {
                 w::text("Future episodes:")
                     .size(SUBTITLE_SIZE)
                     .width(Length::Fill),
-                None,
             ));
 
             for (index, episode) in self.future.iter().enumerate() {
@@ -130,7 +123,6 @@ impl WatchNext {
                         episode
                             .view(cx, true)?
                             .map(move |m| Message::Future(index, m)),
-                        Some(style::weak),
                     )
                     .padding(GAP),
                 );
@@ -142,7 +134,6 @@ impl WatchNext {
                 w::text("Available episodes:")
                     .size(SUBTITLE_SIZE)
                     .width(Length::Fill),
-                None,
             ));
 
             for (index, episode) in self.episodes.iter().enumerate() {
@@ -151,7 +142,6 @@ impl WatchNext {
                         episode
                             .view(cx, true)?
                             .map(move |m| Message::Episode(index, m)),
-                        Some(style::weak),
                     )
                     .padding(GAP),
                 );

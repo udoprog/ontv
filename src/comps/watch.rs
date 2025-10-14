@@ -1,3 +1,5 @@
+use iced::Theme;
+
 use crate::comps::ordering::Ordering;
 use crate::prelude::*;
 use crate::service::RemainingSeason;
@@ -97,15 +99,15 @@ impl Watch {
         }
     }
 
-    pub(crate) fn view(
+    pub(crate) fn view<'a>(
         &self,
-        title: &str,
-        right_now: theme::Button,
-        air_date: theme::Button,
+        title: &'a str,
+        right_now: fn(&Theme, w::button::Status) -> w::button::Style,
+        air_date: fn(&Theme, w::button::Status) -> w::button::Style,
         width: Length,
         alignment: Horizontal,
         reminder: bool,
-    ) -> Element<'static, Message> {
+    ) -> Element<'a, Message> {
         let mut row = w::Row::new().width(width);
 
         if self.confirm {
@@ -118,16 +120,16 @@ impl Watch {
                     .on_press(Message::AirDate),
                 w::button(
                     w::text("Cancel")
-                        .horizontal_alignment(Horizontal::Center)
+                        .align_x(Horizontal::Center)
                         .size(SMALL_SIZE),
                 )
-                .style(theme::Button::Secondary)
+                .style(w::button::secondary)
                 .width(Length::Fill)
                 .on_press(Message::Cancel),
             ];
 
             let head = if reminder {
-                Some(w::button(w::text(title).size(SMALL_SIZE)).style(theme::Button::Secondary))
+                Some(w::button(w::text(title).size(SMALL_SIZE)).style(w::button::secondary))
             } else {
                 None
             };
@@ -148,13 +150,9 @@ impl Watch {
             }
         } else {
             row = row.push(
-                w::button(
-                    w::text(title)
-                        .size(SMALL_SIZE)
-                        .horizontal_alignment(alignment),
-                )
-                .style(right_now)
-                .on_press(Message::Start),
+                w::button(w::text(title).size(SMALL_SIZE).align_x(alignment))
+                    .style(right_now)
+                    .on_press(Message::Start),
             );
         }
 

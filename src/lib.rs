@@ -141,13 +141,14 @@ mod state;
 pub mod style;
 mod utils;
 
+use crate::application::Application;
+
 pub use self::service::Service;
 
 mod prelude {
     pub(crate) use anyhow::{anyhow, bail, Context, Result};
     pub(crate) use chrono::Utc;
     pub(crate) use iced::alignment::*;
-    pub(crate) use iced::theme;
     pub(crate) use iced::widget as w;
     pub(crate) use iced::{Element, Length};
     pub(crate) use uuid::Uuid;
@@ -162,20 +163,22 @@ mod prelude {
     pub(crate) use crate::page;
     pub(crate) use crate::params::*;
     pub(crate) use crate::state::State;
-    pub(crate) use crate::style;
 }
 
 /// Run the GUI application.
 pub fn run(service: service::Service) -> anyhow::Result<()> {
-    use iced::Application;
-    let mut settings = iced::Settings::with_flags(application::Flags { service });
+    let mut settings = iced::Settings::default();
 
     #[cfg(unix)]
     {
-        settings.window.platform_specific.application_id = String::from("se.tedro.OnTV");
+        settings.id = Some(String::from("se.tedro.OnTV"));
     }
 
-    settings.window.exit_on_close_request = false;
-    application::Application::run(settings)?;
+    iced::application(Application::title, Application::update, Application::view)
+        .subscription(Application::subscription)
+        .theme(Application::theme)
+        .settings(settings)
+        .run_with(|| Application::new(service))?;
+
     Ok(())
 }

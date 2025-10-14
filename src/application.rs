@@ -2,7 +2,8 @@ use std::time::Duration;
 
 use iced::advanced::image::Handle;
 use iced::window;
-use iced::{Command, Theme};
+use iced::Task as Command;
+use iced::Theme;
 
 use crate::assets::{Assets, ImageKey};
 use crate::commands::{Commands, CommandsBuf};
@@ -136,28 +137,19 @@ pub(crate) struct Application {
     style: Style,
 }
 
-pub(crate) struct Flags {
-    pub(crate) service: Service,
-}
-
-impl iced::Application for Application {
-    type Executor = iced_futures::backend::native::tokio::Executor;
-    type Message = Message;
-    type Theme = Theme;
-    type Flags = Flags;
-
-    fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
+impl Application {
+    pub(crate) fn new(service: Service) -> (Self, Command<Message>) {
         let today = Utc::now().date_naive();
 
         let state = State::new(today);
-        let current = Current::Dashboard(page::dashboard::Dashboard::new(&state, &flags.service));
+        let current = Current::Dashboard(page::dashboard::Dashboard::new(&state, &service));
 
         let mut this = Application {
             commands: CommandsBuf::default(),
             state,
             history: History::new(),
             history_mutations: HistoryMutations::default(),
-            service: flags.service,
+            service,
             assets: Assets::new(),
             current,
             database_timeout: Timeout::default(),
@@ -180,7 +172,7 @@ impl iced::Application for Application {
     }
 
     #[inline]
-    fn title(&self) -> String {
+    pub(crate) fn title(&self) -> String {
         const BASE: &str = "OnTV";
 
         if let Some(page) = self.history.page() {
@@ -233,7 +225,7 @@ impl iced::Application for Application {
         BASE.to_string()
     }
 
-    fn update(&mut self, message: Message) -> Command<Message> {
+    pub(crate) fn update(&mut self, message: Message) -> Command<Message> {
         tracing::trace!("{message:?}");
 
         match (message, &mut self.current, self.history.page_mut()) {
@@ -284,14 +276,14 @@ impl iced::Application for Application {
                 );
             }
             (Message::CloseRequested, _, _) => {
-                tracing::debug!("Close requested");
+                tracing::info!("Close requested");
 
                 self.exit_after_save = true;
 
                 if self.database_timeout.is_set() {
                     self.database_timeout.clear();
                 } else {
-                    self.commands.command(window::close(window::Id::MAIN));
+                    // self.commands.command(window::close(window::Id::MAIN));
                 }
 
                 return self.commands.build();
@@ -317,7 +309,7 @@ impl iced::Application for Application {
                 }
 
                 if self.exit_after_save {
-                    self.commands.command(window::close(window::Id::MAIN));
+                    // self.commands.command(window::close(window::Id::MAIN));
                 }
 
                 self.state.set_saving(false);
@@ -454,7 +446,7 @@ impl iced::Application for Application {
     }
 
     #[inline]
-    fn subscription(&self) -> iced::Subscription<Self::Message> {
+    pub(crate) fn subscription(&self) -> iced::Subscription<Message> {
         use iced::{event, mouse, Event};
         return event::listen().map(handle_event);
 
@@ -462,7 +454,7 @@ impl iced::Application for Application {
             tracing::trace!(?event);
 
             match event {
-                Event::Window(_, window::Event::CloseRequested) => Message::CloseRequested,
+                Event::Window(window::Event::CloseRequested) => Message::CloseRequested,
                 Event::Mouse(mouse::Event::ButtonPressed(button)) => match button {
                     mouse::Button::Other(1) => Message::History(-1),
                     mouse::Button::Other(2) => Message::History(1),
@@ -473,8 +465,8 @@ impl iced::Application for Application {
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
-        let mut top_menu = w::Row::new().spacing(GAP).align_items(Alignment::Center);
+    pub(crate) fn view(&self) -> Element<'_, Message> {
+        let mut top_menu = w::Row::new().spacing(GAP).align_y(Vertical::Center);
 
         let Some(page) = self.history.page() else {
             return w::text("missing history entry").into();
@@ -583,18 +575,14 @@ impl iced::Application for Application {
 
         let mut window = w::Column::new();
 
-        window = window.push(
-            menu.align_items(Alignment::Center)
-                .spacing(GAP)
-                .padding(GAP),
-        );
+        window = window.push(menu.align_x(Horizontal::Center).spacing(GAP).padding(GAP));
 
         let page = match self.render_page() {
             Ok(page) => page,
             Err(e) => {
-                return w::text(format_args!("{e}"))
+                return w::text(format!("{e}"))
                     .width(Length::Fill)
-                    .horizontal_alignment(Horizontal::Center)
+                    .align_x(Horizontal::Center)
                     .into();
             }
         };
@@ -622,8 +610,8 @@ impl iced::Application for Application {
 
         if errors != 0 {
             status_bar = status_bar.push(
-                w::button(w::text(format_args!("Errors ({errors})")).size(SMALL_SIZE))
-                    .style(theme::Button::Destructive)
+                w::button(w::text(format!("Errors ({errors})")).size(SMALL_SIZE))
+                    .style(w::button::danger)
                     .on_press(Message::Navigate(Page::Errors)),
             );
             any = true;
@@ -636,30 +624,30 @@ impl iced::Application for Application {
                 status_bar
                     .width(Length::Fill)
                     .height(Length::Shrink)
-                    .align_items(Alignment::Start)
+                    .align_y(Vertical::Top)
                     .spacing(GAP)
                     .padding(SPACE),
             );
         }
 
         window
-            .align_items(Alignment::Center)
+            .align_x(Horizontal::Center)
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
     }
 
     #[inline]
-    fn theme(&self) -> Theme {
+    pub(crate) fn theme(&self) -> Theme {
         self.service.theme().clone()
     }
 }
 
-fn render_series(
+fn render_series<'a>(
     page: &Page,
-    series: &Series,
+    series: &'a Series,
     series_id: &SeriesId,
-) -> w::Button<'static, Message> {
+) -> w::Button<'a, Message> {
     menu_item(
         page,
         w::text(&series.title)
@@ -841,7 +829,7 @@ impl Application {
         }
     }
 
-    fn render_page(&self) -> Result<Element<'static, Message>> {
+    fn render_page(&self) -> Result<Element<'_, Message>> {
         let page = match (&self.current, self.history.page()) {
             (Current::Dashboard(page), _) => page.view(ctxt_ref!(self)).map(Message::Dashboard),
             (Current::WatchNext(page), Some(Page::WatchNext(state))) => {
@@ -872,19 +860,19 @@ impl Application {
         Ok(page)
     }
 
-    fn render_season(
+    fn render_season<'a>(
         &self,
-        season: SeasonRef<'_>,
+        season: SeasonRef<'a>,
         series_id: &SeriesId,
         page: &Page,
-    ) -> w::Button<'static, Message> {
+    ) -> w::Button<'a, Message> {
         let title = w::text(season.number);
         let (watched, total) = self.service.season_watched(series_id, &season.number);
 
         let mut title = w::Row::new().push(title.size(SUB_MENU_SIZE));
 
         if let Some(p) = watched.saturating_mul(100).checked_div(total) {
-            title = title.push(w::text(format_args!(" ({p}%)")).size(SUB_MENU_SIZE));
+            title = title.push(w::text(format!(" ({p}%)")).size(SUB_MENU_SIZE));
         }
 
         menu_item(
@@ -897,9 +885,13 @@ impl Application {
 }
 
 /// Helper for building menu items.
-fn menu_item<E, M, P>(at: &Page, element: E, m: M, page: P) -> w::Button<'static, Message>
+fn menu_item<'a, M, P>(
+    at: &Page,
+    element: impl Into<Element<'a, Message>>,
+    m: M,
+    page: P,
+) -> w::Button<'a, Message>
 where
-    Element<'static, Message>: From<E>,
     M: FnOnce(&Page) -> bool,
     P: FnOnce() -> Page,
 {
