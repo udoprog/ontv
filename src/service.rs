@@ -193,7 +193,7 @@ impl Service {
     }
 
     /// Get a single movie.
-    pub(crate) fn movie(&self, id: &MovieId) -> Option<&Movie> {
+    pub(crate) fn movie<'this>(&'this self, id: &MovieId) -> Option<&'this Movie> {
         self.db.movies.get(id)
     }
 
@@ -307,7 +307,9 @@ impl Service {
     }
 
     /// Return list of pending episodes.
-    pub(crate) fn pending(&self) -> impl DoubleEndedIterator<Item = PendingRef<'_>> + Clone {
+    pub(crate) fn pending<'this>(
+        &'this self,
+    ) -> impl DoubleEndedIterator<Item = PendingRef<'this>> + Clone {
         self.db
             .pending
             .iter()

@@ -90,11 +90,7 @@ impl Series {
         }
     }
 
-    pub(crate) fn view(
-        &self,
-        cx: &CtxtRef<'_>,
-        state: &State,
-    ) -> Result<Element<'static, Message>> {
+    pub(crate) fn view<'a>(&self, cx: &CtxtRef<'a>, state: &State) -> Result<Element<'a, Message>> {
         let Some(series) = cx.service.series(&state.id) else {
             bail!("Missing series {}", state.id);
         };
@@ -110,15 +106,15 @@ impl Series {
             for remote_id in remote_ids {
                 let mut row = w::Row::new().push(
                     w::button(w::text(remote_id).size(SMALL_SIZE))
-                        .style(theme::Button::Primary)
+                        .style(w::button::primary)
                         .on_press(Message::OpenRemote(remote_id)),
                 );
 
                 if series.remote_id.as_ref() == Some(&remote_id) {
                     row = row.push(w::button(w::text("Current").size(SMALL_SIZE)));
                 } else if remote_id.is_supported() {
-                    let button = w::button(w::text("Switch").size(SMALL_SIZE))
-                        .style(theme::Button::Positive);
+                    let button =
+                        w::button(w::text("Switch").size(SMALL_SIZE)).style(w::button::success);
 
                     let status = cx.service.task_status_any([
                         TaskRef::RemoteSeries { remote_id },
@@ -177,9 +173,9 @@ impl Series {
 
             if let (Some(start), end) = (first.and_then(|e| e.aired), last.and_then(|e| e.aired)) {
                 let text = if let Some(end) = end {
-                    w::text(format_args!("{start} - {end}")).size(SMALL_SIZE)
+                    w::text(format!("{start} - {end}")).size(SMALL_SIZE)
                 } else {
-                    w::text(format_args!("{start} -")).size(SMALL_SIZE)
+                    w::text(format!("{start} -")).size(SMALL_SIZE)
                 };
 
                 column = column.push(text);
@@ -191,7 +187,6 @@ impl Series {
                         .push(graphic)
                         .push(column.push(c.view(cx).map(move |m| Message::SeasonInfo(index, m))))
                         .spacing(GAP),
-                    Some(style::weak),
                 )
                 .padding(GAP),
             );
@@ -204,7 +199,7 @@ impl Series {
         };
 
         let mut header = w::Column::new()
-            .push(top.align_items(Alignment::Center).spacing(GAP))
+            .push(top.align_x(Horizontal::Center).spacing(GAP))
             .push(self.series.view(cx, series).map(Message::SeriesActions))
             .push(info);
 
@@ -212,7 +207,7 @@ impl Series {
             header = header.push(w::text(&series.overview).shaping(w::text::Shaping::Advanced));
         }
 
-        let header = centered(header.spacing(GAP), None).padding(GAP);
+        let header = centered(header.spacing(GAP)).padding(GAP);
 
         Ok(w::Column::new()
             .push(header)

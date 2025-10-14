@@ -53,7 +53,7 @@ impl EpisodeOrMovie {
         }
     }
 
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>, title: bool) -> Result<Element<'static, Message>> {
+    pub(crate) fn view<'a>(&self, cx: &CtxtRef<'a>, title: bool) -> Result<Element<'a, Message>> {
         match self {
             EpisodeOrMovie::Episode(episode) => Ok(episode.view(cx, title)?.map(Message::Episode)),
             EpisodeOrMovie::Movie(movie) => Ok(movie.view(cx, title)?.map(Message::Movie)),

@@ -5,7 +5,7 @@ pub(crate) use self::buf::CommandsBuf;
 
 use std::future::Future;
 
-use iced::Command;
+use iced::Task as Command;
 use iced_futures::MaybeSend;
 
 /// Send commands to an iced application.
@@ -110,9 +110,9 @@ pub trait Commands<T> {
     ///     commands.perform(asynchronous_update(), Message::Greeting);
     /// }
     /// ```
-    fn perform<F>(&mut self, future: F, map: impl Fn(F::Output) -> T + MaybeSend + Sync + 'static)
+    fn perform<F>(&mut self, future: F, map: impl 'static + MaybeSend + Fn(F::Output) -> T)
     where
-        F: Future + 'static + MaybeSend;
+        F: 'static + MaybeSend + Future<Output: 'static + MaybeSend>;
 
     /// Insert a command directly into the command buffer.
     ///
@@ -204,10 +204,13 @@ pub struct Map<C, M> {
     map: M,
 }
 
-impl<T: 'static, C, M: 'static, U: 'static> Commands<U> for Map<C, M>
+impl<T, C, M, U> Commands<U> for Map<C, M>
 where
     C: Commands<T>,
-    M: MaybeSend + Sync + Clone + Fn(U) -> T,
+    M: 'static + MaybeSend + Sync + Clone + Fn(U) -> T,
+    T: 'static + MaybeSend,
+    M: 'static + MaybeSend,
+    U: 'static + MaybeSend,
 {
     type ByRef<'this>
         = &'this mut Self
@@ -220,11 +223,12 @@ where
     }
 
     #[inline]
-    fn perform<F>(&mut self, future: F, outer: impl Fn(F::Output) -> U + MaybeSend + Sync + 'static)
+    fn perform<F>(&mut self, future: F, outer: impl 'static + MaybeSend + Fn(F::Output) -> U)
     where
-        F: Future + 'static + MaybeSend,
+        F: 'static + MaybeSend + Future<Output: 'static + MaybeSend>,
     {
         let map = self.map.clone();
+
         self.commands
             .perform(future, move |message| map(outer(message)));
     }
@@ -236,9 +240,9 @@ where
     }
 }
 
-impl<C, M> Commands<M> for &mut C
+impl<C, T> Commands<T> for &mut C
 where
-    C: Commands<M>,
+    C: Commands<T>,
 {
     type ByRef<'this>
         = C::ByRef<'this>
@@ -251,15 +255,15 @@ where
     }
 
     #[inline]
-    fn perform<F>(&mut self, future: F, map: impl Fn(F::Output) -> M + MaybeSend + Sync + 'static)
+    fn perform<F>(&mut self, future: F, map: impl 'static + MaybeSend + Fn(F::Output) -> T)
     where
-        F: Future + 'static + MaybeSend,
+        F: 'static + MaybeSend + Future<Output: 'static + MaybeSend>,
     {
         (**self).perform(future, map);
     }
 
     #[inline]
-    fn command(&mut self, command: Command<M>) {
+    fn command(&mut self, command: Command<T>) {
         (**self).command(command);
     }
 }

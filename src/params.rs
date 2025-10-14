@@ -1,9 +1,9 @@
 use chrono::Duration;
+use iced::alignment::Horizontal;
 use iced::widget::{Column, Container, Text};
 use iced::{Element, Pixels};
 
 use crate::cache::ImageHint;
-use crate::style;
 
 pub(crate) const SPACE: f32 = 5.0;
 pub(crate) const GAP: f32 = 20.0;
@@ -40,26 +40,23 @@ where
     Element<'a, M>: From<E>,
 {
     use iced::widget::container;
-    use iced::{Alignment, Length};
+    use iced::Length;
 
     Column::new()
         .push(container(content).max_width(CONTAINER_WIDTH))
-        .align_items(Alignment::Center)
+        .align_x(Horizontal::Center)
         .width(Length::Fill)
 }
 
 /// Construct a simple link.
-pub(crate) fn link<M>(content: impl Into<Element<'static, M>>) -> iced::widget::Button<'static, M> {
+pub(crate) fn link<'a, M>(content: impl Into<Element<'a, M>>) -> iced::widget::Button<'a, M> {
     iced::widget::Button::new(content)
         .padding(0)
-        .style(iced::theme::Button::Text)
+        .style(iced::widget::button::text)
 }
 
 /// Alternate container with background color.
-pub(crate) fn centered<'a, E, M: 'a>(
-    content: E,
-    style: Option<style::StyleSheet>,
-) -> Container<'a, M>
+pub(crate) fn centered<'a, E, M: 'a>(content: E) -> Container<'a, M>
 where
     Element<'a, M>: From<E>,
 {
@@ -69,19 +66,15 @@ where
 
     let content = container(content).max_width(CONTAINER_WIDTH);
 
-    let mut container = container(content)
+    let container = container(content)
         .align_x(Horizontal::Center)
         .width(Length::Fill);
-
-    if let Some(style) = style {
-        container = container.style(style);
-    }
 
     container
 }
 
 /// Convert a chrono duration into something that is pretty to display.
-pub(crate) fn duration_display(d: Duration) -> Text<'static> {
+pub(crate) fn duration_display<'a>(d: Duration) -> Text<'a> {
     let seconds = d.num_seconds();
 
     if seconds > 0 {

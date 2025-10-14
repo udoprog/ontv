@@ -26,7 +26,7 @@ impl MovieBanner {
     }
 
     /// Generate buttons which perform actions on the given movie.
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>, movie: &Movie) -> Element<'static, Message> {
+    pub(crate) fn view<'a>(&self, cx: &CtxtRef<'a>, movie: &'a Movie) -> Element<'a, Message> {
         let handle = match movie
             .banner()
             .and_then(|i| cx.assets.image_with_hint(i, BANNER))
@@ -49,7 +49,7 @@ impl MovieBanner {
             .push(title)
             .spacing(GAP)
             .width(Length::Fill)
-            .align_items(Alignment::Center)
+            .align_x(Horizontal::Center)
             .into()
     }
 }

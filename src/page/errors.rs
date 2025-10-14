@@ -7,7 +7,7 @@ pub(crate) enum Message {}
 pub(crate) struct Errors;
 
 impl Errors {
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
+    pub(crate) fn view<'a>(&self, cx: &CtxtRef<'a>) -> Element<'a, Message> {
         let mut page = w::Column::new();
 
         for e in cx.state.errors().rev() {
@@ -18,15 +18,11 @@ impl Errors {
                     error = error.push(
                         w::text("Search error")
                             .size(SUBTITLE_SIZE)
-                            .style(cx.warning_text()),
+                            .style(w::text::danger),
                     );
                 }
                 None => {
-                    error = error.push(
-                        w::text("Error")
-                            .size(SUBTITLE_SIZE)
-                            .style(cx.warning_text()),
-                    );
+                    error = error.push(w::text("Error").size(SUBTITLE_SIZE).style(w::text::danger));
                 }
             }
 

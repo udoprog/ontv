@@ -1,3 +1,5 @@
+use iced::Theme;
+
 use crate::prelude::*;
 
 use crate::comps::ordering::Ordering;
@@ -105,21 +107,21 @@ impl Confirm {
         }
     }
 
-    pub(crate) fn view(
+    pub(crate) fn view<'a>(
         &self,
-        title: &str,
-        initial_theme: theme::Button,
-    ) -> Element<'static, Message> {
+        title: &'a str,
+        initial_theme: fn(&Theme, w::button::Status) -> w::button::Style,
+    ) -> Element<'a, Message> {
         let mut row = w::Row::new();
 
         if self.confirm {
             let buttons = [
-                w::button(w::text(title).size(SMALL_SIZE)).style(theme::Button::Secondary),
+                w::button(w::text(title).size(SMALL_SIZE)).style(w::button::secondary),
                 w::button(w::text("Confirm").size(SMALL_SIZE))
                     .style(initial_theme)
                     .on_press(Message::Confirm),
                 w::button(w::text("Cancel").size(SMALL_SIZE))
-                    .style(theme::Button::Secondary)
+                    .style(w::button::secondary)
                     .on_press(Message::Cancel),
             ];
 

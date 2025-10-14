@@ -120,7 +120,7 @@ impl MovieItem {
         }
     }
 
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>, title: bool) -> Result<Element<'static, Message>> {
+    pub(crate) fn view<'a>(&self, cx: &CtxtRef<'a>, title: bool) -> Result<Element<'a, Message>> {
         let Some(movie) = cx.service.movie(&self.movie_id) else {
             bail!("Missing movie {}", self.movie_id);
         };
@@ -160,8 +160,8 @@ impl MovieItem {
                 self.watch
                     .view(
                         watch_text,
-                        theme::Button::Positive,
-                        theme::Button::Positive,
+                        w::button::success,
+                        w::button::success,
                         Length::Shrink,
                         Horizontal::Center,
                         true,
@@ -179,7 +179,7 @@ impl MovieItem {
 
                 actions = actions.push(
                     remove_last_watch
-                        .view(watch_text, theme::Button::Destructive)
+                        .view(watch_text, w::button::danger)
                         .map(Message::RemoveLastWatch),
                 );
             }
@@ -189,13 +189,13 @@ impl MovieItem {
             if cx.service.pending_by_movie(&movie.id).is_none() {
                 actions = actions.push(
                     w::button(w::text("Make next movie").size(SMALL_SIZE))
-                        .style(theme::Button::Secondary)
+                        .style(w::button::secondary)
                         .on_press(Message::SelectPending(movie.id)),
                 );
             } else {
                 actions = actions.push(
                     w::button(w::text("Clear next movie").size(SMALL_SIZE))
-                        .style(theme::Button::Destructive)
+                        .style(w::button::danger)
                         .on_press(Message::ClearPending(movie.id)),
                 );
             }
@@ -217,7 +217,7 @@ impl MovieItem {
         for d in earliest {
             info = info.push(
                 cx.style
-                    .text(format_args!(
+                    .text(format!(
                         "{} / {} / {}",
                         d.country,
                         d.kind,
@@ -232,16 +232,15 @@ impl MovieItem {
             let len = it.len();
 
             let text = match (len, it.next(), it.next_back()) {
-                (1, Some(once), _) => w::text(format_args!(
-                    "Watched once on {}",
-                    once.timestamp.date_naive()
-                )),
-                (len, _, Some(last)) if len > 0 => w::text(format_args!(
+                (1, Some(once), _) => {
+                    w::text(format!("Watched once on {}", once.timestamp.date_naive()))
+                }
+                (len, _, Some(last)) if len > 0 => w::text(format!(
                     "Watched {} times, last on {}",
                     len,
                     last.timestamp.date_naive()
                 )),
-                _ => w::text("Never watched").style(cx.warning_text()),
+                _ => w::text("Never watched").style(w::text::secondary),
             };
 
             info = info.push(text.size(SMALL_SIZE));
@@ -261,17 +260,17 @@ impl MovieItem {
                     w::text(format!("#{}", n + 1))
                         .size(SMALL_SIZE)
                         .width(24.0)
-                        .horizontal_alignment(Horizontal::Left),
+                        .align_x(Horizontal::Left),
                 );
 
                 row = row.push(
-                    w::text(watch.timestamp.date_naive())
+                    w::text(watch.timestamp.date_naive().to_string())
                         .size(SMALL_SIZE)
                         .width(Length::Fill),
                 );
 
                 row = row.push(
-                    c.view("Remove", theme::Button::Destructive)
+                    c.view("Remove", w::button::danger)
                         .map(move |m| Message::RemoveWatch(n, m)),
                 );
 

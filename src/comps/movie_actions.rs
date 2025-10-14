@@ -48,7 +48,7 @@ impl MovieActions {
         }
     }
 
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>, movie: &Movie) -> Element<'static, Message> {
+    pub(crate) fn view<'a>(&self, cx: &CtxtRef<'a>, movie: &Movie) -> Element<'a, Message> {
         let mut row = w::Row::new();
 
         let status = cx
@@ -57,21 +57,19 @@ impl MovieActions {
 
         match status {
             Some(TaskStatus::Pending) => {
-                row = row.push(
-                    w::button(w::text("Refresh").size(SMALL_SIZE)).style(theme::Button::Positive),
-                );
+                row = row
+                    .push(w::button(w::text("Refresh").size(SMALL_SIZE)).style(w::button::success));
             }
             Some(TaskStatus::Running) => {
                 row = row.push(
-                    w::button(w::text("Downloading...").size(SMALL_SIZE))
-                        .style(theme::Button::Primary),
+                    w::button(w::text("Downloading...").size(SMALL_SIZE)).style(w::button::primary),
                 );
             }
             None => {
                 if let Some(remote_id) = movie.remote_id {
                     row = row.push(
                         w::button(w::text("Refresh").size(SMALL_SIZE))
-                            .style(theme::Button::Positive)
+                            .style(w::button::success)
                             .on_press(Message::RefreshMovie(remote_id)),
                     );
                 }
@@ -80,7 +78,7 @@ impl MovieActions {
 
         row = row.push(
             w::button(w::text("Remove").size(SMALL_SIZE))
-                .style(theme::Button::Destructive)
+                .style(w::button::danger)
                 .on_press(Message::RemoveMovie),
         );
 

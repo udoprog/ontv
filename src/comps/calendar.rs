@@ -84,15 +84,15 @@ impl Calendar {
                 w::text(date.day())
                     .width(Length::Fill)
                     .size(SMALL_SIZE)
-                    .horizontal_alignment(Horizontal::Center),
+                    .align_x(Horizontal::Center),
             );
 
             if date == self.date {
-                button = button.style(theme::Button::Positive);
+                button = button.style(w::button::success);
             } else if date.month() != self.month.month() {
-                button = button.style(theme::Button::Secondary);
+                button = button.style(w::button::secondary);
             } else {
-                button = button.style(theme::Button::Primary);
+                button = button.style(w::button::primary);
             }
 
             button = button.width(Length::Fill).on_press(Message::PickDay(date));
@@ -106,7 +106,7 @@ impl Calendar {
 
         for col in cols {
             row = row.push(
-                col.align_items(Alignment::Center)
+                col.align_x(Horizontal::Center)
                     .spacing(SPACE)
                     .width(Length::FillPortion(1)),
             );
@@ -125,7 +125,7 @@ impl Calendar {
                 format_month(self.month.month()),
                 self.month.year()
             ))
-            .horizontal_alignment(Horizontal::Center)
+            .align_x(Horizontal::Center)
             .width(Length::Fill),
         );
 

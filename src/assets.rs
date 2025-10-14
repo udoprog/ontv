@@ -42,10 +42,10 @@ pub(crate) struct Assets {
 
 impl Assets {
     pub(crate) fn new() -> Self {
-        let missing_poster_dark = Handle::from_memory(MISSING_POSTER_DARK);
-        let missing_poster_light = Handle::from_memory(MISSING_POSTER_LIGHT);
-        let missing_banner = Handle::from_memory(MISSING_BANNER);
-        let missing_screencap = Handle::from_memory(MISSING_SCRENCAP);
+        let missing_poster_dark = Handle::from_bytes(MISSING_POSTER_DARK);
+        let missing_poster_light = Handle::from_bytes(MISSING_POSTER_LIGHT);
+        let missing_banner = Handle::from_bytes(MISSING_BANNER);
+        let missing_screencap = Handle::from_bytes(MISSING_SCRENCAP);
 
         Self {
             missing_poster_dark,

@@ -77,11 +77,7 @@ impl Season {
     }
 
     /// Render season view.
-    pub(crate) fn view(
-        &self,
-        cx: &CtxtRef<'_>,
-        state: &State,
-    ) -> Result<Element<'static, Message>> {
+    pub(crate) fn view<'a>(&self, cx: &CtxtRef<'a>, state: &State) -> Result<Element<'a, Message>> {
         let Some(series) = cx.service.series(&state.series_id) else {
             bail!("Missing series {}", state.series_id);
         };
@@ -98,7 +94,6 @@ impl Season {
                     episode
                         .view(cx, false)?
                         .map(move |m| Message::Episode(index, m)),
-                    Some(style::weak),
                 )
                 .padding(GAP),
             );
@@ -109,7 +104,7 @@ impl Season {
         let mut banner = w::Column::new()
             .push(self.banner.view(cx, series).map(Message::SeriesBanner))
             .push(season_title)
-            .align_items(Alignment::Center)
+            .align_x(Horizontal::Center)
             .spacing(GAP);
 
         let mut remote_ids = cx
@@ -124,7 +119,7 @@ impl Season {
             for remote_id in remote_ids {
                 remotes = remotes.push(
                     w::button(w::text(remote_id).size(SMALL_SIZE))
-                        .style(theme::Button::Primary)
+                        .style(w::button::primary)
                         .on_press(Message::OpenRemote(remote_id)),
                 );
             }
@@ -138,7 +133,7 @@ impl Season {
             .spacing(GAP)
             .width(Length::Fill);
 
-        let header = centered(top, None).padding(GAP);
+        let header = centered(top).padding(GAP);
 
         Ok(w::Column::new()
             .push(header)

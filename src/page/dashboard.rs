@@ -123,7 +123,7 @@ impl Dashboard {
         }
     }
 
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
+    pub(crate) fn view<'a>(&self, cx: &CtxtRef<'a>) -> Element<'a, Message> {
         let up_next_title = link(w::text("Watch next").size(SUBTITLE_SIZE))
             .on_press(Message::Navigate(Page::WatchNext(
                 crate::page::watch_next::State::default(),
@@ -138,9 +138,9 @@ impl Dashboard {
                     w::text("-")
                         .width(SMALL_SIZE)
                         .size(SMALL_SIZE)
-                        .horizontal_alignment(Horizontal::Center),
+                        .align_x(Horizontal::Center),
                 )
-                .style(theme::Button::Secondary)
+                .style(w::button::secondary)
                 .on_press(Message::DecrementPage),
             );
         }
@@ -150,29 +150,29 @@ impl Dashboard {
                 w::text("+")
                     .width(SMALL_SIZE)
                     .size(SMALL_SIZE)
-                    .horizontal_alignment(Horizontal::Center),
+                    .align_x(Horizontal::Center),
             )
-            .style(theme::Button::Secondary)
+            .style(w::button::secondary)
             .on_press(Message::IncrementPage),
         );
 
         if cx.service.config().dashboard_limit > 1 {
             modify = modify.push(
                 w::button(w::text("reset").size(SMALL_SIZE))
-                    .style(theme::Button::Secondary)
+                    .style(w::button::secondary)
                     .on_press(Message::ResetPending),
             );
 
             modify = modify.push(
                 w::button(w::text("show less...").size(SMALL_SIZE))
-                    .style(theme::Button::Secondary)
+                    .style(w::button::secondary)
                     .on_press(Message::ShowLessPending),
             );
         }
 
         modify = modify.push(
             w::button(w::text("show more...").size(SMALL_SIZE))
-                .style(theme::Button::Secondary)
+                .style(w::button::secondary)
                 .on_press(Message::ShowMorePending),
         );
 
@@ -181,7 +181,7 @@ impl Dashboard {
             .push(self.render_pending(cx));
 
         let scheduled_title = w::text("Upcoming")
-            .horizontal_alignment(Horizontal::Left)
+            .align_x(Horizontal::Left)
             .width(Length::Fill)
             .size(SUBTITLE_SIZE);
 
@@ -190,19 +190,16 @@ impl Dashboard {
         w::Column::new()
             // .push(self.calendar.view().map(Message::Calendar))
             .push(w::vertical_space().height(Length::Shrink))
-            .push(centered(up_next_title, None))
-            .push(centered(
-                pending.padding(GAP).spacing(GAP),
-                Some(style::weak),
-            ))
-            .push(centered(scheduled_title, None))
-            .push(centered(scheduled.padding(GAP).spacing(GAP), None))
+            .push(centered(up_next_title))
+            .push(centered(pending.padding(GAP).spacing(GAP)))
+            .push(centered(scheduled_title))
+            .push(centered(scheduled.padding(GAP).spacing(GAP)))
             .push(w::vertical_space().height(Length::Shrink))
             .spacing(GAP2)
             .into()
     }
 
-    fn render_pending(&self, cx: &CtxtRef<'_>) -> w::Column<'static, Message> {
+    fn render_pending<'a>(&self, cx: &CtxtRef<'a>) -> w::Column<'a, Message> {
         let mut cols = w::Column::new();
 
         let mut pending = w::Row::new();
@@ -253,8 +250,8 @@ impl Dashboard {
                 watch
                     .view(
                         "Mark",
-                        theme::Button::Positive,
-                        theme::Button::Positive,
+                        w::button::success,
+                        w::button::success,
                         Length::Shrink,
                         Horizontal::Center,
                         false,
@@ -271,14 +268,10 @@ impl Dashboard {
                 };
 
                 actions = actions.push(
-                    w::button(
-                        w::text("Skip")
-                            .horizontal_alignment(Horizontal::Center)
-                            .size(SMALL_SIZE),
-                    )
-                    .style(theme::Button::Secondary)
-                    .on_press(skip)
-                    .width(Length::FillPortion(5)),
+                    w::button(w::text("Skip").align_x(Horizontal::Center).size(SMALL_SIZE))
+                        .style(w::button::secondary)
+                        .on_press(skip)
+                        .width(Length::FillPortion(5)),
                 );
 
                 let len = match pending_ref {
@@ -289,14 +282,14 @@ impl Dashboard {
                 };
 
                 let style = match len {
-                    0 => theme::Button::Text,
-                    _ => theme::Button::Positive,
+                    0 => w::button::primary,
+                    _ => w::button::success,
                 };
 
                 actions = actions.push(
                     w::button(
-                        w::text(format_args!("{len}"))
-                            .horizontal_alignment(Horizontal::Center)
+                        w::text(format!("{len}"))
+                            .align_x(Horizontal::Center)
                             .size(SMALL_SIZE),
                     )
                     .style(style)
@@ -318,19 +311,15 @@ impl Dashboard {
             }
 
             panel = panel.push(
-                link(
-                    title
-                        .size(SMALL_SIZE)
-                        .horizontal_alignment(Horizontal::Center),
-                )
-                .on_press(Message::Navigate(page)),
+                link(title.size(SMALL_SIZE).align_x(Horizontal::Center))
+                    .on_press(Message::Navigate(page)),
             );
 
             pending = pending.push(
                 w::container(
                     panel
                         .width(Length::Fill)
-                        .align_items(Alignment::Center)
+                        .align_x(Horizontal::Center)
                         .spacing(SPACE),
                 )
                 .width(Length::FillPortion(1)),
@@ -344,7 +333,7 @@ impl Dashboard {
         cols.spacing(GAP)
     }
 
-    fn render_scheduled(&self, cx: &CtxtRef<'_>) -> w::Column<'static, Message> {
+    fn render_scheduled<'a>(&self, cx: &CtxtRef<'a>) -> w::Column<'a, Message> {
         let mut scheduled_rows = w::Column::new();
         let mut cols = w::Row::new();
         let mut count = 0;
@@ -367,7 +356,7 @@ impl Dashboard {
                 match day.date.signed_duration_since(*cx.service.now()).num_days() {
                     0 => w::text("Today"),
                     1 => w::text("Tomorrow"),
-                    _ => w::text(day.date),
+                    _ => w::text(day.date.to_string()),
                 },
             );
 
@@ -457,7 +446,7 @@ impl Dashboard {
     }
 }
 
-fn episode_title(episode: &Episode) -> w::Text<'static> {
+fn episode_title<'a>(episode: &Episode) -> w::Text<'a> {
     let mut episode_number = match episode.season {
         SeasonNumber::Number(number) => format!("{}x{}", number, episode.number),
         SeasonNumber::Specials => format!("Special {}", episode.number),

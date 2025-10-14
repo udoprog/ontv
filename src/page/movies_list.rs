@@ -65,7 +65,7 @@ impl MoviesList {
         }
     }
 
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>) -> Element<'static, Message> {
+    pub(crate) fn view<'a>(&self, cx: &CtxtRef<'a>) -> Element<'a, Message> {
         let mut rows = w::Column::new();
 
         let mut it;
@@ -118,7 +118,6 @@ impl MoviesList {
                         .push(content.spacing(GAP))
                         .spacing(GAP)
                         .width(Length::Fill),
-                    Some(style::weak),
                 )
                 .padding(GAP),
             );
@@ -131,7 +130,6 @@ impl MoviesList {
         w::Column::new()
             .push(centered(
                 w::Row::new().push(filter).padding(GAP).width(Length::Fill),
-                None,
             ))
             .push(rows.spacing(GAP2))
             .width(Length::Fill)

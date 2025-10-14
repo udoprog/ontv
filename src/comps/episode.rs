@@ -133,7 +133,7 @@ impl Episode {
         }
     }
 
-    pub(crate) fn view(&self, cx: &CtxtRef<'_>, title: bool) -> Result<Element<'static, Message>> {
+    pub(crate) fn view<'a>(&self, cx: &CtxtRef<'a>, title: bool) -> Result<Element<'a, Message>> {
         let Some(episode) = cx.service.episode(&self.episode_id) else {
             bail!("Missing episode {}", self.episode_id);
         };
@@ -173,7 +173,7 @@ impl Episode {
 
         name = name.push(w::text(episode.number));
 
-        if let Some(string) = &episode.name {
+        if let Some(string) = &episode.as_episode().name {
             name = name.push(w::text(string).shaping(w::text::Shaping::Advanced));
         }
 
@@ -198,8 +198,8 @@ impl Episode {
                 self.watch
                     .view(
                         watch_text,
-                        theme::Button::Positive,
-                        theme::Button::Positive,
+                        w::button::success,
+                        w::button::success,
                         Length::Shrink,
                         Horizontal::Center,
                         true,
@@ -217,7 +217,7 @@ impl Episode {
 
                 actions = actions.push(
                     remove_last_watch
-                        .view(watch_text, theme::Button::Destructive)
+                        .view(watch_text, w::button::danger)
                         .map(Message::RemoveLastWatch),
                 );
             }
@@ -228,13 +228,13 @@ impl Episode {
             {
                 actions = actions.push(
                     w::button(w::text("Clear next episode").size(SMALL_SIZE))
-                        .style(theme::Button::Destructive)
+                        .style(w::button::danger)
                         .on_press(Message::ClearPending(episode.id)),
                 );
             } else {
                 actions = actions.push(
                     w::button(w::text("Make next episode").size(SMALL_SIZE))
-                        .style(theme::Button::Secondary)
+                        .style(w::button::secondary)
                         .on_press(Message::SelectPending(episode.id)),
                 );
             }
@@ -270,9 +270,9 @@ impl Episode {
 
         if let Some(air_date) = &episode.aired {
             if air_date > cx.state.today() {
-                info = info.push(w::text(format_args!("Airs: {air_date}")).size(SMALL_SIZE));
+                info = info.push(w::text(format!("Airs: {air_date}")).size(SMALL_SIZE));
             } else {
-                info = info.push(w::text(format_args!("Aired: {air_date}")).size(SMALL_SIZE));
+                info = info.push(w::text(format!("Aired: {air_date}")).size(SMALL_SIZE));
             }
         }
 
@@ -281,22 +281,22 @@ impl Episode {
             let len = it.len();
 
             let text = match (len, it.next(), it.next_back()) {
-                (1, Some(once), _) => w::text(format_args!(
-                    "Watched once on {}",
-                    once.timestamp.date_naive()
-                )),
-                (len, _, Some(last)) if len > 0 => w::text(format_args!(
+                (1, Some(once), _) => {
+                    w::text(format!("Watched once on {}", once.timestamp.date_naive()))
+                }
+                (len, _, Some(last)) if len > 0 => w::text(format!(
                     "Watched {} times, last on {}",
                     len,
                     last.timestamp.date_naive()
                 )),
-                _ => w::text("Never watched").style(cx.warning_text()),
+                _ => w::text("Never watched").style(w::text::danger),
             };
 
             info = info.push(text.size(SMALL_SIZE));
         };
 
-        info = info.push(w::text(&episode.overview).shaping(w::text::Shaping::Advanced));
+        info =
+            info.push(w::text(&episode.as_episode().overview).shaping(w::text::Shaping::Advanced));
 
         if watched.len() > 0 {
             let mut history = w::Column::new();
@@ -310,17 +310,17 @@ impl Episode {
                     w::text(format!("#{}", n + 1))
                         .size(SMALL_SIZE)
                         .width(24.0)
-                        .horizontal_alignment(Horizontal::Left),
+                        .align_x(Horizontal::Left),
                 );
 
                 row = row.push(
-                    w::text(watch.timestamp.date_naive())
+                    w::text(watch.timestamp.date_naive().to_string())
                         .size(SMALL_SIZE)
                         .width(Length::Fill),
                 );
 
                 row = row.push(
-                    c.view("Remove", theme::Button::Destructive)
+                    c.view("Remove", w::button::danger)
                         .map(move |m| Message::RemoveWatch(n, m)),
                 );
 
