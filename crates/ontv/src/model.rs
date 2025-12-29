@@ -8,7 +8,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use anyhow::Result;
-use api::SeasonNumber;
+use api::{ImageV2, SeasonNumber};
 use chrono::{DateTime, NaiveDate, Utc};
 use relative_path::RelativePath;
 use serde::de::IntoDeserializer;
@@ -1056,135 +1056,6 @@ pub(crate) struct WatchOrderKey {
     pub(crate) season: SeasonNumber,
     /// Episode number inside of its season.
     pub(crate) number: u32,
-}
-
-/// Image format in use.
-#[derive(
-    Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize,
-)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum ImageExt {
-    Jpg,
-    /// Unsupported extension.
-    #[default]
-    Unsupported,
-}
-
-impl fmt::Display for ImageExt {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ImageExt::Jpg => write!(f, "jpg"),
-            ImageExt::Unsupported => write!(f, "unsupported"),
-        }
-    }
-}
-
-/// The hash of an image.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub(crate) struct ImageHash(u128);
-
-impl ImageHash {
-    pub(crate) fn as_u128(&self) -> u128 {
-        self.0
-    }
-}
-
-/// The identifier of an image.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub(crate) enum ImageV2 {
-    /// An image from thetvdb.com
-    Tvdb { uri: Box<RelativePath> },
-    /// An image from themoviedb.org
-    Tmdb { uri: Box<RelativePath> },
-}
-
-impl ImageV2 {
-    /// Generate an image hash.
-    pub(crate) fn hash(&self) -> ImageHash {
-        ImageHash(match self {
-            ImageV2::Tvdb { uri } => crate::cache::hash128(&(0xd410b8f4u32, uri)),
-            ImageV2::Tmdb { uri } => crate::cache::hash128(&(0xc66bff3eu32, uri)),
-        })
-    }
-
-    /// Construct a new tvbd image.
-    pub(crate) fn tvdb<S>(string: &S) -> Option<Self>
-    where
-        S: ?Sized + AsRef<str>,
-    {
-        Some(string.as_ref().trim_start_matches('/'))
-            .filter(|s| !s.is_empty())
-            .map(|uri| Self::Tvdb { uri: uri.into() })
-    }
-
-    /// Construct a new tmdb image.
-    pub(crate) fn tmdb<S>(string: &S) -> Option<Self>
-    where
-        S: ?Sized + AsRef<str>,
-    {
-        Some(string.as_ref().trim_start_matches('/'))
-            .filter(|s| !s.is_empty())
-            .map(|uri| Self::Tmdb { uri: uri.into() })
-    }
-}
-
-impl fmt::Display for ImageV2 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ImageV2::Tvdb { uri } => write!(f, "tvdb:{uri}"),
-            ImageV2::Tmdb { uri } => write!(f, "tmdb:{uri}"),
-        }
-    }
-}
-
-impl Serialize for ImageV2 {
-    #[inline]
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: ser::Serializer,
-    {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> Deserialize<'de> for ImageV2 {
-    #[inline]
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        struct ImageV2Visitor;
-
-        impl<'de> de::Visitor<'de> for ImageV2Visitor {
-            type Value = ImageV2;
-
-            #[inline]
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "an image v2 uri")
-            }
-
-            #[inline]
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                let (head, uri) = v
-                    .split_once(':')
-                    .ok_or_else(|| de::Error::custom("missing `:`"))?;
-
-                match head {
-                    "tmdb" => Ok(ImageV2::Tmdb { uri: uri.into() }),
-                    "tvdb" => Ok(ImageV2::Tvdb { uri: uri.into() }),
-                    kind => Err(de::Error::invalid_value(de::Unexpected::Str(kind), &self)),
-                }
-            }
-        }
-
-        deserializer.deserialize_str(ImageV2Visitor)
-    }
 }
 
 /// The kind of a pending item.

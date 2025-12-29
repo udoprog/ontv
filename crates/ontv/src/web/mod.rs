@@ -3,22 +3,64 @@
 mod r#impl;
 
 #[cfg(not(feature = "bundle"))]
-#[path = "api.rs"]
+#[path = "nonbundle.rs"]
 mod r#impl;
 
 pub(crate) use self::r#impl::BIND;
 
+mod api;
 mod ws;
 
 use crate::model::Config;
 use crate::service::Service;
 
+/// Error type for web module.
+pub struct WebError {
+    kind: WebErrorKind,
+}
+
+impl WebError {
+    fn not_found() -> Self {
+        Self {
+            kind: WebErrorKind::NotFound,
+        }
+    }
+}
+
+impl IntoResponse for WebError {
+    fn into_response(self) -> axum::response::Response {
+        match self.kind {
+            WebErrorKind::Error(err) => {
+                let body = format!("Internal server error: {err}");
+                (StatusCode::INTERNAL_SERVER_ERROR, body).into_response()
+            }
+            WebErrorKind::NotFound => (StatusCode::NOT_FOUND, "Not Found").into_response(),
+        }
+    }
+}
+
+enum WebErrorKind {
+    Error(anyhow::Error),
+    NotFound,
+}
+
+impl From<anyhow::Error> for WebError {
+    #[inline]
+    fn from(err: anyhow::Error) -> Self {
+        Self {
+            kind: WebErrorKind::Error(err),
+        }
+    }
+}
+
 use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use ::api::{DashboardDay, DashboardEpisode, DashboardSeries, DashboardUpdateEvent};
 use anyhow::Result;
-use api::{DashboardDay, DashboardEpisode, DashboardSeries, DashboardUpdateEvent};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Extension, Router};
 use tokio::net::TcpListener;
@@ -47,7 +89,9 @@ pub(crate) fn setup(
 }
 
 fn common_routes(router: Router) -> Router {
-    router.route("/ws", get(ws::entry))
+    let router = router.route("/ws", get(ws::entry));
+    let router = router.route("/api/image/{hint}/{image}", get(api::image));
+    router
 }
 
 fn dashboard_update(service: &Service) -> DashboardUpdateEvent<'_> {
@@ -86,6 +130,7 @@ fn dashboard_update(service: &Service) -> DashboardUpdateEvent<'_> {
             series.push(DashboardSeries {
                 title: &s.title,
                 episodes,
+                poster: s.poster().cloned(),
             });
         }
 

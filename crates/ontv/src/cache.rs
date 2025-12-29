@@ -3,36 +3,18 @@ use std::future::Future;
 use std::hash::BuildHasherDefault;
 use std::hash::Hasher;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
+use api::{ImageExt, ImageHash, ImageHint, ImageSizeHint};
 use image::imageops::FilterType;
 use image::GenericImageView;
 use relative_path::RelativePath;
+use tokio::task;
 
 use crate::api::themoviedb;
 use crate::api::thetvdb;
-use crate::model::{ImageExt, ImageHash};
-
-/// Whether or not to provide a scaled version of the image.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum ImageHint {
-    /// Specifies that the image should fit centered within the specified bounds.
-    Fit(u32, u32),
-    /// Fill the specified dimensions.
-    Fill(u32, u32),
-}
-
-impl fmt::Display for ImageHint {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ImageHint::Fit(w, h) => write!(f, "fit-{w}x{h}"),
-            ImageHint::Fill(w, h) => write!(f, "fill-{w}x{h}"),
-        }
-    }
-}
 
 pub(crate) trait CacheClient<T: ?Sized> {
     fn download_image(
@@ -87,8 +69,8 @@ pub(crate) async fn image<C, I>(
     client: &C,
     id: &I,
     hash: ImageHash,
-    hint: Option<ImageHint>,
-) -> Result<image::DynamicImage>
+    hint: ImageHint,
+) -> Result<PathBuf>
 where
     C: ?Sized + CacheClient<I>,
     I: ?Sized + fmt::Display + CacheId,
@@ -102,79 +84,60 @@ where
     };
 
     let (path, hint) = match hint {
-        Some(hint) => {
-            let resized_path = path.join(format!(
-                "{:032x}-{hint}.{ext}",
-                hash.as_u128(),
-                ext = id.ext()
-            ));
-            (resized_path, Some(hint))
+        ImageHint::Original => {
+            let original_path = path.join(format!("{hash}.{ext}", ext = id.ext()));
+            (original_path, ImageHint::Original)
         }
-        None => {
-            let original_path = path.join(format!("{:032x}.{ext}", hash.as_u128(), ext = id.ext()));
-            (original_path, None)
+        hint => {
+            let resized_path = path.join(format!("{hash}-{hint}.{ext}", ext = id.ext()));
+            (resized_path, hint)
         }
     };
 
-    match fs::read(&path).await {
-        Ok(data) => {
+    match fs::metadata(&path).await {
+        Ok(m) if m.is_file() => {
             tracing::trace!(path = path.display().to_string(), "Reading from cache");
-            return Ok(image::load_from_memory_with_format(&data, format)?);
+            return Ok(path);
+        }
+        Ok(..) => {
+            return Err(anyhow!("Not a file: {}", path.display()));
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
         Err(e) => return Err(e.into()),
     }
 
-    tracing::debug!(
+    tracing::info!(
         id = id.to_string(),
         path = path.display().to_string(),
-        "Downloading"
+        "downloading"
     );
 
     let data = client.download_image(id).await?;
-    let image = image::load_from_memory_with_format(&data, format)?;
 
-    let image = match hint {
-        Some(hint) => {
-            tokio::task::spawn_blocking(move || match hint {
-                ImageHint::Fit(w, h) => image.resize_exact(w, h, FilterType::Lanczos3),
-                ImageHint::Fill(w, h) => resize_to_fill_top(image, w, h, FilterType::Lanczos3),
+    let data = match hint {
+        ImageHint::Resize(hint) => {
+            task::spawn_blocking(move || {
+                let image = image::load_from_memory_with_format(&data, format)?;
+
+                let image = match hint {
+                    ImageSizeHint::Fit(w, h) => image.resize_exact(w, h, FilterType::Lanczos3),
+                    ImageSizeHint::Fill(w, h) => {
+                        resize_to_fill_top(image, w, h, FilterType::Lanczos3)
+                    }
+                };
+
+                let mut buf = Cursor::new(Vec::with_capacity(1024));
+                image.write_to(&mut buf, format)?;
+                Ok::<_, anyhow::Error>(buf.into_inner())
             })
-            .await?
+            .await??
         }
-        None => image,
+        ImageHint::Original => data,
     };
 
     tracing::trace!("Writing: {}", path.display());
-
-    let mut buf = Cursor::new(Vec::with_capacity(1024));
-    image.write_to(&mut buf, format)?;
-    fs::write(&path, buf.into_inner()).await?;
-    Ok(image)
-}
-
-/// Generate a 16-byte hash.
-pub(crate) fn hash128<T>(value: &T) -> u128
-where
-    T: std::hash::Hash,
-{
-    struct HasherImpl(twox_hash::XxHash3_128);
-
-    impl Hasher for HasherImpl {
-        #[inline]
-        fn finish(&self) -> u64 {
-            self.0.finish_128() as u64
-        }
-
-        #[inline]
-        fn write(&mut self, bytes: &[u8]) {
-            self.0.write(bytes);
-        }
-    }
-
-    let mut hasher = HasherImpl(twox_hash::XxHash3_128::default());
-    std::hash::Hash::hash(value, &mut hasher);
-    hasher.0.finish_128()
+    fs::write(&path, data).await?;
+    Ok(path)
 }
 
 /// Resize to fill but preserves the top of the image rather than centers it.

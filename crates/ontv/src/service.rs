@@ -3,11 +3,12 @@ pub(crate) mod paths;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::future::Future;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Context, Error, Result};
-use api::SeasonNumber;
+use api::ImageHint;
+use api::{ImageV2, SeasonNumber};
 use chrono::{DateTime, Days, Local, NaiveDate, Utc};
 use futures::stream::FuturesUnordered;
 use tracing_futures::Instrument;
@@ -1237,47 +1238,36 @@ impl Service {
     }
 
     /// Ensure that a collection of the given image ids are loaded.
-    pub(crate) fn load_images(
+    pub(crate) fn load_image(
         &self,
-        images: Vec<(ImageKey, ImageV2)>,
-    ) -> impl Future<Output = Result<Vec<(ImageKey, image::DynamicImage)>>> {
-        use futures::StreamExt;
+        image: ImageV2,
+        hint: ImageHint,
+    ) -> impl Future<Output = Result<PathBuf>> {
+        tracing::info!(?image, ?hint, "loading image");
 
         let paths = self.paths.clone();
         let tvdb = self.tvdb.clone();
         let tmdb = self.tmdb.clone();
 
+        let paths = paths.clone();
+        let tvdb = tvdb.clone();
+        let tmdb = tmdb.clone();
+
         let future = async move {
-            let mut output = Vec::with_capacity(images.len());
-            let mut futures = FuturesUnordered::new();
+            let hash = image.hash();
 
-            for (key, image) in images {
-                let paths = paths.clone();
-                let tvdb = tvdb.clone();
-                let tmdb = tmdb.clone();
+            let handle = match &image {
+                ImageV2::Tvdb { uri } => {
+                    cache::image(&paths.images, &tvdb, uri.as_ref(), hash, hint).await
+                }
+                ImageV2::Tmdb { uri } => {
+                    cache::image(&paths.images, &tmdb, uri.as_ref(), hash, hint).await
+                }
+                image => Err(anyhow!("Unsupported image type: {image}")),
+            };
 
-                futures.push(async move {
-                    let hash = image.hash();
-
-                    let handle = match &image {
-                        ImageV2::Tvdb { uri } => {
-                            cache::image(&paths.images, &tvdb, uri.as_ref(), hash, key.hint).await
-                        }
-                        ImageV2::Tmdb { uri } => {
-                            cache::image(&paths.images, &tmdb, uri.as_ref(), hash, key.hint).await
-                        }
-                    };
-
-                    let handle = handle.with_context(|| anyhow!("Downloading: {image:?}"))?;
-                    Ok::<_, Error>((key, handle))
-                });
-            }
-
-            while let Some(result) = futures.next().await {
-                output.push(result?);
-            }
-
-            Ok(output)
+            let handle = handle.with_context(|| anyhow!("Downloading: {image:?}"))?;
+            Ok::<_, Error>(handle)
         };
 
         future.in_current_span()

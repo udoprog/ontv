@@ -6,10 +6,11 @@ mod hex;
 
 use core::fmt;
 
+use api::{ImageExt, ImageV2};
 use relative_path::RelativePathBuf;
 use serde::{Deserialize, Serialize};
 
-use crate::model::{ImageExt, ImageV2, Raw};
+use crate::model::Raw;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]

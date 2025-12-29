@@ -7,3 +7,53 @@
     --link-color: #b3d9ec;
     --link-hover: #eee;
 }
+
+body {
+    background-color: #121212;
+    color: var(--text-color);
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 1em;
+
+    background-color: #1e1e1e;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+}
+
+.day {
+    margin-top: 2em;
+    margin-bottom: 2em;
+
+    &-title {
+        font-size: 1.5em;
+        margin-bottom: .8em;
+        font-weight: bold;
+        color: var(--heading-color);
+    }
+}
+
+.series {
+    margin-top: 1.2em;
+    margin-bottom: 1.2em;
+
+    &-content {
+        display: flex;
+        flex-direction: row;
+        gap: .5em;
+    }
+
+    &-title {
+        font-size: 1.2em;
+        margin-bottom: .5em;
+        font-weight: bold;
+        color: var(--heading-color);
+    }
+
+    &-episodes {
+        margin-top: 1em;
+        margin-bottom: 1em;
+    }
+}

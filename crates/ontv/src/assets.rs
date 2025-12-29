@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use anyhow::Result;
+use api::{ImageHash, ImageHint, ImageV2};
 
-use crate::cache::ImageHint;
-use crate::model::{ImageHash, ImageV2, ThemeType};
+use crate::model::ThemeType;
 
 static MISSING_POSTER_DARK: &[u8] = include_bytes!("../assets/missing_poster_dark.png");
 static MISSING_POSTER_LIGHT: &[u8] = include_bytes!("../assets/missing_poster_light.png");

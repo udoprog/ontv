@@ -24,7 +24,7 @@ pub(crate) struct Props {
 }
 
 impl Dashboard {
-    fn on_state_change(&mut self, ctx: &Context<Self>) {
+    fn refresh(&mut self, ctx: &Context<Self>) {
         if matches!(self.state, ws::State::Open) {
             self._initialize = ctx
                 .props()
@@ -45,7 +45,7 @@ impl Dashboard {
             }
             Msg::StateChanged(state) => {
                 self.state = state;
-                self.on_state_change(ctx);
+                self.refresh(ctx);
                 Ok(false)
             }
         }
@@ -69,7 +69,7 @@ impl Component for Dashboard {
             dashboard: Packet::empty(),
         };
 
-        this.on_state_change(&ctx);
+        this.refresh(&ctx);
         this
     }
 
@@ -94,30 +94,40 @@ impl Component for Dashboard {
         };
 
         html! {
-            <div>
+            <div class="container">
                 <h1>{"Dashboard"}</h1>
                 {for dashboard.days.iter().map(|day| {
                     html! {
-                        <div>
-                            {format!("{}", day.date)}
+                        <div class="day">
+                            <h2 class="day-title">
+                                {format!("{}", day.date)}
+                            </h2>
 
-                            <ul>
                             {for day.series.iter().map(|s| {
                                 html! {
-                                    <li>
-                                        {format!("Series: {}", s.title)}
+                                    <div class="series">
+                                    <div class="series-title">
+                                        {s.title}
+                                    </div>
 
-                                        <ul>
-                                        {for s.episodes.iter().map(|e| {
-                                            html! {
-                                                <li>{format!("{}x{} {}", e.season.short(), e.number, e.name.unwrap_or("TBA"))}</li>
-                                            }
-                                        })}
-                                        </ul>
-                                    </li>
+                                    <div class="series-content">
+                                    {for s.poster.as_ref().map(|poster| {
+                                        html! {
+                                            <img src={format!("/api/image/fill-240x360/{poster}")} width="240" />
+                                        }
+                                    })}
+
+                                    <div class="series-episodes">
+                                    {for s.episodes.iter().map(|e| {
+                                        html! {
+                                            <div>{format!("{}x{} {}", e.season.short(), e.number, e.name.unwrap_or("TBA"))}</div>
+                                        }
+                                    })}
+                                    </div>
+                                    </div>
+                                    </div>
                                 }
                             })}
-                            </ul>
                         </div>
                     }
                 })}
