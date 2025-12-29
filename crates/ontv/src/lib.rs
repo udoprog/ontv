@@ -115,6 +115,7 @@
 //! ```
 
 #![allow(clippy::field_reassign_with_default, clippy::type_complexity)]
+#![allow(unused)]
 
 mod api;
 mod assets;
@@ -137,6 +138,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use tokio::net::TcpListener;
+use tokio::runtime::Builder;
 use tokio::sync::RwLock;
 
 pub use self::service::Service;
@@ -147,10 +149,12 @@ pub fn run(service: service::Service) -> Result<()> {
 
     let service = Arc::new(RwLock::new(service));
 
-    tokio::runtime::Builder::new_multi_thread()
+    Builder::new_multi_thread()
         .enable_all()
         .build()?
         .block_on(async move {
+            tracing::info!("Starting OnTV web service on http://{addr}");
+
             let listener = TcpListener::bind(addr).await?;
             let future = web::setup(listener, service.clone())?;
 

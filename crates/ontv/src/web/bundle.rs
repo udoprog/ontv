@@ -34,6 +34,8 @@ pub struct StaticFile(Cow<'static, str>);
 
 impl IntoResponse for StaticFile {
     fn into_response(self) -> Response {
+        tracing::info!("here");
+
         match Asset::get(self.0.as_ref()) {
             Some(content) => {
                 let mime = mime_guess::from_path(self.0.as_ref()).first_or_octet_stream();

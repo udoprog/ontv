@@ -1,9 +1,6 @@
 use std::fmt;
 use std::str::Utf8Error;
 
-/// Result type in use.
-pub type Result<T, E = Error> = core::result::Result<T, E>;
-
 /// Errors raised in this application.
 pub struct Error {
     error: anyhow::Error,
@@ -50,9 +47,9 @@ impl From<url::ParseError> for Error {
     }
 }
 
-impl From<musli_yew::ws::Error> for Error {
+impl From<musli_web::web::Error> for Error {
     #[inline]
-    fn from(error: musli_yew::ws::Error) -> Self {
+    fn from(error: musli_web::web::Error) -> Self {
         Self {
             error: anyhow::Error::from(error),
         }

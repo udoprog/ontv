@@ -1,10 +1,11 @@
 use core::fmt;
 
-use musli::{Decode, Encode};
+use musli_core::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "kebab-case")]
+#[musli(crate = musli_core)]
 pub enum ThemeType {
     Light,
     #[default]
@@ -15,6 +16,7 @@ pub enum ThemeType {
 #[derive(Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
 #[serde(transparent)]
 #[musli(transparent)]
+#[musli(crate = musli_core)]
 pub struct Secret {
     string: String,
 }
@@ -52,6 +54,7 @@ impl fmt::Debug for Secret {
 
 /// The state for the settings page.
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+#[musli(crate = musli_core)]
 pub struct Config {
     #[serde(default)]
     #[musli(default)]

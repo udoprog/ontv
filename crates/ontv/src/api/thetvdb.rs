@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
+use api::SeasonNumber;
 use chrono::{DateTime, NaiveDate, Utc};
 use leaky_bucket::RateLimiter;
 use relative_path::RelativePath;

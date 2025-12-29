@@ -1,8 +1,11 @@
 use core::fmt;
-use std::collections::HashMap;
-use std::ops::Deref;
+use core::ops::Deref;
 
-use crate::model::{Episode, EpisodeId, SeasonNumber, SeriesId};
+use std::collections::HashMap;
+
+use api::SeasonNumber;
+
+use crate::model::{Episode, EpisodeId, SeriesId};
 
 struct EpisodeData {
     episode: Episode,

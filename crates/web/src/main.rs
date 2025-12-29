@@ -1,7 +1,7 @@
 mod components;
 mod error;
 
-use musli_yew::ws;
+use musli_web::web03::prelude::*;
 use yew::prelude::*;
 use yew_router::prelude::*;
 
@@ -15,20 +15,11 @@ enum Route {
 }
 
 struct App {
-    ws: ws::Service<Self>,
-    handle: ws::Handle,
+    ws: ws::Service,
 }
 
 enum Msg {
-    WebSocket(ws::Msg),
     Error(error::Error),
-}
-
-impl From<ws::Msg> for Msg {
-    #[inline]
-    fn from(value: ws::Msg) -> Self {
-        Self::WebSocket(value)
-    }
 }
 
 impl From<error::Error> for Msg {
@@ -38,9 +29,9 @@ impl From<error::Error> for Msg {
     }
 }
 
-impl From<musli_yew::ws::Error> for Msg {
+impl From<musli_web::web::Error> for Msg {
     #[inline]
-    fn from(error: musli_yew::ws::Error) -> Self {
+    fn from(error: musli_web::web::Error) -> Self {
         Self::Error(error::Error::from(error))
     }
 }
@@ -50,18 +41,15 @@ impl Component for App {
     type Properties = ();
 
     fn create(ctx: &Context<Self>) -> Self {
-        let (ws, handle) = ws::Service::new(ctx);
-        let mut this = Self { ws, handle };
-        this.ws.connect(ctx);
-        this
+        let ws = ws::connect(ws::Connect::location("/ws"))
+            .on_error(ctx.link().callback(Msg::Error).reform(Into::into))
+            .build();
+        ws.connect();
+        Self { ws }
     }
 
-    fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
+    fn update(&mut self, _: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
-            Msg::WebSocket(msg) => {
-                self.ws.update(ctx, msg);
-                false
-            }
             Msg::Error(error) => {
                 log::error!("Failed to fetch: {error}");
                 false
@@ -70,7 +58,7 @@ impl Component for App {
     }
 
     fn view(&self, _: &Context<Self>) -> Html {
-        let ws = self.handle.clone();
+        let ws = self.ws.handle().clone();
 
         html! {
             <BrowserRouter>

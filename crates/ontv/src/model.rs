@@ -8,8 +8,8 @@ use std::fmt;
 use std::str::FromStr;
 
 use anyhow::Result;
+use api::SeasonNumber;
 use chrono::{DateTime, NaiveDate, Utc};
-use musli::{Decode, Encode};
 use relative_path::RelativePath;
 use serde::de::IntoDeserializer;
 use serde::{de, ser, Deserialize, Serialize};
@@ -899,54 +899,6 @@ pub(crate) struct Watched {
     /// Watched kind.
     #[serde(flatten)]
     pub(crate) kind: WatchedKind,
-}
-
-/// Season number.
-#[derive(
-    Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
-#[serde(untagged)]
-pub(crate) enum SeasonNumber {
-    /// Season used for non-numbered episodes.
-    #[default]
-    Specials,
-    /// A regular numbered season.
-    Number(u32),
-}
-
-impl SeasonNumber {
-    #[inline]
-    pub(crate) fn is_special(&self) -> bool {
-        matches!(self, SeasonNumber::Specials)
-    }
-
-    /// Build season title.
-    pub(crate) fn short(&self) -> SeasonShort<'_> {
-        SeasonShort { season: self }
-    }
-}
-
-pub(crate) struct SeasonShort<'a> {
-    season: &'a SeasonNumber,
-}
-
-impl fmt::Display for SeasonShort<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.season {
-            SeasonNumber::Specials => "S".fmt(f),
-            SeasonNumber::Number(n) => n.fmt(f),
-        }
-    }
-}
-
-impl fmt::Display for SeasonNumber {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SeasonNumber::Specials => write!(f, "Specials"),
-            SeasonNumber::Number(number) => write!(f, "Season {number}"),
-        }
-    }
 }
 
 /// Associated season graphics.

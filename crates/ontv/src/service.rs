@@ -7,6 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Context, Error, Result};
+use api::SeasonNumber;
 use chrono::{DateTime, Days, Local, NaiveDate, Utc};
 use futures::stream::FuturesUnordered;
 use tracing_futures::Instrument;

@@ -1,8 +1,11 @@
 use core::fmt;
-use std::collections::HashMap;
-use std::ops::Deref;
+use core::ops::Deref;
 
-use crate::model::{Season, SeasonNumber, SeriesId};
+use std::collections::HashMap;
+
+use api::SeasonNumber;
+
+use crate::model::{Season, SeriesId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Pointer {

@@ -1,11 +1,12 @@
 use std::collections::btree_map::BTreeMap;
 use std::collections::hash_map::{self, HashMap};
 
+use api::SeasonNumber;
 use serde::Serialize;
 
 use crate::database::episodes;
 use crate::database::iter::Iter;
-use crate::model::{EpisodeId, MovieId, SeasonNumber, SeriesId, Watched, WatchedId, WatchedKind};
+use crate::model::{EpisodeId, MovieId, SeriesId, Watched, WatchedId, WatchedKind};
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub(crate) enum Place {

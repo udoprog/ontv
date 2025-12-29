@@ -1,9 +1,14 @@
 #![cfg_attr(all(not(feature = "cli"), windows), windows_subsystem = "windows")]
 
+use std::env;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::EnvFilter;
+
+const DEFUALT_FILTER: &str = "ontv=info";
 
 #[derive(Parser)]
 struct Opts {
@@ -34,8 +39,19 @@ struct Opts {
 }
 
 pub fn main() -> Result<()> {
+    let builder = EnvFilter::builder().with_default_directive(LevelFilter::INFO.into());
+    let env_filter;
+
+    if let Ok(log) = env::var("ONTV_LOG") {
+        env_filter = builder.parse(log).context("parsing ONTV_LOG")?;
+    } else {
+        env_filter = builder
+            .parse(DEFUALT_FILTER)
+            .context("parsing default log filter")?;
+    }
+
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_env_filter(env_filter)
         .try_init()
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 

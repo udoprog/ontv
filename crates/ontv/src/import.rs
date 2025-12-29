@@ -2,11 +2,12 @@ use std::fs::File;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use api::SeasonNumber;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::runtime;
 
-use crate::model::{Raw, RemoteId, SeasonNumber, SeriesId};
+use crate::model::{Raw, RemoteId, SeriesId};
 use crate::search::Tokens;
 use crate::service::Service;
 

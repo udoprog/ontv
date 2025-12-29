@@ -1,8 +1,4 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
-
-[patch.crates-io]
-musli = { git = "https://github.com/udoprog/musli", branch = "musli-axum" }
-musli-axum = { git = "https://github.com/udoprog/musli", branch = "musli-axum" }
-musli-yew = { git = "https://github.com/udoprog/musli", branch = "musli-axum" }
+default-members = ["crates/ontv"]
