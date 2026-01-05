@@ -14,17 +14,12 @@ use crate::backend::paths;
 
 pub(crate) enum Format {
     Yaml,
-    Json,
 }
 
 impl Format {
     /// Get a mode from a path.
-    fn from_path<P>(path: &P) -> Option<Format>
-    where
-        P: ?Sized + AsRef<Path>,
-    {
+    fn from_path(path: impl AsRef<Path>) -> Option<Format> {
         match path.as_ref().extension().and_then(|e| e.to_str()) {
-            Some("json") => Some(Self::Json),
             Some("yaml") => Some(Self::Yaml),
             _ => None,
         }
@@ -36,30 +31,6 @@ impl Format {
         T: DeserializeOwned,
         R: Read,
     {
-        /// Load an array from the given reader line-by-line.
-        fn from_json<T, R>(input: R) -> Result<Vec<T>>
-        where
-            T: DeserializeOwned,
-            R: Read,
-        {
-            use std::io::{BufRead, BufReader};
-
-            let mut output = Vec::new();
-
-            for line in BufReader::new(input).lines() {
-                let line = line?;
-                let line = line.trim();
-
-                if line.starts_with('#') || line.is_empty() {
-                    continue;
-                }
-
-                output.push(serde_json::from_str(line)?);
-            }
-
-            Ok(output)
-        }
-
         match self {
             Format::Yaml => {
                 let mut array = Vec::new();
@@ -70,7 +41,6 @@ impl Format {
 
                 Ok(array)
             }
-            Format::Json => from_json(f),
         }
     }
 
@@ -90,7 +60,6 @@ impl Format {
     {
         match self {
             Format::Yaml => Ok(serde_yaml::from_slice(bytes)?),
-            Format::Json => Ok(serde_json::from_slice(bytes)?),
         }
     }
 
@@ -102,10 +71,6 @@ impl Format {
         match self {
             Format::Yaml => {
                 serde_yaml::to_writer(&mut *f, data)?;
-                f.write_all(&[b'\n'])?;
-            }
-            Format::Json => {
-                serde_json::to_writer_pretty(&mut *f, data)?;
                 f.write_all(&[b'\n'])?;
             }
         }
@@ -136,10 +101,6 @@ where
 
                 serde_yaml::to_writer(&mut *self.output, item)?;
             }
-            Format::Json => {
-                serde_json::to_writer(&mut *self.output, item)?;
-                self.output.write_all(b"\n")?;
-            }
         }
 
         self.count += 1;
@@ -157,6 +118,8 @@ where
     T: DeserializeOwned,
 {
     for path in path.read() {
+        let path = path.as_ref();
+
         let Some(format) = Format::from_path(path) else {
             continue;
         };

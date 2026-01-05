@@ -121,7 +121,7 @@ mod api;
 mod assets;
 mod backend;
 mod cache;
-mod database;
+mod files;
 pub mod import;
 pub mod lock;
 mod model;

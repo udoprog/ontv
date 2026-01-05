@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use jiff::Timestamp;
 use uuid::Uuid;
 
-use crate::database::iter::Iter;
+use crate::files::iter::Iter;
 use crate::model::{MovieId, Pending, SeriesId};
 
 #[derive(Default)]

@@ -187,8 +187,7 @@ impl Database {
             .map(Vec::as_slice)
             .unwrap_or_default();
 
-        crate::database::iter::Iter::new(iter.iter(), &self.data)
-            .map(|e| e.as_episode_ref(&self.data))
+        crate::files::iter::Iter::new(iter.iter(), &self.data).map(|e| e.as_episode_ref(&self.data))
     }
 }
 

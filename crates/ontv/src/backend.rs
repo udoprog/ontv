@@ -20,7 +20,7 @@ use crate::api::themoviedb;
 use crate::api::thetvdb;
 use crate::assets::ImageKey;
 use crate::cache::{self};
-use crate::database::{Change, Database, EpisodeRef, SeasonRef};
+use crate::files::{Change, EpisodeRef, Files, SeasonRef};
 use crate::model::*;
 use crate::queue::{CompletedTask, Task, TaskKind, TaskRef, TaskStatus};
 
@@ -143,7 +143,7 @@ impl<'a> PendingRef<'a> {
 /// Background service taking care of all state handling.
 pub struct Backend {
     paths: Arc<paths::Paths>,
-    db: Database,
+    db: Files,
     tvdb: thetvdb::Client,
     tmdb: themoviedb::Client,
     do_not_save: bool,
@@ -161,7 +161,7 @@ impl Backend {
             std::fs::create_dir_all(&paths.images)?;
         }
 
-        let db = Database::load(&paths)?;
+        let db = Files::load(&paths)?;
         let tvdb = thetvdb::Client::new(db.config.tvdb_legacy_apikey.as_str())?;
         let tmdb = themoviedb::Client::new(db.config.tmdb_api_key.as_str())?;
 

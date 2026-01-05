@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
 
-use crate::database::iter::Iter;
+use crate::files::iter::Iter;
 use crate::model::{Series, SeriesId};
 
 #[derive(Default)]

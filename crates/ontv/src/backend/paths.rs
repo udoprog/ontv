@@ -1,9 +1,10 @@
-use std::path::Path;
+use core::iter::{empty, once};
+
+use std::path::{Display, Path, PathBuf};
 
 #[derive(Clone)]
 pub(crate) struct Candidate {
-    json: Box<Path>,
-    yaml: Box<Path>,
+    path: PathBuf,
 }
 
 impl Candidate {
@@ -14,35 +15,34 @@ impl Candidate {
         let path = path.as_ref();
 
         Self {
-            json: path.to_owned().with_extension("json").into(),
-            yaml: path.to_owned().with_extension("yaml").into(),
+            path: path.with_extension("yaml"),
         }
     }
 
     /// Display implementation for back path.
-    pub(crate) fn display(&self) -> std::path::Display<'_> {
-        self.yaml.display()
+    pub(crate) fn display(&self) -> Display<'_> {
+        self.path.display()
     }
 
     /// All paths.
-    pub(crate) fn all(&self) -> [&Path; 2] {
-        self.read()
+    pub(crate) fn all(&self) -> impl IntoIterator<Item: AsRef<Path>> + '_ {
+        once(&self.path)
     }
 
     /// Read paths.
-    pub(crate) fn read(&self) -> [&Path; 2] {
-        [self.json.as_ref(), self.yaml.as_ref()]
+    pub(crate) fn read(&self) -> impl IntoIterator<Item: AsRef<Path>> + '_ {
+        once(&self.path)
     }
 
     /// Remainder paths.
-    pub(crate) fn remainder(&self) -> [&Path; 1] {
-        [self.json.as_ref()]
+    pub(crate) fn remainder(&self) -> impl IntoIterator<Item: AsRef<Path>> + '_ {
+        empty::<PathBuf>()
     }
 }
 
 impl AsRef<Path> for Candidate {
     fn as_ref(&self) -> &Path {
-        &self.yaml
+        &self.path
     }
 }
 

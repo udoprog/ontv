@@ -26,7 +26,7 @@ use crate::model::{
 use crate::queue::Queue;
 
 #[derive(Default)]
-pub(crate) struct Database {
+pub(crate) struct Files {
     /// Application configuration.
     pub(crate) config: Config,
     /// Remotes database.
@@ -51,7 +51,7 @@ pub(crate) struct Database {
     pub(crate) tasks: Queue,
 }
 
-impl Database {
+impl Files {
     /// Try to load initial state.
     pub(crate) fn load(paths: &paths::Paths) -> Result<Self> {
         let mut db = Self::default();
@@ -60,10 +60,6 @@ impl Database {
             format::load(&paths.config).with_context(|| anyhow!("{}", paths.config.display()))?
         {
             db.config = config;
-
-            if matches!(format, format::Format::Json) {
-                db.changes.change(Change::Config);
-            }
         }
 
         if let Some((format, remotes)) = format::load_array::<RemoteIds>(&paths.remotes)? {
@@ -86,10 +82,6 @@ impl Database {
                     }
                 }
             }
-
-            if matches!(format, format::Format::Json) {
-                db.changes.change(Change::Remotes);
-            }
         }
 
         if let Some((_format, syncs)) = format::load_array::<sync::Export>(&paths.sync)? {
@@ -102,19 +94,11 @@ impl Database {
             for mut s in series {
                 db.series.insert(s);
             }
-
-            if matches!(format, format::Format::Json) {
-                db.changes.change(Change::Series);
-            }
         }
 
         if let Some((format, movies)) = format::load_array::<Movie>(&paths.movies)? {
             for s in movies {
                 db.movies.insert(s);
-            }
-
-            if matches!(format, format::Format::Json) {
-                db.changes.change(Change::Movie);
             }
         }
 
@@ -122,18 +106,10 @@ impl Database {
             for w in watched {
                 db.watched.insert(w);
             }
-
-            if matches!(format, format::Format::Json) {
-                db.changes.change(Change::Watched);
-            }
         }
 
         if let Some((format, pending)) = format::load_array::<Pending>(&paths.pending)? {
             db.pending.extend(pending);
-
-            if matches!(format, format::Format::Json) {
-                db.changes.change(Change::Pending);
-            }
         }
 
         if let Some(episodes) = format::load_directory::<_, SeriesId, Episode>(&paths.episodes)? {
@@ -371,8 +347,10 @@ impl Changes {
 }
 
 /// Remove the given file.
-async fn remove_all<const N: usize>(what: &'static str, paths: [&Path; N]) -> Result<()> {
+async fn remove_all(what: &'static str, paths: impl IntoIterator<Item: AsRef<Path>>) -> Result<()> {
     for path in paths {
+        let path = path.as_ref();
+
         tracing::trace!("{what}: removing: {}", path.display());
 
         match tokio::fs::remove_file(path).await {
