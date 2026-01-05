@@ -120,17 +120,13 @@
 mod api;
 mod assets;
 mod cache;
-mod compat;
 mod database;
-mod error;
 pub mod import;
 pub mod lock;
 mod model;
 mod queue;
 mod search;
 mod service;
-mod state;
-mod utils;
 mod web;
 
 use std::net::SocketAddr;

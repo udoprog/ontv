@@ -522,30 +522,6 @@ pub(crate) struct Series {
     /// The remote identifier that is used to synchronize this series.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) remote_id: Option<RemoteId>,
-    /// Inline poster image.
-    #[serde(default, rename = "poster", skip_serializing)]
-    #[deprecated = "replaced by .graphics"]
-    pub(crate) compat_poster: Option<crate::compat::Image>,
-    /// Inline banner image.
-    #[serde(default, rename = "banner", skip_serializing)]
-    #[deprecated = "replaced by .graphics"]
-    pub(crate) compat_banner: Option<crate::compat::Image>,
-    /// Inline fanart image.
-    #[serde(default, rename = "fanart", skip_serializing)]
-    #[deprecated = "replaced by .graphics"]
-    pub(crate) compat_fanart: Option<crate::compat::Image>,
-    /// Locally known last modified timestamp.
-    #[serde(rename = "last_modified", default, skip_serializing)]
-    #[deprecated = "deprecated for storing separately in sync database"]
-    pub(crate) compat_last_modified: Option<DateTime<Utc>>,
-    /// Locally known last etag.
-    #[serde(rename = "last_etag", default, skip_serializing)]
-    #[deprecated = "deprecated for storing separately in sync database"]
-    pub(crate) compat_last_etag: Option<Etag>,
-    /// Last sync time for each remote.
-    #[serde(rename = "last_sync", default, skip_serializing, with = "btree_as_vec")]
-    #[deprecated = "deprecated for storing separately in sync database"]
-    pub(crate) compat_last_sync: BTreeMap<RemoteId, DateTime<Utc>>,
 }
 
 impl Series {
@@ -560,12 +536,6 @@ impl Series {
             graphics: update.graphics,
             remote_id: Some(update.remote_id),
             tracked: true,
-            compat_poster: None,
-            compat_banner: None,
-            compat_fanart: None,
-            compat_last_modified: None,
-            compat_last_etag: None,
-            compat_last_sync: BTreeMap::new(),
         }
     }
 
@@ -929,8 +899,6 @@ pub(crate) struct Season {
     pub(crate) name: Option<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub(crate) overview: String,
-    #[serde(default, rename = "poster", skip_serializing_if = "Option::is_none")]
-    pub(crate) compat_poster: Option<crate::compat::Image>,
     #[serde(default, skip_serializing_if = "SeasonGraphics::is_empty")]
     pub(crate) graphics: SeasonGraphics,
 }
@@ -980,9 +948,6 @@ pub(crate) struct Episode {
     /// Air date of the episode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) aired: Option<NaiveDate>,
-    /// Episode image.
-    #[serde(default, rename = "filename", skip_serializing_if = "Option::is_none")]
-    pub(crate) compat_filename: Option<crate::compat::Image>,
     /// Episode graphics.
     #[serde(default, skip_serializing_if = "EpisodeGraphics::is_empty")]
     pub(crate) graphics: EpisodeGraphics,

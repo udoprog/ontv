@@ -60,6 +60,7 @@ image = "0.25.1"
 tokio-stream = { version = "0.1.15", default-features = false }
 rust-embed = { version = "8.3.0", default-features = false, optional = true }
 mime_guess = { version = "2.0.4", default-features = false }
+sqll = { version = "0.4.0", features = ["bundled"] }
 
 [target.'cfg(windows)'.dependencies]
 winctx = "0.0.19"

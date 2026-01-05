@@ -282,7 +282,6 @@ impl Client {
                     },
                     number: row.aired_episode_number,
                     aired: row.first_aired,
-                    compat_filename: None,
                     graphics,
                     remote_id: Some(remote_id),
                 };

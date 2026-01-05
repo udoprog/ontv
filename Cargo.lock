@@ -2061,6 +2061,7 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "serde_yaml",
+ "sqll",
  "tempfile",
  "tokio",
  "tokio-stream",
@@ -2919,6 +2920,39 @@ checksum = "17129e116933cf371d018bb80ae557e889637989d8638274fb25622827b03881"
 dependencies = [
  "libc",
  "windows-sys 0.60.2",
+]
+
+[[package]]
+name = "sqll"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e285ed30b401001c79336961c256fe17cd1885b50be899ca9480e25247f95d8"
+dependencies = [
+ "sqll-macros",
+ "sqll-sys",
+]
+
+[[package]]
+name = "sqll-macros"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f42c55d94f804190e3dcc2eb72e33d59f3f24336a6dc3b07a8210ac474662b0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
+]
+
+[[package]]
+name = "sqll-sys"
+version = "0.4.0+sqlite-3.51.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2ed75b0342ed294f3921b352a9bbb64760127c3cd82b38f80cf02ac24103b65"
+dependencies = [
+ "cc",
+ "pkg-config",
+ "semver",
+ "vcpkg",
 ]
 
 [[package]]

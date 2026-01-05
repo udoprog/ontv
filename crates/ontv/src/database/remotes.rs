@@ -4,7 +4,6 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use crate::model::{EpisodeId, MovieId, RemoteEpisodeId, RemoteId, RemoteIds, SeriesId};
-use crate::utils::OptionIter;
 
 #[derive(Default)]
 struct Inner {
@@ -35,16 +34,21 @@ impl Database {
     pub(crate) fn get_by_series(
         &self,
         series_id: &SeriesId,
-    ) -> impl ExactSizeIterator<Item = RemoteId> + '_ {
-        OptionIter::new(self.by_series.get(series_id).map(|it| it.iter())).copied()
+    ) -> impl Iterator<Item = RemoteId> + '_ {
+        self.by_series
+            .get(series_id)
+            .into_iter()
+            .flat_map(|it| it.iter())
+            .copied()
     }
 
     /// Get remote by movie.
-    pub(crate) fn get_by_movie(
-        &self,
-        series_id: &MovieId,
-    ) -> impl ExactSizeIterator<Item = RemoteId> + '_ {
-        OptionIter::new(self.by_movie.get(series_id).map(|it| it.iter())).copied()
+    pub(crate) fn get_by_movie(&self, series_id: &MovieId) -> impl Iterator<Item = RemoteId> + '_ {
+        self.by_movie
+            .get(series_id)
+            .into_iter()
+            .flat_map(|it| it.iter())
+            .copied()
     }
 
     /// Insert a series remote.

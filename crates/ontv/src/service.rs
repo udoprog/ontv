@@ -1487,18 +1487,12 @@ impl Service {
     }
 
     /// Get remotes by series.
-    pub(crate) fn remotes_by_series(
-        &self,
-        id: &SeriesId,
-    ) -> impl ExactSizeIterator<Item = RemoteId> + '_ {
+    pub(crate) fn remotes_by_series(&self, id: &SeriesId) -> impl Iterator<Item = RemoteId> + '_ {
         self.db.remotes.get_by_series(id)
     }
 
     /// Get remotes by movie.
-    pub(crate) fn remotes_by_movie(
-        &self,
-        id: &MovieId,
-    ) -> impl ExactSizeIterator<Item = RemoteId> + '_ {
+    pub(crate) fn remotes_by_movie(&self, id: &MovieId) -> impl Iterator<Item = RemoteId> + '_ {
         self.db.remotes.get_by_movie(id)
     }
 

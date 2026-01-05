@@ -341,7 +341,6 @@ impl Client {
                 air_date: s.air_date,
                 name: s.name,
                 overview: s.overview.unwrap_or_default(),
-                compat_poster: None,
                 graphics,
             });
         }
@@ -421,7 +420,6 @@ impl Client {
                 season,
                 number: d.episode.episode_number,
                 aired: d.episode.air_date,
-                compat_filename: None,
                 graphics,
                 remote_id: Some(d.remote_id),
             };

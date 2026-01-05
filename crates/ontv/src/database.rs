@@ -100,7 +100,6 @@ impl Database {
 
         if let Some((format, series)) = format::load_array::<Series>(&paths.series)? {
             for mut s in series {
-                migrate_series(&mut db, &mut s);
                 db.series.insert(s);
             }
 
@@ -139,26 +138,12 @@ impl Database {
 
         if let Some(episodes) = format::load_directory::<_, SeriesId, Episode>(&paths.episodes)? {
             for (id, _format, mut episodes) in episodes {
-                for e in &mut episodes {
-                    if let Some(filename) = e.compat_filename.take() {
-                        e.graphics.filename = Some(filename.into_v2());
-                        db.changes.add_series(&id);
-                    }
-                }
-
                 db.episodes.insert(id, episodes);
             }
         }
 
         if let Some(seasons) = format::load_directory::<_, SeriesId, Season>(&paths.seasons)? {
             for (id, _format, mut seasons) in seasons {
-                for s in &mut seasons {
-                    if let Some(poster) = s.compat_poster.take() {
-                        s.graphics.poster = Some(poster.into_v2());
-                        db.changes.add_series(&id);
-                    }
-                }
-
                 db.seasons.insert(id, seasons);
             }
         }
@@ -398,43 +383,4 @@ async fn remove_all<const N: usize>(what: &'static str, paths: [&Path; N]) -> Re
     }
 
     Ok(())
-}
-
-/// Migrate series from old unsupported formats.
-#[allow(deprecated)]
-fn migrate_series(db: &mut Database, s: &mut Series) {
-    if let Some(image) = s.compat_poster.take() {
-        s.graphics.poster = Some(image.into_v2());
-        db.changes.change(Change::Series);
-    }
-
-    if let Some(image) = s.compat_banner.take() {
-        s.graphics.banner = Some(image.into_v2());
-        db.changes.change(Change::Series);
-    }
-
-    if let Some(image) = s.compat_fanart.take() {
-        s.graphics.fanart = Some(image.into_v2());
-        db.changes.change(Change::Series);
-    }
-
-    if let Some(remote_id) = s.remote_id {
-        if let Some(etag) = s.compat_last_etag.take() {
-            if db.sync.update_last_etag(remote_id, Some(etag)) {
-                db.changes.change(Change::Sync);
-            }
-        }
-
-        if let Some(last_modified) = s.compat_last_modified.take() {
-            if db.sync.update_last_modified(remote_id, Some(last_modified)) {
-                db.changes.change(Change::Sync);
-            }
-        }
-    }
-
-    for (remote_id, last_sync) in std::mem::take(&mut s.compat_last_sync) {
-        if db.sync.import_last_sync(remote_id, last_sync) {
-            db.changes.change(Change::Sync);
-        }
-    }
 }
