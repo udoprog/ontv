@@ -6,15 +6,14 @@ use axum::routing::get;
 use axum::Router;
 use rust_embed::RustEmbed;
 
-pub(crate) static BIND: &str = "127.0.0.1:44614";
+use super::common_routes;
 
 pub(crate) fn router() -> Router {
     let router = Router::new().route("/", get(index_handler));
-
-    let router = super::common_routes(router);
+    let router = common_routes(router);
 
     router
-        .route("/*file", get(static_handler))
+        .route("/{*file}", get(static_handler))
         .fallback(index_handler)
 }
 
@@ -34,8 +33,6 @@ pub struct StaticFile(Cow<'static, str>);
 
 impl IntoResponse for StaticFile {
     fn into_response(self) -> Response {
-        tracing::info!("here");
-
         match Asset::get(self.0.as_ref()) {
             Some(content) => {
                 let mime = mime_guess::from_path(self.0.as_ref()).first_or_octet_stream();

@@ -21,14 +21,14 @@ use tokio::time::Duration;
 use tokio_stream::StreamExt;
 use tracing::{Instrument, Level};
 
-use crate::service::Service;
+use crate::backend::Backend;
 
 struct Handler {
-    service: Arc<RwLock<Service>>,
+    service: Arc<RwLock<Backend>>,
 }
 
 impl Handler {
-    fn new(service: Arc<RwLock<Service>>) -> Self {
+    fn new(service: Arc<RwLock<Backend>>) -> Self {
         Self { service }
     }
 }
@@ -59,7 +59,7 @@ impl ws::Handler for Handler {
 
 pub(super) async fn entry(
     ws: WebSocketUpgrade,
-    Extension(service): Extension<Arc<RwLock<Service>>>,
+    Extension(service): Extension<Arc<RwLock<Backend>>>,
     ConnectInfo(remote): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
@@ -86,9 +86,9 @@ pub(super) async fn entry(
             .and_then(|v| v.to_str().ok());
 
         let host = headers.get("host").and_then(|v| v.to_str().ok());
-
         let host = x_forwarded_host.or(host);
+
         let span = tracing::span!(Level::INFO, "ws", ?remote, host);
-        future
+        future.instrument(span)
     })
 }

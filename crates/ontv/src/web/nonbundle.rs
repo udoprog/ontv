@@ -1,7 +1,7 @@
 use axum::Router;
 
-pub(crate) static BIND: &str = "127.0.0.1:44614";
+use super::common_routes;
 
 pub(crate) fn router() -> Router {
-    super::common_routes(Router::new())
+    common_routes(Router::new())
 }

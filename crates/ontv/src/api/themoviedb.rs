@@ -15,8 +15,8 @@ use serde::Deserialize;
 use serde_repr::Deserialize_repr;
 
 use crate::api::common;
+use crate::backend::{NewEpisode, UpdateMovie, UpdateSeries};
 use crate::model::*;
-use crate::service::{NewEpisode, UpdateMovie, UpdateSeries};
 
 const BASE_URL: &str = "https://api.themoviedb.org/3";
 const IMAGE_URL: &str = "https://image.tmdb.org";

@@ -119,6 +119,7 @@
 
 mod api;
 mod assets;
+mod backend;
 mod cache;
 mod database;
 pub mod import;
@@ -126,9 +127,9 @@ pub mod lock;
 mod model;
 mod queue;
 mod search;
-mod service;
 mod web;
 
+use core::pin::pin;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -137,35 +138,28 @@ use tokio::net::TcpListener;
 use tokio::runtime::Builder;
 use tokio::sync::RwLock;
 
-pub use self::service::Service;
+pub use self::backend::Backend;
+use self::web::default_bind;
 
-/// Run the GUI application.
-pub fn run(service: service::Service) -> Result<()> {
-    let addr: SocketAddr = self::web::BIND.parse()?;
+pub async fn run(b: Backend, bundle: bool) -> Result<()> {
+    let addr: SocketAddr = default_bind(bundle).parse()?;
 
-    let service = Arc::new(RwLock::new(service));
+    let service = Arc::new(RwLock::new(b));
 
-    Builder::new_multi_thread()
-        .enable_all()
-        .build()?
-        .block_on(async move {
-            tracing::info!("Starting OnTV web service on http://{addr}");
+    tracing::info!("Listening on http://{addr}");
 
-            let listener = TcpListener::bind(addr).await?;
-            let future = web::setup(listener, service.clone())?;
+    let listener = TcpListener::bind(addr).await?;
+    let mut future = pin!(web::setup(listener, service.clone(), bundle)?);
 
-            loop {
-                tokio::select! {
-                    result = future => {
-                        result?;
-                        tracing::info!("Service shut down");
-                        break;
-                    }
-                }
+    loop {
+        tokio::select! {
+            result = future.as_mut() => {
+                result?;
+                tracing::info!("Web shut down gracefully");
+                break;
             }
-
-            Ok::<_, anyhow::Error>(())
-        })?;
+        }
+    }
 
     Ok(())
 }

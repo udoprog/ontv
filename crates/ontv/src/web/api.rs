@@ -10,12 +10,12 @@ use tokio::fs;
 use tokio::sync::RwLock;
 
 use crate::assets::ImageKey;
-use crate::Service;
+use crate::Backend;
 
 use super::WebError;
 
 pub(super) async fn image(
-    Extension(service): Extension<Arc<RwLock<Service>>>,
+    Extension(service): Extension<Arc<RwLock<Backend>>>,
     Path((hint, image)): Path<(ImageHint, ImageV2)>,
 ) -> Result<impl IntoResponse, WebError> {
     let service = service.read().await;

@@ -13,8 +13,8 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::api::common;
+use crate::backend::{NewEpisode, UpdateSeries};
 use crate::model::*;
-use crate::service::{NewEpisode, UpdateSeries};
 
 const BASE_URL: &str = "https://api.thetvdb.com";
 const ARTWORKS_URL: &str = "https://artworks.thetvdb.com";

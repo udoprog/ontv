@@ -133,7 +133,7 @@ impl<'a> PendingRef<'a> {
 }
 
 /// Background service taking care of all state handling.
-pub struct Service {
+pub struct Backend {
     paths: Arc<paths::Paths>,
     db: Database,
     tvdb: thetvdb::Client,
@@ -143,7 +143,7 @@ pub struct Service {
     now: NaiveDate,
 }
 
-impl Service {
+impl Backend {
     /// Construct and setup in-memory state of
     pub fn new(config: &Path, cache: &Path) -> Result<Self> {
         let paths = paths::Paths::new(config, cache);

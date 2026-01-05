@@ -1,18 +1,12 @@
 #[cfg(feature = "bundle")]
-#[path = "bundle.rs"]
-mod r#impl;
-
-#[cfg(not(feature = "bundle"))]
-#[path = "nonbundle.rs"]
-mod r#impl;
-
-pub(crate) use self::r#impl::BIND;
+mod bundle;
+mod nonbundle;
 
 mod api;
 mod ws;
 
+use crate::backend::Backend;
 use crate::model::Config;
-use crate::service::Service;
 
 /// Error type for web module.
 pub struct WebError {
@@ -58,7 +52,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use ::api::{DashboardDay, DashboardEpisode, DashboardSeries, DashboardUpdateEvent};
-use anyhow::Result;
+use anyhow::{bail, Result};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::get;
@@ -67,15 +61,33 @@ use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tower_http::cors::{AllowMethods, AllowOrigin, CorsLayer};
 
+pub(crate) fn default_bind(bundle: bool) -> &'static str {
+    #[cfg(feature = "bundle")]
+    if bundle {
+        return "127.0.0.1:8080";
+    }
+
+    "127.0.0.1:44614"
+}
+
 pub(crate) fn setup(
     listener: TcpListener,
-    service: Arc<RwLock<Service>>,
+    service: Arc<RwLock<Backend>>,
+    bundle: bool,
 ) -> Result<impl Future<Output = Result<()>>> {
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::any())
         .allow_methods(AllowMethods::any());
 
-    let app = self::r#impl::router().layer(Extension(service)).layer(cors);
+    let app = match bundle {
+        #[cfg(feature = "bundle")]
+        true => self::bundle::router,
+        #[cfg(not(feature = "bundle"))]
+        true => bail!("cannot setup, bundle feature not enabled"),
+        _ => self::nonbundle::router,
+    };
+
+    let app = app().layer(Extension(service)).layer(cors);
 
     let service = axum::serve(
         listener,
@@ -94,7 +106,7 @@ fn common_routes(router: Router) -> Router {
     router
 }
 
-fn dashboard_update(service: &Service) -> DashboardUpdateEvent<'_> {
+fn dashboard_update(service: &Backend) -> DashboardUpdateEvent<'_> {
     let mut days = Vec::new();
 
     for (n, day) in service.schedule().iter().enumerate() {

@@ -10,7 +10,7 @@ use anyhow::{anyhow, Context, Error, Result};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::service::paths;
+use crate::backend::paths;
 
 pub(crate) enum Format {
     Yaml,

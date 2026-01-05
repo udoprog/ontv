@@ -19,8 +19,7 @@ exclude = [
 ]
 
 [features]
-default = []
-cli = []
+default = ["bundle"]
 bundle = ["dep:rust-embed"]
 
 [dependencies]

@@ -19,11 +19,11 @@ use tracing_futures::Instrument;
 
 pub(crate) use self::episodes::EpisodeRef;
 pub(crate) use self::seasons::SeasonRef;
+use crate::backend::paths;
 use crate::model::{
     Config, Episode, Movie, MovieId, Pending, RemoteIds, Season, Series, SeriesId, Watched,
 };
 use crate::queue::Queue;
-use crate::service::paths;
 
 #[derive(Default)]
 pub(crate) struct Database {

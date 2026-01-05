@@ -7,22 +7,18 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::runtime;
 
+use crate::backend::Backend;
 use crate::model::{Raw, RemoteId, SeriesId};
 use crate::search::Tokens;
-use crate::service::Service;
 
 /// Import trakt watched history from the given path.
-pub fn import_trakt_watched(
-    service: &mut Service,
+pub async fn import_trakt_watched(
+    service: &mut Backend,
     path: &Path,
     filter: Option<&str>,
     remove: bool,
     import_missing: bool,
 ) -> Result<()> {
-    let runtime = runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
-
     let filter = filter.map(Tokens::new);
 
     let f = File::open(path)?;
@@ -58,12 +54,7 @@ pub fn import_trakt_watched(
         let series_id = match service.existing_by_remote_ids(ids) {
             Some(series_id) => {
                 if service.series(&series_id).is_none() && import_missing {
-                    let Some(..) = runtime.block_on(download_series(
-                        service,
-                        &now,
-                        &entry,
-                        &tmdb_remote_id,
-                    ))?
+                    let Some(..) = download_series(service, &now, &entry, &tmdb_remote_id).await?
                     else {
                         continue;
                     };
@@ -80,8 +71,7 @@ pub fn import_trakt_watched(
                     continue;
                 };
 
-                let Some(id) =
-                    runtime.block_on(download_series(service, &now, &entry, &tmdb_remote_id))?
+                let Some(id) = download_series(service, &now, &entry, &tmdb_remote_id).await?
                 else {
                     continue;
                 };
@@ -121,15 +111,14 @@ pub fn import_trakt_watched(
         }
 
         service.populate_pending(&now, &series_id);
-        runtime.block_on(service.save_changes())?;
+        service.save_changes().await?;
     }
 
-    runtime.shutdown_background();
     Ok(())
 }
 
 async fn download_series(
-    service: &mut Service,
+    service: &mut Backend,
     now: &DateTime<Utc>,
     entry: &Entry,
     remote_id: &RemoteId,

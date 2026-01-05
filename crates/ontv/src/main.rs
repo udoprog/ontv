@@ -1,10 +1,11 @@
-#![cfg_attr(all(not(feature = "cli"), windows), windows_subsystem = "windows")]
-
 use std::env;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use directories_next::ProjectDirs;
+use ontv::Backend;
+use tokio::runtime::Builder;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
@@ -36,6 +37,9 @@ struct Opts {
     /// Print project paths.
     #[arg(long)]
     paths: bool,
+    /// Work as development server.
+    #[arg(long)]
+    dev: bool,
 }
 
 pub fn main() -> Result<()> {
@@ -62,8 +66,7 @@ pub fn main() -> Result<()> {
 
     let opts = Opts::try_parse()?;
 
-    let dirs = directories_next::ProjectDirs::from("se.tedro", "setbac", "OnTV")
-        .context("missing project dirs")?;
+    let dirs = ProjectDirs::from("se.tedro", "setbac", "OnTV").context("missing project dirs")?;
 
     let config = match &opts.config {
         Some(config) => config,
@@ -77,22 +80,28 @@ pub fn main() -> Result<()> {
         tracing::info!("Cache: {}", cache.display());
     }
 
-    let mut service = ontv::Service::new(config, cache)?;
+    let mut b = Backend::new(config, cache)?;
 
     if opts.test {
-        service.do_not_save();
+        b.do_not_save();
     }
 
-    if let Some(path) = opts.import_trakt_watched {
-        ontv::import::import_trakt_watched(
-            &mut service,
-            &path,
-            opts.import_filter.as_deref(),
-            opts.import_remove,
-            opts.import_missing,
-        )?;
-    }
+    let runtime = Builder::new_current_thread().enable_all().build()?;
 
-    ontv::run(service)?;
-    Ok(())
+    runtime.block_on(async move {
+        if let Some(path) = opts.import_trakt_watched {
+            let import = ontv::import::import_trakt_watched(
+                &mut b,
+                &path,
+                opts.import_filter.as_deref(),
+                opts.import_remove,
+                opts.import_missing,
+            );
+
+            import.await?;
+        }
+
+        ontv::run(b, !opts.dev).await?;
+        Ok(())
+    })
 }

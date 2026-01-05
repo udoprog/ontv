@@ -527,7 +527,7 @@ pub(crate) struct Series {
 impl Series {
     /// Construct a new series from a series update.
     #[allow(deprecated)]
-    pub(crate) fn new_series(update: crate::service::UpdateSeries) -> Self {
+    pub(crate) fn new_series(update: crate::backend::UpdateSeries) -> Self {
         Self {
             id: update.id,
             title: update.title,
@@ -540,7 +540,7 @@ impl Series {
     }
 
     /// Merge this series from another.
-    pub(crate) fn merge_from(&mut self, other: crate::service::UpdateSeries) {
+    pub(crate) fn merge_from(&mut self, other: crate::backend::UpdateSeries) {
         self.title = other.title;
         self.first_air_date = other.first_air_date;
         self.overview = other.overview;
@@ -647,7 +647,7 @@ pub(crate) struct Movie {
 
 impl Movie {
     /// Construct a new series from a series update.
-    pub(crate) fn new_movie(update: crate::service::UpdateMovie) -> Self {
+    pub(crate) fn new_movie(update: crate::backend::UpdateMovie) -> Self {
         let earliest_releases = build_earliest_releases(&update.release_dates);
 
         Self {
@@ -682,7 +682,7 @@ impl Movie {
     }
 
     /// Merge this movie from an update.
-    pub(crate) fn merge_from(&mut self, other: crate::service::UpdateMovie) {
+    pub(crate) fn merge_from(&mut self, other: crate::backend::UpdateMovie) {
         let earliest_releases = build_earliest_releases(&other.release_dates);
 
         self.title = other.title;
