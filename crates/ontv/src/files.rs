@@ -19,11 +19,11 @@ use tracing_futures::Instrument;
 
 pub(crate) use self::episodes::EpisodeRef;
 pub(crate) use self::seasons::SeasonRef;
-use crate::backend::paths;
 use crate::model::{
     Config, Episode, Movie, MovieId, Pending, RemoteIds, Season, Series, SeriesId, Watched,
 };
 use crate::queue::Queue;
+use crate::Paths;
 
 #[derive(Default)]
 pub(crate) struct Files {
@@ -53,7 +53,7 @@ pub(crate) struct Files {
 
 impl Files {
     /// Try to load initial state.
-    pub(crate) fn load(paths: &paths::Paths) -> Result<Self> {
+    pub(crate) fn load(paths: &Paths) -> Result<Self> {
         let mut db = Self::default();
 
         if let Some((format, config)) =
@@ -125,133 +125,6 @@ impl Files {
         }
 
         Ok(db)
-    }
-
-    /// Save any pending changes.
-    pub(crate) fn save_changes(
-        &mut self,
-        paths: &Arc<paths::Paths>,
-        do_not_save: bool,
-    ) -> impl Future<Output = Result<()>> {
-        let changes = std::mem::take(&mut self.changes);
-
-        let config = changes
-            .set
-            .contains(Change::Config)
-            .then(|| self.config.clone());
-
-        let sync = changes
-            .set
-            .contains(Change::Sync)
-            .then(|| self.sync.export());
-
-        let watched = changes
-            .set
-            .contains(Change::Watched)
-            .then(|| self.watched.export(&self.episodes));
-
-        let pending = changes
-            .set
-            .contains(Change::Pending)
-            .then(|| self.pending.export());
-
-        let series = changes
-            .set
-            .contains(Change::Series)
-            .then(|| self.series.export());
-
-        let movies = changes
-            .set
-            .contains(Change::Movie)
-            .then(|| self.movies.export());
-
-        let remove_series = changes.remove_series;
-        let mut add_series = Vec::with_capacity(changes.add_series.len());
-
-        for id in changes.add_series {
-            let episodes = self.episodes.by_series(&id);
-            let seasons = self.seasons.by_series(&id);
-            add_series.push((id, episodes.export(), seasons.export()));
-        }
-
-        let _ = changes.remove_movies;
-        let _ = changes.add_movies;
-
-        let remotes = if changes.set.contains(Change::Remotes) {
-            Some(self.remotes.export())
-        } else {
-            None
-        };
-
-        let paths = paths.clone();
-        let changes = changes.set;
-
-        let future = async move {
-            if do_not_save {
-                return Ok(());
-            }
-
-            tracing::info!(?changes, "Saving database");
-
-            let guard = paths.lock.lock().await;
-
-            if let Some(config) = config {
-                format::save_pretty("config", &paths.config, config).await?;
-            }
-
-            if let Some(sync) = sync {
-                format::save_array("sync", &paths.sync, sync).await?;
-            }
-
-            if let Some(series) = series {
-                format::save_array("series", &paths.series, series)
-                    .await
-                    .context("series")?;
-            }
-
-            if let Some(movies) = movies {
-                format::save_array("movies", &paths.movies, movies)
-                    .await
-                    .context("movies")?;
-            }
-
-            if let Some(watched) = watched {
-                format::save_array("watched", &paths.watched, watched)
-                    .await
-                    .context("watched")?;
-            }
-
-            if let Some(pending) = pending {
-                format::save_array("pending", &paths.pending, pending)
-                    .await
-                    .context("pending")?;
-            }
-
-            if let Some(remotes) = remotes {
-                format::save_array("remotes", &paths.remotes, remotes).await?;
-            }
-
-            for series_id in remove_series {
-                let episodes_path = paths.episodes.join(format!("{series_id}"));
-                let seasons_path = paths.seasons.join(format!("{series_id}"));
-                let a = remove_all("episodes", episodes_path.all());
-                let b = remove_all("seasons", seasons_path.all());
-                let _ = tokio::try_join!(a, b)?;
-            }
-
-            for (series_id, episodes, seasons) in add_series {
-                let episodes_path = paths.episodes.join(format!("{series_id}"));
-                let seasons_path = paths.seasons.join(format!("{series_id}"));
-                let a = format::save_array("episodes", &episodes_path, episodes);
-                let b = format::save_array("seasons", &seasons_path, seasons);
-                let _ = tokio::try_join!(a, b)?;
-            }
-
-            drop(guard);
-            Ok(())
-        };
-
-        future.in_current_span()
     }
 }
 

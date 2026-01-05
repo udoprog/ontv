@@ -1,5 +1,3 @@
-pub(crate) mod paths;
-
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::future::Future;
@@ -23,6 +21,7 @@ use crate::cache::{self};
 use crate::files::{Change, EpisodeRef, Files, SeasonRef};
 use crate::model::*;
 use crate::queue::{CompletedTask, Task, TaskKind, TaskRef, TaskStatus};
+use crate::Paths;
 
 // Cache series updates for 12 hours.
 const CACHE_TIME: i64 = 3600 * 12;
@@ -142,7 +141,7 @@ impl<'a> PendingRef<'a> {
 
 /// Background service taking care of all state handling.
 pub struct Backend {
-    paths: Arc<paths::Paths>,
+    paths: Arc<Paths>,
     db: Files,
     tvdb: thetvdb::Client,
     tmdb: themoviedb::Client,
@@ -154,7 +153,7 @@ pub struct Backend {
 impl Backend {
     /// Construct and setup in-memory state of
     pub fn new(config: &Path, cache: &Path) -> Result<Self> {
-        let paths = paths::Paths::new(config, cache);
+        let paths = Paths::new(config, cache);
 
         if !paths.images.is_dir() {
             tracing::debug!("Creating images directory: {}", paths.images.display());
@@ -813,18 +812,6 @@ impl Backend {
 
             self.db.changes.change(Change::Pending);
         }
-    }
-
-    /// Save changes made.
-    #[tracing::instrument(skip(self))]
-    pub(crate) fn save_changes(&mut self) -> impl Future<Output = Result<()>> {
-        if self.db.changes.contains(Change::Series) || self.db.changes.contains(Change::Schedule) {
-            self.rebuild_schedule();
-        }
-
-        self.db
-            .save_changes(&self.paths, self.do_not_save)
-            .in_current_span()
     }
 
     /// Populate pending from a series where we don't know which episode to

@@ -10,7 +10,8 @@ use anyhow::{anyhow, Context, Error, Result};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::backend::paths;
+use crate::paths::Candidate;
+use crate::Paths;
 
 pub(crate) enum Format {
     Yaml,
@@ -113,7 +114,7 @@ where
 }
 
 /// Load configuration file.
-pub(crate) fn load<T>(path: &paths::Candidate) -> Result<Option<(Format, T)>>
+pub(crate) fn load<T>(path: &Candidate) -> Result<Option<(Format, T)>>
 where
     T: DeserializeOwned,
 {
@@ -138,11 +139,7 @@ where
 }
 
 /// Save pretty.
-pub(crate) async fn save_pretty<T>(
-    what: &'static str,
-    path: &paths::Candidate,
-    data: T,
-) -> Result<()>
+pub(crate) async fn save_pretty<T>(what: &'static str, path: &Candidate, data: T) -> Result<()>
 where
     T: 'static + Send + Serialize,
 {
@@ -202,11 +199,7 @@ where
 }
 
 /// Save array to the given paths.
-pub(crate) async fn save_array<I>(
-    what: &'static str,
-    path: &paths::Candidate,
-    data: I,
-) -> Result<()>
+pub(crate) async fn save_array<I>(what: &'static str, path: &Candidate, data: I) -> Result<()>
 where
     I: 'static + Send + IntoIterator,
     I::Item: Serialize,
@@ -326,7 +319,7 @@ where
 }
 
 /// Load an array from one of several locations.
-pub(crate) fn load_array<T>(path: &paths::Candidate) -> Result<Option<(Format, Vec<T>)>>
+pub(crate) fn load_array<T>(path: &Candidate) -> Result<Option<(Format, Vec<T>)>>
 where
     T: DeserializeOwned,
 {

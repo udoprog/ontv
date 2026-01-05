@@ -121,10 +121,12 @@ mod api;
 mod assets;
 mod backend;
 mod cache;
+mod database;
 mod files;
 pub mod import;
 pub mod lock;
 mod model;
+mod paths;
 mod queue;
 mod search;
 mod web;
@@ -139,6 +141,7 @@ use tokio::runtime::Builder;
 use tokio::sync::RwLock;
 
 pub use self::backend::Backend;
+use self::paths::Paths;
 use self::web::default_bind;
 
 pub async fn run(b: Backend, bundle: bool) -> Result<()> {

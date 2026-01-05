@@ -111,7 +111,6 @@ pub async fn import_trakt_watched(
         }
 
         service.populate_pending(&now, &series_id);
-        service.save_changes().await?;
     }
 
     Ok(())
@@ -138,7 +137,6 @@ async fn download_series(
 
     let series_id = new_series.series.id;
     service.insert_series(now, new_series);
-    service.save_changes().await?;
     Ok(Some(series_id))
 }
 

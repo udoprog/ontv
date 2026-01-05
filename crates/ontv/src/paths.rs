@@ -68,7 +68,6 @@ impl AsRef<Path> for Directory {
 }
 
 pub(crate) struct Paths {
-    pub(crate) lock: tokio::sync::Mutex<()>,
     pub(crate) config: Candidate,
     pub(crate) sync: Candidate,
     pub(crate) remotes: Candidate,
@@ -85,7 +84,6 @@ impl Paths {
     /// Construct a new collection of paths.
     pub(crate) fn new(config: &Path, cache: &Path) -> Self {
         Self {
-            lock: tokio::sync::Mutex::new(()),
             config: Candidate::new(config.join("config")),
             sync: Candidate::new(config.join("sync")),
             remotes: Candidate::new(config.join("remotes")),
