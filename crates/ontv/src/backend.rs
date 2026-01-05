@@ -9,8 +9,11 @@ use std::sync::Arc;
 use anyhow::{anyhow, bail, Context, Error, Result};
 use api::ImageHint;
 use api::{ImageV2, SeasonNumber};
-use chrono::{DateTime, Days, Local, NaiveDate, Utc};
 use futures::stream::FuturesUnordered;
+use jiff::civil::Date;
+use jiff::tz::TimeZone;
+use jiff::ToSpan;
+use jiff::{Timestamp, Zoned};
 use tracing_futures::Instrument;
 
 use crate::api::themoviedb;
@@ -31,7 +34,7 @@ pub(crate) struct UpdateMovie {
     pub(crate) title: String,
     #[allow(unused)]
     pub(crate) language: Option<String>,
-    pub(crate) release_date: Option<NaiveDate>,
+    pub(crate) release_date: Option<Date>,
     pub(crate) overview: String,
     pub(crate) graphics: MovieGraphics,
     pub(crate) remote_id: RemoteId,
@@ -44,7 +47,7 @@ pub(crate) struct UpdateSeries {
     pub(crate) id: SeriesId,
     pub(crate) title: String,
     pub(crate) language: Option<String>,
-    pub(crate) first_air_date: Option<NaiveDate>,
+    pub(crate) first_air_date: Option<Date>,
     pub(crate) overview: String,
     pub(crate) graphics: SeriesGraphics,
     pub(crate) remote_id: RemoteId,
@@ -63,7 +66,7 @@ pub(crate) struct NewSeries {
     pub(crate) series: UpdateSeries,
     pub(crate) remote_ids: BTreeSet<RemoteId>,
     pub(crate) last_etag: Option<Etag>,
-    pub(crate) last_modified: Option<DateTime<Utc>>,
+    pub(crate) last_modified: Option<Timestamp>,
     pub(crate) episodes: Vec<NewEpisode>,
     pub(crate) seasons: Vec<Season>,
 }
@@ -74,7 +77,7 @@ pub(crate) struct NewMovie {
     pub(crate) movie: UpdateMovie,
     pub(crate) remote_ids: BTreeSet<RemoteId>,
     pub(crate) last_etag: Option<Etag>,
-    pub(crate) last_modified: Option<DateTime<Utc>>,
+    pub(crate) last_modified: Option<Timestamp>,
 }
 
 /// A pending thing to watch.
@@ -92,10 +95,15 @@ pub(crate) enum PendingRef<'a> {
 
 impl<'a> PendingRef<'a> {
     /// Get the date at which the pending item is airs or is released.
-    pub(crate) fn date(&self) -> Option<NaiveDate> {
+    pub(crate) fn date(&self) -> Option<Date> {
         match self {
             PendingRef::Episode { episode, .. } => episode.aired,
-            PendingRef::Movie { movie } => Some(movie.earliest_release_date()?.date_naive()),
+            PendingRef::Movie { movie } => Some(
+                movie
+                    .earliest_release_date()?
+                    .to_zoned(TimeZone::UTC)
+                    .date(),
+            ),
         }
     }
 
@@ -116,7 +124,7 @@ impl<'a> PendingRef<'a> {
     }
 
     /// Test if episode will air in the future.
-    pub(crate) fn will_air(&self, today: &NaiveDate) -> bool {
+    pub(crate) fn will_air(&self, today: &Date) -> bool {
         match self {
             PendingRef::Episode { episode, .. } => episode.will_air(today),
             PendingRef::Movie { movie } => movie.will_release(today),
@@ -124,7 +132,7 @@ impl<'a> PendingRef<'a> {
     }
 
     /// Test if pending ref has aired.
-    pub(crate) fn has_aired(&self, today: &NaiveDate) -> bool {
+    pub(crate) fn has_aired(&self, today: &Date) -> bool {
         match self {
             PendingRef::Episode { episode, .. } => episode.has_aired(today),
             PendingRef::Movie { movie } => movie.has_released(today),
@@ -140,7 +148,7 @@ pub struct Backend {
     tmdb: themoviedb::Client,
     do_not_save: bool,
     schedule: Vec<ScheduledDay>,
-    now: NaiveDate,
+    now: Timestamp,
 }
 
 impl Backend {
@@ -157,7 +165,7 @@ impl Backend {
         let tvdb = thetvdb::Client::new(db.config.tvdb_legacy_apikey.as_str())?;
         let tmdb = themoviedb::Client::new(db.config.tmdb_api_key.as_str())?;
 
-        let now = Local::now();
+        let now = Timestamp::now();
 
         let mut this = Self {
             paths: Arc::new(paths),
@@ -166,16 +174,16 @@ impl Backend {
             tmdb,
             do_not_save: false,
             schedule: Vec::new(),
-            now: now.date_naive(),
+            now,
         };
 
         this.rebuild_schedule();
         Ok(this)
     }
 
-    /// Naive date.
-    pub(crate) fn now(&self) -> &NaiveDate {
-        &self.now
+    /// Current timestamp.
+    pub(crate) fn now(&self) -> Timestamp {
+        self.now
     }
 
     /// A scheduled day.
@@ -348,7 +356,7 @@ impl Backend {
     }
 
     /// Find updates that need to be performed.
-    pub(crate) fn find_updates(&mut self, now: &DateTime<Utc>) {
+    pub(crate) fn find_updates(&mut self, now: &Timestamp) {
         for s in self.db.series.iter() {
             // Ignore series which are no longer tracked.
             if !s.tracked {
@@ -362,14 +370,14 @@ impl Backend {
             // Reduce the number of API requests by ensuring we don't check for
             // updates more than each CACHE_TIME interval.
             if let Some(last_sync) = self.db.sync.last_sync(&remote_id) {
-                if now.signed_duration_since(*last_sync).num_seconds() < CACHE_TIME {
+                if now.duration_since(*last_sync).as_secs() < CACHE_TIME {
                     continue;
                 }
             }
 
             let last_modified = self.db.sync.last_modified(&remote_id).copied();
 
-            if matches!(last_modified, Some(last_modified) if now.signed_duration_since(last_modified).num_seconds() < CACHE_TIME)
+            if matches!(last_modified, Some(last_modified) if now.duration_since(last_modified).as_secs() < CACHE_TIME)
             {
                 continue;
             }
@@ -400,14 +408,14 @@ impl Backend {
             // Reduce the number of API requests by ensuring we don't check for
             // updates more than each CACHE_TIME interval.
             if let Some(last_sync) = self.db.sync.last_sync(&remote_id) {
-                if now.signed_duration_since(*last_sync).num_seconds() < CACHE_TIME {
+                if now.duration_since(*last_sync).as_secs() < CACHE_TIME {
                     continue;
                 }
             }
 
             let last_modified = self.db.sync.last_modified(&remote_id).copied();
 
-            if matches!(last_modified, Some(last_modified) if now.signed_duration_since(last_modified).num_seconds() < CACHE_TIME)
+            if matches!(last_modified, Some(last_modified) if now.duration_since(last_modified).as_secs() < CACHE_TIME)
             {
                 continue;
             }
@@ -431,7 +439,7 @@ impl Backend {
         &mut self,
         series_id: SeriesId,
         remote_id: RemoteId,
-        last_modified: Option<DateTime<Utc>>,
+        last_modified: Option<Timestamp>,
     ) -> impl Future<Output = Result<Option<TaskKind>>> {
         let tvdb = self.tvdb.clone();
 
@@ -476,19 +484,19 @@ impl Backend {
     }
 
     /// Add updates to download to the queue.
-    pub(crate) fn push_task(&mut self, now: &DateTime<Utc>, task: TaskKind) {
+    pub(crate) fn push_task(&mut self, now: &Timestamp, task: TaskKind) {
         self.db.tasks.push(now, task);
     }
 
     /// Mark an episode as watched at the given timestamp.
     pub(crate) fn watch_remaining_season(
         &mut self,
-        now: &DateTime<Utc>,
+        now: &Zoned,
         series_id: &SeriesId,
         season: &SeasonNumber,
         remaining_season: RemainingSeason,
     ) {
-        let today = now.date_naive();
+        let today = now.date();
         let mut last = None;
 
         for episode in self
@@ -507,7 +515,7 @@ impl Backend {
             }
 
             let timestamp = match remaining_season {
-                RemainingSeason::Aired => *now,
+                RemainingSeason::Aired => now.timestamp(),
                 RemainingSeason::AirDate => {
                     let Some(air_date) = episode.aired_timestamp() else {
                         continue;
@@ -541,7 +549,7 @@ impl Backend {
     #[tracing::instrument(skip(self))]
     pub(crate) fn watch(
         &mut self,
-        now: &DateTime<Utc>,
+        now: &Zoned,
         episode_id: &EpisodeId,
         remaining_season: RemainingSeason,
     ) {
@@ -553,7 +561,7 @@ impl Backend {
         };
 
         let timestamp = match remaining_season {
-            RemainingSeason::Aired => *now,
+            RemainingSeason::Aired => now.timestamp(),
             RemainingSeason::AirDate => {
                 let Some(air_date) = episode.aired_timestamp() else {
                     return;
@@ -580,7 +588,7 @@ impl Backend {
     #[tracing::instrument(skip(self))]
     pub(crate) fn watch_movie(
         &mut self,
-        now: &DateTime<Utc>,
+        now: &Timestamp,
         movie: &MovieId,
         remaining_season: RemainingSeason,
     ) {
@@ -617,21 +625,21 @@ impl Backend {
 
     /// Skip an episode.
     #[tracing::instrument(skip(self))]
-    pub(crate) fn skip(&mut self, now: &DateTime<Utc>, series_id: &SeriesId, id: &EpisodeId) {
+    pub(crate) fn skip(&mut self, now: &Zoned, series_id: &SeriesId, id: &EpisodeId) {
         tracing::trace!("Skipping episode");
         self.populate_pending_from(now, series_id, id);
     }
 
     /// Skip an episode.
     #[tracing::instrument(skip(self))]
-    pub(crate) fn skip_movie(&mut self, now: &DateTime<Utc>, id: &MovieId) {
+    pub(crate) fn skip_movie(&mut self, now: &Timestamp, id: &MovieId) {
         tracing::trace!("Skipping movie");
         self.db.pending.remove_movie(id);
     }
 
     /// Select the next pending episode to use for a show.
     #[tracing::instrument(skip(self))]
-    pub(crate) fn select_pending(&mut self, now: &DateTime<Utc>, episode_id: &EpisodeId) {
+    pub(crate) fn select_pending(&mut self, now: &Timestamp, episode_id: &EpisodeId) {
         tracing::trace!("Selecting pending series");
 
         let Some(episode) = self.db.episodes.get(episode_id) else {
@@ -665,7 +673,7 @@ impl Backend {
 
     /// Select the next pending movie.
     #[tracing::instrument(skip(self))]
-    pub(crate) fn select_pending_movie(&mut self, now: &DateTime<Utc>, movie_id: &MovieId) {
+    pub(crate) fn select_pending_movie(&mut self, now: &Timestamp, movie_id: &MovieId) {
         tracing::trace!("Selecting pending movie");
 
         let m = self.db.movies.get(movie_id);
@@ -759,7 +767,7 @@ impl Backend {
     #[tracing::instrument(skip(self))]
     pub(crate) fn remove_season_watches(
         &mut self,
-        now: &DateTime<Utc>,
+        now: &Timestamp,
         series_id: &SeriesId,
         season: &SeasonNumber,
     ) {
@@ -822,7 +830,7 @@ impl Backend {
     /// Populate pending from a series where we don't know which episode to
     /// populate from.
     #[tracing::instrument(skip(self))]
-    pub(crate) fn populate_pending(&mut self, now: &DateTime<Utc>, id: &SeriesId) {
+    pub(crate) fn populate_pending(&mut self, now: &Timestamp, id: &SeriesId) {
         tracing::trace!("Populate pending");
 
         if let Some(pending) = self.db.pending.get(id) {
@@ -867,7 +875,7 @@ impl Backend {
     }
 
     /// Populate pending from a known episode ID.
-    fn populate_pending_from(&mut self, now: &DateTime<Utc>, series_id: &SeriesId, id: &EpisodeId) {
+    fn populate_pending_from(&mut self, now: &Zoned, series_id: &SeriesId, id: &EpisodeId) {
         let Some(e) = self.db.episodes.get(id).and_then(|e| e.next()) else {
             if self.db.pending.remove_series(series_id).is_some() {
                 self.db.changes.change(Change::Pending);
@@ -877,7 +885,10 @@ impl Backend {
         };
 
         self.db.changes.change(Change::Pending);
-        let timestamp = e.aired_timestamp().map(|t| t.max(*now)).unwrap_or(*now);
+        let timestamp = e
+            .aired_timestamp()
+            .map(|t| t.max(now.timestamp()))
+            .unwrap_or(now.timestamp());
 
         self.db.pending.extend([Pending {
             timestamp,
@@ -1141,7 +1152,7 @@ impl Backend {
 
     /// Insert a new tracked series
     #[tracing::instrument(skip(self))]
-    pub(crate) fn insert_series(&mut self, now: &DateTime<Utc>, data: NewSeries) {
+    pub(crate) fn insert_series(&mut self, now: &Timestamp, data: NewSeries) {
         tracing::info!("Inserting new series");
 
         let series_id = data.series.id;
@@ -1200,7 +1211,7 @@ impl Backend {
 
     /// Insert a new tracked movie.
     #[tracing::instrument(skip(self))]
-    pub(crate) fn insert_movie(&mut self, now: &DateTime<Utc>, data: NewMovie) {
+    pub(crate) fn insert_movie(&mut self, now: &Timestamp, data: NewMovie) {
         tracing::info!("Inserting new movie");
 
         let movie_id = data.movie.id;
@@ -1297,7 +1308,7 @@ impl Backend {
         &mut self,
         series_id: SeriesId,
         episode_id: EpisodeId,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     ) {
         self.db.watched.insert(Watched {
             id: WatchedId::random(),
@@ -1368,12 +1379,11 @@ impl Backend {
 
         let mut days = Vec::new();
 
-        while current
-            .signed_duration_since(self.now)
-            .num_days()
-            .unsigned_abs()
+        while (current.duration_since(self.now).as_hours() / 24).unsigned_abs()
             <= self.config().schedule_duration_days
         {
+            let zoned = current.to_zoned(TimeZone::UTC);
+
             let mut schedule = Vec::new();
 
             for series in self.db.series.iter() {
@@ -1384,11 +1394,11 @@ impl Backend {
                 let mut scheduled_episodes = Vec::new();
 
                 for e in self.episodes(&series.id) {
-                    let Some(air_date) = &e.aired else {
+                    let Some(air_date) = e.aired else {
                         continue;
                     };
 
-                    if *air_date != current {
+                    if air_date != zoned.date() {
                         continue;
                     }
 
@@ -1405,12 +1415,12 @@ impl Backend {
 
             if !schedule.is_empty() {
                 days.push(ScheduledDay {
-                    date: current,
+                    date: zoned.date(),
                     schedule,
                 });
             }
 
-            let Some(next) = current.checked_add_days(Days::new(1)) else {
+            let Ok(next) = current.checked_add(1.days()) else {
                 break;
             };
 
@@ -1428,17 +1438,13 @@ impl Backend {
 
     /// Get the next task in the queue.
     #[inline]
-    pub(crate) fn next_task(
-        &mut self,
-        now: &DateTime<Utc>,
-        timed_out: Option<TaskId>,
-    ) -> Option<Task> {
+    pub(crate) fn next_task(&mut self, now: &Timestamp, timed_out: Option<TaskId>) -> Option<Task> {
         self.db.tasks.next_task(now, timed_out)
     }
 
     /// Next duration to sleep.
     #[inline]
-    pub(crate) fn next_task_sleep(&self, now: &DateTime<Utc>) -> Option<(u64, TaskId)> {
+    pub(crate) fn next_task_sleep(&self, now: &Timestamp) -> Option<(u64, TaskId)> {
         self.db.tasks.next_sleep(now)
     }
 
@@ -1461,7 +1467,7 @@ impl Backend {
 
     /// Mark task as completed.
     #[inline]
-    pub(crate) fn complete_task(&mut self, now: &DateTime<Utc>, task: Task) -> Option<TaskStatus> {
+    pub(crate) fn complete_task(&mut self, now: &Timestamp, task: Task) -> Option<TaskStatus> {
         if let TaskKind::CheckForUpdates {
             remote_id,
             last_modified,
@@ -1528,7 +1534,7 @@ fn episodes_into_seasons(episodes: &[NewEpisode]) -> Vec<Season> {
 }
 
 /// Calculate pending timestamp.
-fn pending_timestamp(now: &DateTime<Utc>, candidates: &[Option<DateTime<Utc>>]) -> DateTime<Utc> {
+fn pending_timestamp(now: &Timestamp, candidates: &[Option<Timestamp>]) -> Timestamp {
     if let Some(timestamp) = candidates.iter().flatten().max() {
         *timestamp
     } else {

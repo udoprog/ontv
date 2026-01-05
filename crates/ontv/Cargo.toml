@@ -31,7 +31,7 @@ axum = { version = "0.8.1", features = ["http1", "json", "query", "tracing", "ht
 base64 = "0.22.1"
 bstr = "1.9.1"
 bytes = { version = "1.6.0", features = ["serde"] }
-chrono = { version = "0.4.38", features = ["serde"] }
+jiff = { version = "0.2.17", default-features = false, features = ["std", "serde"] }
 clap = { version = "4.5.4", features = ["derive"] }
 directories-next = "2.0.0"
 fixed-map = "0.9.5"

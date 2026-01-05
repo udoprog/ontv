@@ -1,15 +1,14 @@
+use core::time::Duration;
+
 use std::collections::{HashMap, VecDeque};
 
 use arrayvec::ArrayVec;
-use chrono::{DateTime, Duration, Utc};
+use jiff::Timestamp;
 
 use crate::model::{MovieId, RemoteId, SeriesId, TaskId};
 
 /// Number of milliseconds of delay to add by default to scheduled tasks.
-const DELAY: Duration = match Duration::try_milliseconds(5000) {
-    Some(duration) => duration,
-    None => panic!("Bad duration"),
-};
+const DELAY: Duration = Duration::from_millis(5000);
 
 /// The current task status.
 #[derive(Debug, Clone, Copy)]
@@ -38,20 +37,20 @@ pub(crate) enum TaskKind {
     CheckForUpdates {
         series_id: SeriesId,
         remote_id: RemoteId,
-        last_modified: Option<DateTime<Utc>>,
+        last_modified: Option<Timestamp>,
     },
     /// Task to download series data.
     DownloadSeries {
         series_id: SeriesId,
         remote_id: RemoteId,
-        last_modified: Option<DateTime<Utc>>,
+        last_modified: Option<Timestamp>,
         force: bool,
     },
     /// Download a movie.
     DownloadMovie {
         movie_id: MovieId,
         remote_id: RemoteId,
-        last_modified: Option<DateTime<Utc>>,
+        last_modified: Option<Timestamp>,
         force: bool,
     },
     /// Task to add a series by a remote identifier.
@@ -110,7 +109,7 @@ pub(crate) struct Task {
     /// The kind of the task.
     pub(crate) kind: TaskKind,
     /// When the task is scheduled for.
-    pub(crate) scheduled: Option<DateTime<Utc>>,
+    pub(crate) scheduled: Option<Timestamp>,
 }
 
 impl Task {
@@ -133,7 +132,7 @@ impl Task {
 }
 
 pub(crate) struct CompletedTask {
-    pub(crate) at: DateTime<Utc>,
+    pub(crate) at: Timestamp,
     pub(crate) task: Task,
 }
 
@@ -165,7 +164,7 @@ impl Queue {
     /// Mark the given task kind as completed, returns `true` if the task was
     /// present in the queue.
     #[inline]
-    pub(crate) fn complete(&mut self, now: &DateTime<Utc>, task: Task) -> Option<TaskStatus> {
+    pub(crate) fn complete(&mut self, now: &Timestamp, task: Task) -> Option<TaskStatus> {
         self.running.retain(|t| t.id != task.id);
         let status = self.status.remove(&task.id)?;
 
@@ -226,11 +225,7 @@ impl Queue {
     }
 
     /// Get the next item from the queue.
-    pub(crate) fn next_task(
-        &mut self,
-        now: &DateTime<Utc>,
-        timed_out: Option<TaskId>,
-    ) -> Option<Task> {
+    pub(crate) fn next_task(&mut self, now: &Timestamp, timed_out: Option<TaskId>) -> Option<Task> {
         let task = self.pending.front()?;
 
         if !matches!(timed_out, Some(id) if id == task.id)
@@ -246,7 +241,7 @@ impl Queue {
     }
 
     /// Next sleep.
-    pub(crate) fn next_sleep(&self, now: &DateTime<Utc>) -> Option<(u64, TaskId)> {
+    pub(crate) fn next_sleep(&self, now: &Timestamp) -> Option<(u64, TaskId)> {
         let task = self.pending.front()?;
         let id = task.id;
 
@@ -254,8 +249,7 @@ impl Queue {
             return Some((0, id));
         };
 
-        let seconds =
-            u64::try_from(scheduled.signed_duration_since(*now).num_seconds().max(0)).ok()?;
+        let seconds = u64::try_from(scheduled.duration_since(*now).as_secs().max(0)).ok()?;
 
         Some((seconds, id))
     }
@@ -288,7 +282,7 @@ impl Queue {
     }
 
     /// Push a task onto the queue.
-    pub(crate) fn push(&mut self, now: &DateTime<Utc>, kind: TaskKind) {
+    pub(crate) fn push(&mut self, now: &Timestamp, kind: TaskKind) {
         let task_ids = kind.task_refs();
 
         for task_id in &task_ids {

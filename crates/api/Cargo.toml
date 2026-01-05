@@ -9,7 +9,7 @@ musli-web = { version = "0.1.4", default-features = false, features = ["api"] }
 musli-core = { version = "0.1.4", default-features = false }
 musli = { version = "0.0.149", default-features = false, features = ["serde"] }
 serde = { version = "1.0.201", default-features = false, features = ["derive"] }
-chrono = { version = "0.4.42", default-features = false, features = ["serde"] }
+jiff = { version = "0.2.17", default-features = false, features = ["serde"] }
 twox-hash = { version = "2.1.0", default-features = false, features = ["xxhash64"] }
 relative-path = { version = "2.0.1", default-features = false, features = ["alloc", "serde"] }
 base64 = { version = "0.22.1", default-features = false }

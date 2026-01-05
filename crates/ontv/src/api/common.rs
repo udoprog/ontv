@@ -1,21 +1,20 @@
 use anyhow::Result;
-use chrono::{DateTime, Utc};
+use jiff::fmt::rfc2822::DateTimeParser;
+use jiff::Timestamp;
 use reqwest::{header, Response};
 
 use crate::model::{EpisodeId, Etag, MovieId, RemoteEpisodeId, RemoteId, SeriesId};
 
 /// Parse out last modified header if present.
-pub(crate) fn parse_last_modified(res: &Response) -> Result<Option<DateTime<Utc>>> {
+pub(crate) fn parse_last_modified(res: &Response) -> Result<Option<Timestamp>> {
     let Some(last_modified) = res.headers().get(header::LAST_MODIFIED) else {
         return Ok(None);
     };
 
-    let last_modified = DateTime::parse_from_rfc2822(last_modified.to_str()?)?;
-    let last_modified = last_modified.naive_utc();
-    Ok(Some(DateTime::from_naive_utc_and_offset(
-        last_modified,
-        Utc,
-    )))
+    let last_modified = last_modified.to_str()?;
+
+    let parser = DateTimeParser::new();
+    Ok(Some(parser.parse_timestamp(last_modified)?))
 }
 
 /// Parse out etag if available.

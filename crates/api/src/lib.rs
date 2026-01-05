@@ -2,7 +2,7 @@ pub mod cache;
 pub mod config;
 pub mod model;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use musli_core::{Decode, Encode};
 use musli_web::api;
 
@@ -37,7 +37,7 @@ pub struct DashboardSeries<'a> {
 #[musli(crate = musli_core)]
 pub struct DashboardDay<'a> {
     #[musli(with = musli::serde)]
-    pub date: NaiveDate,
+    pub date: Date,
     pub series: Vec<DashboardSeries<'a>>,
 }
 

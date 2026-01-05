@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
 use api::{ImageV2, SeasonNumber};
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::civil::Date;
+use jiff::Timestamp;
 use leaky_bucket::RateLimiter;
 use relative_path::RelativePath;
 use reqwest::header;
@@ -202,7 +203,7 @@ impl Client {
             UpdateSeries,
             BTreeSet<RemoteId>,
             Option<Etag>,
-            Option<DateTime<Utc>>,
+            Option<Timestamp>,
             Vec<Season>,
         )>,
     > {
@@ -222,7 +223,7 @@ impl Client {
             #[serde(default)]
             backdrop_path: Option<String>,
             #[serde(default)]
-            first_air_date: Option<NaiveDate>,
+            first_air_date: Option<Date>,
             #[serde(default)]
             seasons: Vec<SeasonDetails>,
         }
@@ -231,7 +232,7 @@ impl Client {
         struct SeasonDetails {
             season_number: Option<u32>,
             #[serde(default)]
-            air_date: Option<NaiveDate>,
+            air_date: Option<Date>,
             #[serde(default)]
             name: Option<String>,
             #[serde(default)]
@@ -531,7 +532,7 @@ impl Client {
             UpdateMovie,
             BTreeSet<RemoteId>,
             Option<Etag>,
-            Option<DateTime<Utc>>,
+            Option<Timestamp>,
         )>,
     > {
         #[derive(Deserialize)]
@@ -550,7 +551,7 @@ impl Client {
             #[serde(default)]
             backdrop_path: Option<String>,
             #[serde(default)]
-            release_date: Option<NaiveDate>,
+            release_date: Option<Date>,
         }
 
         let mut details = self
@@ -754,7 +755,7 @@ struct ReleaseDate {
     iso_639_1: String,
     #[allow(unused)]
     note: String,
-    release_date: DateTime<Utc>,
+    release_date: Timestamp,
     #[serde(rename = "type")]
     ty_: ReleaseType,
 }
@@ -863,7 +864,7 @@ struct EpisodeDetail {
     id: u32,
     episode_number: u32,
     #[serde(default)]
-    air_date: Option<NaiveDate>,
+    air_date: Option<Date>,
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]

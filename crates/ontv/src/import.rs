@@ -3,7 +3,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use api::SeasonNumber;
-use chrono::{DateTime, Utc};
+use jiff::{Timestamp, Zoned};
 use serde::{Deserialize, Serialize};
 use tokio::runtime;
 
@@ -49,7 +49,7 @@ pub async fn import_trakt_watched(
             id: Raw::new(&entry.show.ids.imdb).context("imdb id")?,
         });
 
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let series_id = match service.existing_by_remote_ids(ids) {
             Some(series_id) => {
@@ -119,7 +119,7 @@ pub async fn import_trakt_watched(
 
 async fn download_series(
     service: &mut Backend,
-    now: &DateTime<Utc>,
+    now: &Timestamp,
     entry: &Entry,
     remote_id: &RemoteId,
 ) -> Result<Option<SeriesId>> {
@@ -144,7 +144,7 @@ async fn download_series(
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Episode {
-    last_watched_at: DateTime<Utc>,
+    last_watched_at: Timestamp,
     number: u32,
 }
 

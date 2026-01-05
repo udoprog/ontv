@@ -9,7 +9,9 @@ use std::str::FromStr;
 
 use anyhow::Result;
 use api::{ImageV2, SeasonNumber};
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::civil::Date;
+use jiff::tz::TimeZone;
+use jiff::{Timestamp, Zoned};
 use relative_path::RelativePath;
 use serde::de::IntoDeserializer;
 use serde::{de, ser, Deserialize, Serialize};
@@ -509,7 +511,7 @@ pub(crate) struct Series {
     pub(crate) title: String,
     /// First air date of the series.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) first_air_date: Option<NaiveDate>,
+    pub(crate) first_air_date: Option<Date>,
     /// Overview of the series.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub(crate) overview: String,
@@ -598,7 +600,7 @@ impl fmt::Display for MovieReleaseKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct MovieReleaseDate {
-    pub(crate) date: DateTime<Utc>,
+    pub(crate) date: Timestamp,
     pub(crate) kind: MovieReleaseKind,
 }
 
@@ -616,7 +618,7 @@ pub(crate) struct MovieReleaseDates {
 pub(crate) struct MovieEarliestReleaseDate {
     pub(crate) country: String,
     pub(crate) kind: MovieReleaseKind,
-    pub(crate) date: DateTime<Utc>,
+    pub(crate) date: Timestamp,
 }
 
 /// A movie.
@@ -629,7 +631,7 @@ pub(crate) struct Movie {
     pub(crate) title: String,
     /// First screen date of the movie.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) release_date: Option<NaiveDate>,
+    pub(crate) release_date: Option<Date>,
     /// The overview of a movie.
     pub(crate) overview: String,
     /// Movie graphics.
@@ -663,12 +665,12 @@ impl Movie {
     }
 
     /// Get the earliest relase date.
-    pub(crate) fn earliest(&self) -> Option<DateTime<Utc>> {
+    pub(crate) fn earliest(&self) -> Option<Timestamp> {
         self.earliest_release_date().or(self.release())
     }
 
     /// Get earliest actual release date.
-    pub(crate) fn earliest_release_date(&self) -> Option<DateTime<Utc>> {
+    pub(crate) fn earliest_release_date(&self) -> Option<Timestamp> {
         self.earliest_by_kind()
             .iter()
             .filter(|e| e.kind.is_digital())
@@ -705,31 +707,28 @@ impl Movie {
     }
 
     /// Test if episode will release in the future.
-    pub(crate) fn will_release(&self, today: &NaiveDate) -> bool {
+    pub(crate) fn will_release(&self, today: &Date) -> bool {
         let Some(release_date) = self.earliest_release_date() else {
             return false;
         };
 
-        release_date.date_naive() > *today
+        release_date.to_zoned(TimeZone::UTC).date() > *today
     }
 
     /// Test if the given episode will be released.
-    pub(crate) fn has_released(&self, today: &NaiveDate) -> bool {
+    pub(crate) fn has_released(&self, today: &Date) -> bool {
         let Some(release_date) = self.earliest_release_date() else {
             return false;
         };
 
-        release_date.date_naive() <= *today
+        release_date.to_zoned(TimeZone::UTC).date() <= *today
     }
 
     /// Get release timestamp.
-    pub(crate) fn release(&self) -> Option<DateTime<Utc>> {
-        self.release_date.as_ref().and_then(|&d| {
-            Some(DateTime::from_naive_utc_and_offset(
-                d.and_hms_opt(0, 0, 0)?,
-                Utc,
-            ))
-        })
+    pub(crate) fn release(&self) -> Option<Timestamp> {
+        self.release_date
+            .as_ref()
+            .and_then(|&d| Some(d.at(0, 0, 0, 0).to_zoned(TimeZone::UTC).ok()?.timestamp()))
     }
 }
 
@@ -865,7 +864,7 @@ pub(crate) struct Watched {
     /// Unique identifier for this watch.
     pub(crate) id: WatchedId,
     /// Timestamp when it was watched.
-    pub(crate) timestamp: DateTime<Utc>,
+    pub(crate) timestamp: Timestamp,
     /// Watched kind.
     #[serde(flatten)]
     pub(crate) kind: WatchedKind,
@@ -894,7 +893,7 @@ pub(crate) struct Season {
     #[serde(default, skip_serializing_if = "SeasonNumber::is_special")]
     pub(crate) number: SeasonNumber,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) air_date: Option<NaiveDate>,
+    pub(crate) air_date: Option<Date>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) name: Option<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -947,7 +946,7 @@ pub(crate) struct Episode {
     pub(crate) number: u32,
     /// Air date of the episode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) aired: Option<NaiveDate>,
+    pub(crate) aired: Option<Date>,
     /// Episode graphics.
     #[serde(default, skip_serializing_if = "EpisodeGraphics::is_empty")]
     pub(crate) graphics: EpisodeGraphics,
@@ -965,7 +964,7 @@ impl Episode {
     /// Test if episode will air in the future.
     ///
     /// This ignores episodes without an air date.
-    pub(crate) fn will_air(&self, today: &NaiveDate) -> bool {
+    pub(crate) fn will_air(&self, today: &Date) -> bool {
         let Some(aired) = self.aired else {
             return false;
         };
@@ -974,7 +973,7 @@ impl Episode {
     }
 
     /// Test if the given episode has aired by the provided timestamp.
-    pub(crate) fn has_aired(&self, today: &NaiveDate) -> bool {
+    pub(crate) fn has_aired(&self, today: &Date) -> bool {
         let Some(aired) = self.aired else {
             return false;
         };
@@ -983,12 +982,10 @@ impl Episode {
     }
 
     /// Get aired timestamp.
-    pub(crate) fn aired_timestamp(&self) -> Option<DateTime<Utc>> {
+    pub(crate) fn aired_timestamp(&self) -> Option<Timestamp> {
         self.aired.as_ref().and_then(|&d| {
-            Some(DateTime::from_naive_utc_and_offset(
-                d.and_hms_opt(0, 0, 0)?,
-                Utc,
-            ))
+            let zoned = d.at(0, 0, 0, 0).to_zoned(TimeZone::UTC).ok()?;
+            Some(zoned.timestamp())
         })
     }
 
@@ -996,7 +993,7 @@ impl Episode {
     pub(crate) fn watch_order_key(&self) -> WatchOrderKey {
         WatchOrderKey {
             absolute_number: self.absolute_number.unwrap_or(u32::MAX),
-            aired: self.aired.unwrap_or(NaiveDate::MAX),
+            aired: self.aired.unwrap_or(Date::MAX),
             season: self.season,
             number: self.number,
         }
@@ -1016,7 +1013,7 @@ pub(crate) struct WatchOrderKey {
     /// Absolute number in the series.
     pub(crate) absolute_number: u32,
     /// Air date of the episode.
-    pub(crate) aired: NaiveDate,
+    pub(crate) aired: Date,
     /// Season number.
     pub(crate) season: SeasonNumber,
     /// Episode number inside of its season.
@@ -1039,7 +1036,7 @@ pub(crate) enum PendingKind {
 /// A pending thing to watch.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub(crate) struct Pending {
-    pub(crate) timestamp: DateTime<Utc>,
+    pub(crate) timestamp: Timestamp,
     #[serde(flatten)]
     pub(crate) kind: PendingKind,
 }
@@ -1060,7 +1057,7 @@ pub(crate) struct SearchSeries {
     pub(crate) name: String,
     pub(crate) poster: Option<ImageV2>,
     pub(crate) overview: String,
-    pub(crate) first_aired: Option<NaiveDate>,
+    pub(crate) first_aired: Option<Date>,
 }
 
 impl SearchSeries {
@@ -1075,7 +1072,7 @@ pub(crate) struct SearchMovie {
     pub(crate) title: String,
     pub(crate) poster: Option<ImageV2>,
     pub(crate) overview: String,
-    pub(crate) release_date: Option<NaiveDate>,
+    pub(crate) release_date: Option<Date>,
 }
 
 impl SearchMovie {
@@ -1093,6 +1090,6 @@ pub(crate) struct ScheduledSeries {
 
 /// A scheduled day.
 pub(crate) struct ScheduledDay {
-    pub(crate) date: NaiveDate,
+    pub(crate) date: Date,
     pub(crate) schedule: Vec<ScheduledSeries>,
 }

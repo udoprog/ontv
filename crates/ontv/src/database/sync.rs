@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::mem::replace;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use crate::model::{Etag, RemoteId};
@@ -12,9 +12,9 @@ struct Entry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     etag: Option<Etag>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_sync: Option<DateTime<Utc>>,
+    last_sync: Option<Timestamp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_modified: Option<DateTime<Utc>>,
+    last_modified: Option<Timestamp>,
 }
 
 impl Entry {
@@ -57,7 +57,7 @@ impl Database {
 
     /// Update series last sync.
     #[must_use]
-    pub(crate) fn import_last_sync(&mut self, id: RemoteId, now: DateTime<Utc>) -> bool {
+    pub(crate) fn import_last_sync(&mut self, id: RemoteId, now: Timestamp) -> bool {
         let e = self.data.entry(id).or_default();
         e.last_sync.replace(now) != Some(now)
     }
@@ -68,7 +68,7 @@ impl Database {
     pub(crate) fn update_last_modified(
         &mut self,
         id: RemoteId,
-        last_modified: Option<DateTime<Utc>>,
+        last_modified: Option<Timestamp>,
     ) -> bool {
         tracing::trace!("Series update last modified");
 
@@ -82,8 +82,8 @@ impl Database {
     pub(crate) fn update_sync(
         &mut self,
         id: RemoteId,
-        now: DateTime<Utc>,
-        last_modified: Option<DateTime<Utc>>,
+        now: Timestamp,
+        last_modified: Option<Timestamp>,
     ) -> bool {
         tracing::trace!("Series update sync");
 
@@ -106,12 +106,12 @@ impl Database {
     }
 
     /// Get last sync for the given time series.
-    pub(crate) fn last_sync(&self, id: &RemoteId) -> Option<&DateTime<Utc>> {
+    pub(crate) fn last_sync(&self, id: &RemoteId) -> Option<&Timestamp> {
         self.data.get(id)?.last_sync.as_ref()
     }
 
     /// Get last modified for the given time series.
-    pub(crate) fn last_modified(&self, id: &RemoteId) -> Option<&DateTime<Utc>> {
+    pub(crate) fn last_modified(&self, id: &RemoteId) -> Option<&Timestamp> {
         self.data.get(id)?.last_modified.as_ref()
     }
 

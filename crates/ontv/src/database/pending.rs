@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::database::iter::Iter;
@@ -11,7 +11,7 @@ pub(crate) struct Database {
     /// Pending by series.
     data: BTreeMap<Uuid, Pending>,
     /// Index by timestamp.
-    by_timestamp: BTreeSet<(DateTime<Utc>, Uuid)>,
+    by_timestamp: BTreeSet<(Timestamp, Uuid)>,
 }
 
 impl Database {

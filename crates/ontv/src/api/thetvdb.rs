@@ -5,7 +5,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
 use api::{ImageV2, SeasonNumber};
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::civil::Date;
+use jiff::Timestamp;
 use leaky_bucket::RateLimiter;
 use relative_path::RelativePath;
 use reqwest::{Method, RequestBuilder, Response, Url};
@@ -155,7 +156,7 @@ impl Client {
     }
 
     /// Get last modified timestamp of a series.
-    pub(crate) async fn series_last_modified(&self, id: u32) -> Result<Option<DateTime<Utc>>> {
+    pub(crate) async fn series_last_modified(&self, id: u32) -> Result<Option<Timestamp>> {
         let res = self
             .request_with_auth(Method::HEAD, &["series", &id.to_string()])
             .await?
@@ -174,7 +175,7 @@ impl Client {
         UpdateSeries,
         BTreeSet<RemoteId>,
         Option<Etag>,
-        Option<DateTime<Utc>>,
+        Option<Timestamp>,
     )> {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -310,7 +311,7 @@ impl Client {
             #[serde(default)]
             filename: Option<String>,
             #[serde(default)]
-            first_aired: Option<NaiveDate>,
+            first_aired: Option<Date>,
             #[serde(default)]
             imdb_id: Option<String>,
         }
@@ -398,7 +399,7 @@ impl Client {
             #[serde(default)]
             pub(crate) overview: Option<String>,
             #[serde(default)]
-            pub(crate) first_aired: Option<NaiveDate>,
+            pub(crate) first_aired: Option<Date>,
         }
 
         let res = self
