@@ -141,6 +141,7 @@ use tokio::runtime::Builder;
 use tokio::sync::RwLock;
 
 pub use self::backend::Backend;
+pub use self::database::Database;
 use self::paths::Paths;
 use self::web::default_bind;
 

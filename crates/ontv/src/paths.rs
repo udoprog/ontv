@@ -67,17 +67,19 @@ impl AsRef<Path> for Directory {
     }
 }
 
-pub(crate) struct Paths {
+/// Collection of application paths.
+pub struct Paths {
     pub(crate) config: Candidate,
     pub(crate) sync: Candidate,
     pub(crate) remotes: Candidate,
-    pub(crate) images: Box<Path>,
     pub(crate) series: Candidate,
     pub(crate) movies: Candidate,
     pub(crate) watched: Candidate,
     pub(crate) pending: Candidate,
     pub(crate) episodes: Directory,
     pub(crate) seasons: Directory,
+    pub(crate) db: Box<Path>,
+    pub(crate) images: Box<Path>,
 }
 
 impl Paths {
@@ -97,6 +99,7 @@ impl Paths {
             seasons: Directory {
                 path: config.join("seasons").into(),
             },
+            db: cache.join("ontv.sql").into(),
             images: cache.join("images").into(),
         }
     }

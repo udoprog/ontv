@@ -180,6 +180,11 @@ impl Backend {
         Ok(this)
     }
 
+    /// Get application paths.
+    pub fn paths(&self) -> &Paths {
+        &self.paths
+    }
+
     /// Current timestamp.
     pub(crate) fn now(&self) -> Timestamp {
         self.now

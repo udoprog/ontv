@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::Parser;
 use directories_next::ProjectDirs;
-use ontv::Backend;
+use ontv::{Backend, Database};
 use tokio::runtime::Builder;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
@@ -31,6 +31,9 @@ struct Opts {
     /// Don't save anything.
     #[arg(long)]
     test: bool,
+    /// Use an in-memory database.
+    #[arg(long)]
+    memory: bool,
     /// Configuration directory.
     #[arg(long, name = "config")]
     config: Option<PathBuf>,
@@ -87,6 +90,8 @@ pub fn main() -> Result<()> {
     }
 
     let runtime = Builder::new_current_thread().enable_all().build()?;
+
+    let c = Database::open(b.paths(), opts.test | opts.memory)?;
 
     runtime.block_on(async move {
         if let Some(path) = opts.import_trakt_watched {
