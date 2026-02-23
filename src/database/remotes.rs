@@ -35,7 +35,7 @@ impl Database {
     pub(crate) fn get_by_series(
         &self,
         series_id: &SeriesId,
-    ) -> impl ExactSizeIterator<Item = RemoteId> + '_ {
+    ) -> impl ExactSizeIterator<Item = RemoteId> + '_ + use<'_> {
         OptionIter::new(self.by_series.get(series_id).map(|it| it.iter())).copied()
     }
 
@@ -43,7 +43,7 @@ impl Database {
     pub(crate) fn get_by_movie(
         &self,
         series_id: &MovieId,
-    ) -> impl ExactSizeIterator<Item = RemoteId> + '_ {
+    ) -> impl ExactSizeIterator<Item = RemoteId> + '_ + use<'_> {
         OptionIter::new(self.by_movie.get(series_id).map(|it| it.iter())).copied()
     }
 
@@ -87,7 +87,7 @@ impl Database {
     }
 
     /// Export the contents of the database.
-    pub(crate) fn export(&self) -> impl IntoIterator<Item = RemoteIds> + 'static {
+    pub(crate) fn export(&self) -> impl IntoIterator<Item = RemoteIds> + 'static + use<> {
         let inner = self.inner.lock();
 
         let mut series = BTreeMap::<_, Vec<_>>::new();

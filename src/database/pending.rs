@@ -22,7 +22,7 @@ impl Database {
     }
 
     /// Export data from the database.
-    pub(crate) fn export(&self) -> impl IntoIterator<Item = Pending> {
+    pub(crate) fn export(&self) -> impl IntoIterator<Item = Pending> + use<> {
         let mut export = Vec::with_capacity(self.by_timestamp.len());
 
         for pending in self.data.values() {

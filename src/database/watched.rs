@@ -49,7 +49,7 @@ impl Database {
     pub(crate) fn by_episode(
         &self,
         id: &EpisodeId,
-    ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone {
+    ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone + use<'_> {
         let indexes = self
             .by_episode
             .get(id)
@@ -63,7 +63,7 @@ impl Database {
     pub(crate) fn by_series(
         &self,
         id: &SeriesId,
-    ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone {
+    ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone + use<'_> {
         let indexes = self
             .by_series
             .get(id)
@@ -77,7 +77,7 @@ impl Database {
     pub(crate) fn by_movie(
         &self,
         id: &MovieId,
-    ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone {
+    ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone + use<'_> {
         let indexes = self.by_movie.get(id).map(Vec::as_slice).unwrap_or_default();
 
         Iter::new(indexes.iter(), &self.data)
@@ -182,7 +182,7 @@ impl Database {
     pub(crate) fn export(
         &self,
         episodes: &episodes::Database,
-    ) -> impl IntoIterator<Item = Export> + 'static {
+    ) -> impl IntoIterator<Item = Export> + 'static + use<> {
         let mut export = BTreeMap::new();
 
         for w in self.data.values() {

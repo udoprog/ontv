@@ -46,7 +46,7 @@ impl Database {
     }
 
     /// Export series data.
-    pub(crate) fn export(&self) -> impl IntoIterator<Item = Series> + 'static {
+    pub(crate) fn export(&self) -> impl IntoIterator<Item = Series> + 'static + use<> {
         let mut out = Vec::with_capacity(self.by_name.len());
 
         for (_, id) in &self.by_name {

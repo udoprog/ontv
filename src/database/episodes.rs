@@ -178,7 +178,7 @@ impl Database {
         &self,
         id: &SeriesId,
         season: &SeasonNumber,
-    ) -> impl DoubleEndedIterator<Item = EpisodeRef<'_>> + ExactSizeIterator {
+    ) -> impl DoubleEndedIterator<Item = EpisodeRef<'_>> + ExactSizeIterator + use<'_> {
         let iter = self
             .by_season
             .get(&(*id, *season))

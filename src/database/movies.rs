@@ -46,7 +46,7 @@ impl Database {
     }
 
     /// Export movie data.
-    pub(crate) fn export(&self) -> impl IntoIterator<Item = Movie> + 'static {
+    pub(crate) fn export(&self) -> impl IntoIterator<Item = Movie> + 'static + use<> {
         let mut out = Vec::with_capacity(self.by_name.len());
 
         for (_, id) in &self.by_name {

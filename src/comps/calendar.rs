@@ -138,7 +138,7 @@ impl Calendar {
         column.spacing(SPACE).into()
     }
 
-    fn week(&self, start_of_week: Weekday) -> impl Iterator<Item = Weekday> {
+    fn week(&self, start_of_week: Weekday) -> impl Iterator<Item = Weekday> + use<> {
         [
             Weekday::Mon,
             Weekday::Tue,

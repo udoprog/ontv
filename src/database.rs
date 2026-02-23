@@ -171,7 +171,7 @@ impl Database {
         &mut self,
         paths: &Arc<paths::Paths>,
         do_not_save: bool,
-    ) -> impl Future<Output = Result<()>> {
+    ) -> impl Future<Output = Result<()>> + use<> {
         let changes = std::mem::take(&mut self.changes);
 
         let config = changes

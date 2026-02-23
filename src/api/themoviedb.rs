@@ -783,7 +783,7 @@ struct ExternalIds {
 
 impl ExternalIds {
     /// Coerce into remote series ids.
-    pub(crate) fn as_remote_series(&self) -> impl Iterator<Item = Result<RemoteId>> {
+    pub(crate) fn as_remote_series(&self) -> impl Iterator<Item = Result<RemoteId>> + use<> {
         let a = self.tvdb_id.map(|id| Ok(RemoteId::Tvdb { id }));
 
         let b = self.imdb_id.as_ref().and_then(|id| {
@@ -803,7 +803,7 @@ impl ExternalIds {
     }
 
     /// Coerce into remote movie ids.
-    pub(crate) fn as_remote_movie(&self) -> impl Iterator<Item = Result<RemoteId>> {
+    pub(crate) fn as_remote_movie(&self) -> impl Iterator<Item = Result<RemoteId>> + use<> {
         let a = self.imdb_id.as_ref().and_then(|id| {
             if id.is_empty() {
                 return None;
@@ -821,7 +821,9 @@ impl ExternalIds {
     }
 
     /// Coerce into remote episode ids.
-    pub(crate) fn as_remote_episodes(&self) -> impl Iterator<Item = Result<RemoteEpisodeId>> {
+    pub(crate) fn as_remote_episodes(
+        &self,
+    ) -> impl Iterator<Item = Result<RemoteEpisodeId>> + use<> {
         let a = self.tvdb_id.map(|id| Ok(RemoteEpisodeId::Tvdb { id }));
 
         let b = self.imdb_id.as_ref().and_then(|id| {

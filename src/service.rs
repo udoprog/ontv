@@ -212,7 +212,7 @@ impl Service {
     pub(crate) fn episodes(
         &self,
         id: &SeriesId,
-    ) -> impl DoubleEndedIterator<Item = EpisodeRef<'_>> + ExactSizeIterator {
+    ) -> impl DoubleEndedIterator<Item = EpisodeRef<'_>> + ExactSizeIterator + use<'_> {
         self.db.episodes.by_series(id)
     }
 
@@ -222,7 +222,7 @@ impl Service {
         &self,
         id: &SeriesId,
         season: &SeasonNumber,
-    ) -> impl DoubleEndedIterator<Item = EpisodeRef<'_>> + ExactSizeIterator {
+    ) -> impl DoubleEndedIterator<Item = EpisodeRef<'_>> + ExactSizeIterator + use<'_> {
         self.db.episodes.by_season(id, season)
     }
 
@@ -247,7 +247,7 @@ impl Service {
     pub(crate) fn seasons(
         &self,
         series_id: &SeriesId,
-    ) -> impl DoubleEndedIterator<Item = SeasonRef<'_>> + ExactSizeIterator + Clone {
+    ) -> impl DoubleEndedIterator<Item = SeasonRef<'_>> + ExactSizeIterator + Clone + use<'_> {
         self.db.seasons.by_series(series_id)
     }
 
@@ -256,7 +256,7 @@ impl Service {
     pub(crate) fn watched_by_episode(
         &self,
         episode_id: &EpisodeId,
-    ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone {
+    ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone + use<'_> {
         self.db.watched.by_episode(episode_id)
     }
 
@@ -265,7 +265,7 @@ impl Service {
     pub(crate) fn watched_by_movie(
         &self,
         movie_id: &MovieId,
-    ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone {
+    ) -> impl ExactSizeIterator<Item = &Watched> + DoubleEndedIterator + Clone + use<'_> {
         self.db.watched.by_movie(movie_id)
     }
 
@@ -438,7 +438,7 @@ impl Service {
         series_id: SeriesId,
         remote_id: RemoteId,
         last_modified: Option<DateTime<Utc>>,
-    ) -> impl Future<Output = Result<Option<TaskKind>>> {
+    ) -> impl Future<Output = Result<Option<TaskKind>>> + use<> {
         let tvdb = self.tvdb.clone();
 
         let future = async move {
@@ -815,7 +815,7 @@ impl Service {
 
     /// Save changes made.
     #[tracing::instrument(skip(self))]
-    pub(crate) fn save_changes(&mut self) -> impl Future<Output = Result<()>> {
+    pub(crate) fn save_changes(&mut self) -> impl Future<Output = Result<()>> + use<> {
         if self.db.changes.contains(Change::Series) || self.db.changes.contains(Change::Schedule) {
             self.rebuild_schedule();
         }
@@ -972,7 +972,7 @@ impl Service {
         remote_id: &RemoteId,
         if_none_match: Option<&Etag>,
         series_id: Option<&SeriesId>,
-    ) -> impl Future<Output = Result<Option<NewSeries>>> {
+    ) -> impl Future<Output = Result<Option<NewSeries>>> + use<> {
         let tvdb = self.tvdb.clone();
         let tmdb = self.tmdb.clone();
         let proxy = self.db.remotes.proxy();
@@ -1061,7 +1061,7 @@ impl Service {
         remote_id: &RemoteId,
         if_none_match: Option<&Etag>,
         movie_id: Option<&MovieId>,
-    ) -> impl Future<Output = Result<Option<NewMovie>>> {
+    ) -> impl Future<Output = Result<Option<NewMovie>>> + use<> {
         let tmdb = self.tmdb.clone();
         let proxy = self.db.remotes.proxy();
         let remote_id = *remote_id;
@@ -1248,7 +1248,7 @@ impl Service {
     pub(crate) fn load_images(
         &self,
         images: Vec<(ImageKey, ImageV2)>,
-    ) -> impl Future<Output = Result<Vec<(ImageKey, Handle)>>> {
+    ) -> impl Future<Output = Result<Vec<(ImageKey, Handle)>>> + use<> {
         use futures::StreamExt;
 
         let paths = self.paths.clone();
@@ -1351,7 +1351,7 @@ impl Service {
     pub(crate) fn search_tvdb(
         &self,
         query: &str,
-    ) -> impl Future<Output = Result<Vec<SearchSeries>>> {
+    ) -> impl Future<Output = Result<Vec<SearchSeries>>> + use<> {
         let tvdb = self.tvdb.clone();
         let query = query.to_owned();
         async move { tvdb.search_by_name(&query).await }.in_current_span()
@@ -1361,7 +1361,7 @@ impl Service {
     pub(crate) fn search_series_tmdb(
         &self,
         query: &str,
-    ) -> impl Future<Output = Result<Vec<SearchSeries>>> {
+    ) -> impl Future<Output = Result<Vec<SearchSeries>>> + use<> {
         let tmdb = self.tmdb.clone();
         let query = query.to_owned();
         async move { tmdb.search_series(&query).await }.in_current_span()
@@ -1371,7 +1371,7 @@ impl Service {
     pub(crate) fn search_movies_tmdb(
         &self,
         query: &str,
-    ) -> impl Future<Output = Result<Vec<SearchMovie>>> {
+    ) -> impl Future<Output = Result<Vec<SearchMovie>>> + use<> {
         let tmdb = self.tmdb.clone();
         let query = query.to_owned();
         async move { tmdb.search_movies(&query).await }.in_current_span()
@@ -1508,7 +1508,7 @@ impl Service {
     pub(crate) fn remotes_by_series(
         &self,
         id: &SeriesId,
-    ) -> impl ExactSizeIterator<Item = RemoteId> + '_ {
+    ) -> impl ExactSizeIterator<Item = RemoteId> + '_ + use<'_> {
         self.db.remotes.get_by_series(id)
     }
 
@@ -1516,7 +1516,7 @@ impl Service {
     pub(crate) fn remotes_by_movie(
         &self,
         id: &MovieId,
-    ) -> impl ExactSizeIterator<Item = RemoteId> + '_ {
+    ) -> impl ExactSizeIterator<Item = RemoteId> + '_ + use<'_> {
         self.db.remotes.get_by_movie(id)
     }
 

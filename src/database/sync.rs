@@ -40,7 +40,7 @@ pub struct Database {
 
 impl Database {
     /// Export the contents of the database.
-    pub(crate) fn export(&self) -> impl Iterator<Item = Export> {
+    pub(crate) fn export(&self) -> impl Iterator<Item = Export> + use<> {
         self.data
             .clone()
             .into_iter()

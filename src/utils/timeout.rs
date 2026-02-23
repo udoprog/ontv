@@ -31,7 +31,7 @@ impl Timeout {
     }
 
     /// Set a new timeout.
-    pub(crate) fn set(&mut self, duration: Duration) -> impl Future<Output = TimedOut> {
+    pub(crate) fn set(&mut self, duration: Duration) -> impl Future<Output = TimedOut> + use<> {
         let (tx, rx) = oneshot::channel();
         self.tx = Some(tx);
 

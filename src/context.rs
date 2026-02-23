@@ -30,7 +30,7 @@ impl CtxtRef<'_> {
         series_id: &SeriesId,
         remote_id: &RemoteId,
         force: bool,
-    ) -> impl Future<Output = Result<Option<NewSeries>>> {
+    ) -> impl Future<Output = Result<Option<NewSeries>>> + use<> {
         let none_if_match = if force {
             None
         } else {
@@ -48,7 +48,7 @@ impl CtxtRef<'_> {
         movie_id: &MovieId,
         remote_id: &RemoteId,
         force: bool,
-    ) -> impl Future<Output = Result<Option<NewMovie>>> {
+    ) -> impl Future<Output = Result<Option<NewMovie>>> + use<> {
         let none_if_match = if force {
             None
         } else {

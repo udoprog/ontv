@@ -23,7 +23,7 @@ impl Singleton {
     }
 
     /// Set the current operation.
-    pub(crate) fn set<F>(&mut self, future: F) -> impl Future<Output = Option<F::Output>>
+    pub(crate) fn set<F>(&mut self, future: F) -> impl Future<Output = Option<F::Output>> + use<F>
     where
         F: Future + MaybeSend + 'static,
     {
