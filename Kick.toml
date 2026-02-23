@@ -1,0 +1,10 @@
+[package]
+binaries = true
+
+[[package.files]]
+source = "desktop/se.tedro.OnTV.desktop"
+dest = "usr/share/applications/"
+
+[[package.files]]
+source = "desktop/se.tedro.OnTV.svg"
+dest = "usr/share/icons/hicolor/scalable/apps/"
