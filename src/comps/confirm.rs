@@ -112,7 +112,7 @@ impl Confirm {
         title: &'a str,
         initial_theme: fn(&Theme, w::button::Status) -> w::button::Style,
     ) -> Element<'a, Message> {
-        let mut row = w::Row::new();
+        let mut row = w::Row::new().spacing(SPACE);
 
         if self.confirm {
             let buttons = [

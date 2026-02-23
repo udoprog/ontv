@@ -108,7 +108,7 @@ impl Watch {
         alignment: Horizontal,
         reminder: bool,
     ) -> Element<'a, Message> {
-        let mut row = w::Row::new().width(width);
+        let mut row = w::Row::new().spacing(SPACE).width(width);
 
         if self.confirm {
             let buttons = [
@@ -120,7 +120,6 @@ impl Watch {
                     .on_press(Message::AirDate),
                 w::button(w::text("Cancel").size(SMALL_SIZE))
                     .style(w::button::secondary)
-                    .width(Length::Fill)
                     .on_press(Message::Cancel),
             ];
 

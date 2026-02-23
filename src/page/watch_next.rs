@@ -102,7 +102,8 @@ impl WatchNext {
         options = options.push(centered(
             w::Row::new()
                 .push(
-                    w::checkbox("Show future episodes", state.future)
+                    w::checkbox(state.future)
+                        .label("Show future episodes")
                         .on_toggle(Message::ToggleFuture),
                 )
                 .width(Length::Fill),
