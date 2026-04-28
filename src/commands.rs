@@ -122,7 +122,7 @@ pub trait Commands<T> {
     ///
     /// ```
     /// # // NB: we don't have access to iced here so faking it.
-    /// # mod iced { pub(crate) mod window { pub(crate) fn close<Message>() -> iced::Command<Message> { todo!() } } }
+    /// # mod iced { pub(crate) mod window { pub(crate) fn close<Message>() -> iced::Task<Message> { todo!() } } }
     /// # use ontv::commands::Commands;
     /// enum Message {
     ///     /* snip */
