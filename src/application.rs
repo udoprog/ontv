@@ -2,11 +2,10 @@ use std::time::Duration;
 
 use iced::advanced::image::Handle;
 use iced::window;
-use iced::Task as Command;
+use iced::Task;
 use iced::Theme;
 
 use crate::assets::{Assets, ImageKey};
-use crate::commands::{Commands, CommandsBuf};
 use crate::context::{Ctxt, CtxtRef};
 use crate::database::SeasonRef;
 use crate::error::ErrorInfo;
@@ -15,10 +14,11 @@ use crate::model::ImageV2;
 use crate::page;
 use crate::params::{GAP, SMALL_SIZE, SPACE, SUB_MENU_SIZE};
 use crate::prelude::*;
-use crate::queue::{Task, TaskKind};
+use crate::queue;
 use crate::service::{NewMovie, NewSeries, Service};
 use crate::state::State;
 use crate::style::Style;
+use crate::tasks::{Tasks, TasksBuf};
 use crate::utils::{Singleton, TimedOut, Timeout};
 
 macro_rules! ctxt {
@@ -79,11 +79,11 @@ pub(crate) enum Message {
     /// Images have been loaded in the background.
     ImagesLoaded(Result<Vec<(ImageKey, Handle)>, ErrorInfo>),
     /// Update download queue with the given items.
-    TaskUpdateDownloadQueue(Result<Option<TaskKind>, ErrorInfo>, Task),
+    TaskUpdateDownloadQueue(Result<Option<queue::TaskKind>, ErrorInfo>, queue::Task),
     /// Task output of add series by remote.
-    TaskSeriesDownloaded(Result<Option<NewSeries>, ErrorInfo>, Task),
+    TaskSeriesDownloaded(Result<Option<NewSeries>, ErrorInfo>, queue::Task),
     /// Task output of add movie by remote.
-    TaskMovieDownloaded(Result<Option<NewMovie>, ErrorInfo>, Task),
+    TaskMovieDownloaded(Result<Option<NewMovie>, ErrorInfo>, queue::Task),
     /// Queue processing.
     ProcessQueue(TimedOut, TaskId),
 }
@@ -106,7 +106,7 @@ enum Current {
 /// Main application.
 pub(crate) struct Application {
     /// Our own command buffer.
-    commands: CommandsBuf<Message>,
+    tasks: TasksBuf<Message>,
     /// Application state.
     state: State,
     /// Application history.
@@ -138,14 +138,14 @@ pub(crate) struct Application {
 }
 
 impl Application {
-    pub(crate) fn new(service: Service) -> (Self, Command<Message>) {
+    pub(crate) fn new(service: Service) -> (Self, Task<Message>) {
         let today = Utc::now().date_naive();
 
         let state = State::new(today);
         let current = Current::Dashboard(page::dashboard::Dashboard::new(&state, &service));
 
         let mut this = Application {
-            commands: CommandsBuf::default(),
+            tasks: TasksBuf::default(),
             state,
             history: History::new(),
             history_mutations: HistoryMutations::default(),
@@ -165,9 +165,9 @@ impl Application {
         this.prepare();
         this.handle_image_loading();
         this.handle_process_queue(None);
-        this.commands
+        this.tasks
             .perform(async { TimedOut::TimedOut }, Message::CheckForUpdates);
-        let command = this.commands.build();
+        let command = this.tasks.build();
         (this, command)
     }
 
@@ -225,12 +225,12 @@ impl Application {
         BASE.to_string()
     }
 
-    pub(crate) fn update(&mut self, message: Message) -> Command<Message> {
+    pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
         tracing::trace!("{message:?}");
 
         match (message, &mut self.current, self.history.page_mut()) {
             (Message::Ignore, _, _) => {
-                return self.commands.build();
+                return self.tasks.build();
             }
             (Message::Settings(message), Current::Settings(page), _) => {
                 page.update(ctxt!(self), message);
@@ -250,7 +250,7 @@ impl Application {
                     ctxt!(self),
                     state,
                     message,
-                    self.commands.by_ref().map(Message::Search),
+                    self.tasks.by_ref().map(Message::Search),
                 );
             }
             (Message::SeriesList(message), Current::SeriesList(page), _) => {
@@ -272,7 +272,7 @@ impl Application {
                 page.update(
                     ctxt!(self),
                     message,
-                    self.commands.by_ref().map(Message::Queue),
+                    self.tasks.by_ref().map(Message::Queue),
                 );
             }
             (Message::CloseRequested, _, _) => {
@@ -283,22 +283,21 @@ impl Application {
                 if self.database_timeout.is_set() {
                     self.database_timeout.clear();
                 } else {
-                    self.commands
-                        .command(window::latest().and_then(window::close));
+                    self.tasks.task(window::latest().and_then(window::close));
                 }
 
-                return self.commands.build();
+                return self.tasks.build();
             }
             (Message::Save(timed_out), _, _) => {
                 // To avoid a cancellation loop we need to return here.
                 if !matches!(timed_out, TimedOut::TimedOut) && !self.exit_after_save {
-                    return self.commands.build();
+                    return self.tasks.build();
                 }
 
                 self.database_timeout.clear();
                 self.state.set_saving(true);
 
-                self.commands
+                self.tasks
                     .perform(self.service.save_changes(), |result| match result {
                         Ok(()) => Message::Saved(Ok(())),
                         Err(error) => Message::Saved(Err(error.into())),
@@ -310,8 +309,7 @@ impl Application {
                 }
 
                 if self.exit_after_save {
-                    self.commands
-                        .command(window::latest().and_then(window::close));
+                    self.tasks.task(window::latest().and_then(window::close));
                 }
 
                 self.state.set_saving(false);
@@ -326,7 +324,7 @@ impl Application {
                 }
 
                 // Schedule next update.
-                self.commands.perform(
+                self.tasks.perform(
                     self.update_timeout.set(Duration::from_secs(UPDATE_TIMEOUT)),
                     Message::CheckForUpdates,
                 );
@@ -367,7 +365,7 @@ impl Application {
 
                 self.image_loader.clear();
                 self.handle_image_loading();
-                return self.commands.build();
+                return self.tasks.build();
             }
             (Message::TaskSeriesDownloaded(result, task), _, _) => {
                 let now = Utc::now();
@@ -406,7 +404,7 @@ impl Application {
         };
 
         if self.service.has_changes() && !self.exit_after_save {
-            self.commands.perform(
+            self.tasks.perform(
                 self.database_timeout.set(Duration::from_secs(5)),
                 Message::Save,
             );
@@ -426,14 +424,14 @@ impl Application {
                 Page::Settings => Current::Settings(page::Settings),
                 Page::Season(state) => Current::Season(page::Season::new(state)),
                 Page::Queue(..) => {
-                    let page = page::Queue::new(self.commands.by_ref().map(Message::Queue));
+                    let page = page::Queue::new(self.tasks.by_ref().map(Message::Queue));
                     Current::Queue(page)
                 }
                 Page::Errors => Current::Errors(page::Errors),
             };
 
-            self.commands
-                .command(w::operation::snap_to(self.scrollable_id.clone(), *scroll));
+            self.tasks
+                .task(w::operation::snap_to(self.scrollable_id.clone(), *scroll));
         }
 
         self.prepare();
@@ -444,7 +442,7 @@ impl Application {
             self.handle_process_queue(None)
         }
 
-        self.commands.build()
+        self.tasks.build()
     }
 
     #[inline]
@@ -673,11 +671,7 @@ impl Application {
                 page.prepare(ctxt!(self), state);
             }
             (Current::Search(page), Some(Page::Search(state))) => {
-                page.prepare(
-                    ctxt!(self),
-                    state,
-                    self.commands.by_ref().map(Message::Search),
-                );
+                page.prepare(ctxt!(self), state, self.tasks.by_ref().map(Message::Search));
             }
             (Current::SeriesList(page), _) => {
                 page.prepare(ctxt!(self));
@@ -738,7 +732,7 @@ impl Application {
             self.service
                 .load_images(self.images.drain(..).collect::<Vec<_>>()),
         );
-        self.commands.perform(future, translate);
+        self.tasks.perform(future, translate);
     }
 
     /// Handle process queue.
@@ -749,7 +743,7 @@ impl Application {
             tracing::trace!("Running task {}", task.id);
 
             match &task.kind {
-                TaskKind::CheckForUpdates {
+                queue::TaskKind::CheckForUpdates {
                     series_id,
                     remote_id,
                     last_modified,
@@ -758,41 +752,41 @@ impl Application {
                         self.service
                             .check_for_updates(*series_id, *remote_id, *last_modified);
 
-                    self.commands.perform(future, move |result| {
+                    self.tasks.perform(future, move |result| {
                         Message::TaskUpdateDownloadQueue(result.map_err(Into::into), task.clone())
                     });
                 }
-                TaskKind::DownloadSeries {
+                queue::TaskKind::DownloadSeries {
                     series_id,
                     remote_id,
                     force,
                     ..
                 } => {
-                    self.commands.perform(
+                    self.tasks.perform(
                         ctxt_ref!(self).download_series_by_id(series_id, remote_id, *force),
                         move |result| {
                             Message::TaskSeriesDownloaded(result.map_err(Into::into), task.clone())
                         },
                     );
                 }
-                TaskKind::DownloadMovie {
+                queue::TaskKind::DownloadMovie {
                     movie_id,
                     remote_id,
                     force,
                     ..
                 } => {
-                    self.commands.perform(
+                    self.tasks.perform(
                         ctxt_ref!(self).download_movie_by_id(movie_id, remote_id, *force),
                         move |result| {
                             Message::TaskMovieDownloaded(result.map_err(Into::into), task.clone())
                         },
                     );
                 }
-                TaskKind::DownloadSeriesByRemoteId { remote_id } => {
+                queue::TaskKind::DownloadSeriesByRemoteId { remote_id } => {
                     if self.service.is_series_by_remote(remote_id) {
                         self.service.complete_task(&now, task);
                     } else {
-                        self.commands.perform(
+                        self.tasks.perform(
                             self.service.download_series(remote_id, None, None),
                             move |result| {
                                 Message::TaskSeriesDownloaded(
@@ -803,11 +797,11 @@ impl Application {
                         );
                     }
                 }
-                TaskKind::DownloadMovieByRemoteId { remote_id } => {
+                queue::TaskKind::DownloadMovieByRemoteId { remote_id } => {
                     if self.service.is_movie_by_remote(remote_id) {
                         self.service.complete_task(&now, task);
                     } else {
-                        self.commands.perform(
+                        self.tasks.perform(
                             self.service.download_movie(remote_id, None, None),
                             move |result| {
                                 Message::TaskMovieDownloaded(
@@ -826,7 +820,7 @@ impl Application {
         if let Some((seconds, id)) = self.service.next_task_sleep(&now) {
             tracing::trace!(?seconds, "Next queue sleep");
 
-            self.commands.perform(
+            self.tasks.perform(
                 self.queue_timeout.set(Duration::from_secs(seconds)),
                 move |timed_out| Message::ProcessQueue(timed_out, id),
             );

@@ -43,13 +43,13 @@ pub(crate) struct Queue {
 }
 
 impl Queue {
-    pub(crate) fn new(mut commands: impl Commands<Message>) -> Self {
+    pub(crate) fn new(mut tasks: impl Tasks<Message>) -> Self {
         let mut this = Queue {
             timeout: Timeout::default(),
         };
 
         let future = this.timeout.set(Duration::from_secs(UPDATE_TIMER));
-        commands.perform(future, Message::Tick);
+        tasks.perform(future, Message::Tick);
         this
     }
 
@@ -57,7 +57,7 @@ impl Queue {
         &mut self,
         cx: &mut Ctxt<'_>,
         message: Message,
-        mut commands: impl Commands<Message>,
+        mut tasks: impl Tasks<Message>,
     ) {
         match message {
             Message::Navigate(page) => {
@@ -66,7 +66,7 @@ impl Queue {
             Message::Tick(timed_out) => {
                 if matches!(timed_out, TimedOut::TimedOut) {
                     let future = self.timeout.set(Duration::from_secs(UPDATE_TIMER));
-                    commands.perform(future, Message::Tick);
+                    tasks.perform(future, Message::Tick);
                 }
             }
             Message::OpenRemoteSeries(remote_id) => {

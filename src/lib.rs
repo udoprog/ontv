@@ -120,8 +120,6 @@ mod api;
 mod application;
 mod assets;
 mod cache;
-#[doc(hidden)]
-pub mod commands;
 mod compat;
 mod component;
 mod comps;
@@ -139,6 +137,8 @@ mod search;
 mod service;
 mod state;
 pub mod style;
+#[doc(hidden)]
+pub mod tasks;
 mod utils;
 
 use core::cell::RefCell;
@@ -155,7 +155,6 @@ mod prelude {
     pub(crate) use iced::{Element, Length};
     pub(crate) use uuid::Uuid;
 
-    pub(crate) use crate::commands::Commands;
     pub(crate) use crate::component::*;
     pub(crate) use crate::comps;
     pub(crate) use crate::context::{Ctxt, CtxtRef};
@@ -165,6 +164,7 @@ mod prelude {
     pub(crate) use crate::page;
     pub(crate) use crate::params::*;
     pub(crate) use crate::state::State;
+    pub(crate) use crate::tasks::Tasks;
 }
 
 /// Run the GUI application.

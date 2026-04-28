@@ -71,7 +71,7 @@ impl Search {
         &mut self,
         cx: &mut Ctxt<'_>,
         state: &mut State,
-        commands: impl Commands<Message>,
+        tasks: impl Tasks<Message>,
     ) {
         cx.assets.mark_with_hint(
             self.series
@@ -93,7 +93,7 @@ impl Search {
 
         if !self.initialized {
             self.initialized = true;
-            self.search(cx, state, commands);
+            self.search(cx, state, tasks);
         }
     }
 
@@ -103,7 +103,7 @@ impl Search {
         cx: &mut Ctxt<'_>,
         state: &mut State,
         message: Message,
-        commands: impl Commands<Message>,
+        tasks: impl Tasks<Message>,
     ) {
         match message {
             Message::Error(error) => {
@@ -113,7 +113,7 @@ impl Search {
                 cx.push_history(page);
             }
             Message::Search => {
-                self.search(cx, state, commands);
+                self.search(cx, state, tasks);
             }
             Message::Change(text) => {
                 state.text = text;
@@ -133,7 +133,7 @@ impl Search {
             }
             Message::SearchKindChanged(kind) => {
                 state.kind = kind;
-                self.search(cx, state, commands);
+                self.search(cx, state, tasks);
             }
             Message::AddSeriesByRemote(remote_id) => {
                 cx.service
@@ -156,12 +156,7 @@ impl Search {
         }
     }
 
-    fn search(
-        &mut self,
-        cx: &mut Ctxt<'_>,
-        state: &mut State,
-        mut commands: impl Commands<Message>,
-    ) {
+    fn search(&mut self, cx: &mut Ctxt<'_>, state: &mut State, mut tasks: impl Tasks<Message>) {
         if state.text.is_empty() {
             return;
         }
@@ -185,7 +180,7 @@ impl Search {
                     Err(error) => Message::Error(ErrorInfo::new(ErrorId::Search(search_id), error)),
                 };
 
-                commands.perform(op, translate);
+                tasks.perform(op, translate);
             }
             SearchKind::Tmdb => {
                 let series = cx.service.search_series_tmdb(&state.text);
@@ -200,7 +195,7 @@ impl Search {
                     }
                 };
 
-                commands.perform(op, |out| out);
+                tasks.perform(op, |out| out);
             }
         }
     }
