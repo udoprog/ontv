@@ -479,5 +479,6 @@ yew_e2e::harness! {
         numbering_ranges_are_made_from_either_side(numbering),
         numbering_ranges_are_left_open(numbering),
         numbering_map_stays_in_view(numbering),
+        numbering_list_and_map_follow_each_other(numbering),
     },
 }

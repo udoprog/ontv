@@ -1,7 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use musli_web::web03::prelude::*;
-use web_sys::{Event, HtmlInputElement, HtmlSelectElement, InputEvent, MouseEvent};
+use web_sys::{
+    Element, Event, HtmlInputElement, HtmlSelectElement, InputEvent, MouseEvent,
+    ScrollIntoViewOptions, ScrollLogicalPosition,
+};
 use yew::prelude::*;
 
 use crate::SetupChannel;
@@ -69,7 +72,10 @@ pub(crate) enum Msg {
     /// Whether a range runs on through every later episode of its season.
     SetOpen(usize, bool),
     SetSystem(usize, String),
+    /// Select a range in the list, or none.
     Select(Option<usize>),
+    /// A click on a range's band in the map.
+    SelectBand(usize),
     /// A click on an episode in a column of the map.
     Pick(Side, u32, u32),
     ToggleSpecials,
@@ -83,6 +89,13 @@ pub(crate) enum Msg {
     CancelSuggest,
     Save,
     Saved(Result<ws::Packet<api::SetShowNumbering>, ws::Error>),
+}
+
+/// The side to scroll to the selected range once drawn, so it follows a
+/// selection made in the other.
+enum Reveal {
+    Map,
+    List,
 }
 
 /// A range as typed: numbers stay text until they parse.
@@ -379,6 +392,9 @@ pub(crate) struct NumberingEditor {
     /// completes.
     anchor: Option<(Side, u32, u32)>,
     specials: bool,
+    reveal: Option<Reveal>,
+    map_scroll: NodeRef,
+    ranges: NodeRef,
     /// Problems the server reported on the last save.
     rejected: Vec<api::RangeError>,
     saving: bool,
@@ -423,6 +439,9 @@ impl Component for NumberingEditor {
             selected: None,
             anchor: None,
             specials: false,
+            reveal: None,
+            map_scroll: NodeRef::default(),
+            ranges: NodeRef::default(),
             rejected: Vec::new(),
             saving: false,
             background,
@@ -436,6 +455,14 @@ impl Component for NumberingEditor {
                 self.background.error(e);
                 false
             }
+        }
+    }
+
+    fn rendered(&mut self, _: &Context<Self>, _: bool) {
+        match self.reveal.take() {
+            Some(Reveal::Map) => self.reveal_in_map(),
+            Some(Reveal::List) => self.reveal_in_list(),
+            None => {}
         }
     }
 
@@ -474,7 +501,7 @@ impl Component for NumberingEditor {
 
                     if self.manual {
                         <div class="numbering-side">
-                            <div class="numbering-ranges">
+                            <div class="numbering-ranges" ref={self.ranges.clone()}>
                                 for (index, row) in self.rows.iter().enumerate() {
                                     { self.view_row(ctx, index, row, ranges[index].as_ref(), &errors) }
                                 }
@@ -585,6 +612,13 @@ impl NumberingEditor {
             Msg::Select(index) => {
                 self.selected = index.filter(|&i| i < self.rows.len());
                 self.anchor = None;
+                self.reveal = self.selected.map(|_| Reveal::Map);
+                Ok(true)
+            }
+            Msg::SelectBand(index) => {
+                self.selected = Some(index).filter(|&i| i < self.rows.len());
+                self.anchor = None;
+                self.reveal = Some(Reveal::List);
                 Ok(true)
             }
             Msg::Pick(side, season, episode) => {
@@ -593,6 +627,7 @@ impl NumberingEditor {
                 }
 
                 self.pick(side, season, episode);
+                self.reveal = self.selected.map(|_| Reveal::List);
                 Ok(true)
             }
             Msg::ToggleSpecials => {
@@ -712,6 +747,64 @@ impl NumberingEditor {
                 Ok(true)
             }
         }
+    }
+
+    /// Scroll the map to the selected range's first TMDB episode, and
+    /// sideways to its first episode in the column of its system.
+    fn reveal_in_map(&self) {
+        let Some(scroll) = self.map_scroll.cast::<Element>() else {
+            return;
+        };
+
+        let Some(row) = self.selected.and_then(|i| self.rows.get(i)) else {
+            return;
+        };
+
+        let first = |side: &str| {
+            scroll
+                .query_selector(&format!(
+                    ".numbering-column[data-side='{side}'] .numbering-ep.selected"
+                ))
+                .ok()
+                .flatten()
+                .map(|e| e.get_bounding_client_rect())
+        };
+
+        let view = scroll.get_bounding_client_rect();
+
+        if let Some(ep) = first("tmdb")
+            && (ep.top() < view.top() || ep.bottom() > view.bottom())
+        {
+            // Leave room for the season heading above it.
+            let by = ep.top() - view.top() - f64::from(HEAD);
+            scroll.set_scroll_top(scroll.scroll_top() + by as i32);
+        }
+
+        if let Some(ep) = first(&row.system) {
+            let by = if ep.right() > view.right() {
+                ep.right() - view.right()
+            } else {
+                (ep.left() - view.left()).min(0.0)
+            };
+
+            scroll.set_scroll_left(scroll.scroll_left() + by as i32);
+        }
+    }
+
+    /// Scroll the selected range's row into view in the list.
+    fn reveal_in_list(&self) {
+        let Some(row) = self
+            .ranges
+            .cast::<Element>()
+            .and_then(|e| e.query_selector(".numbering-range.selected").ok().flatten())
+        else {
+            return;
+        };
+
+        let options = ScrollIntoViewOptions::new();
+        options.set_block(ScrollLogicalPosition::Nearest);
+        options.set_inline(ScrollLogicalPosition::Nearest);
+        row.scroll_into_view_with_scroll_into_view_options(&options);
     }
 
     fn edited(&mut self) {
@@ -1422,7 +1515,7 @@ impl NumberingEditor {
                     </mask>
                 </svg>
 
-                <div class="numbering-map-scroll">
+                <div class="numbering-map-scroll" ref={self.map_scroll.clone()}>
                     <div class="numbering-map" style={format!("{template}; height: {height}px")}>
                         for part in map {
                             {part}
@@ -1513,7 +1606,7 @@ impl NumberingEditor {
 
                 let onclick = self
                     .manual
-                    .then(|| link.callback(move |_: MouseEvent| Msg::Select(Some(i))));
+                    .then(|| link.callback(move |_: MouseEvent| Msg::SelectBand(i)));
 
                 let title = format!(
                     "{} {} ↔ {} {}",
@@ -1550,7 +1643,7 @@ impl NumberingEditor {
                     (self.manual && errors.iter().any(|(e, _)| *e == i)).then_some("invalid"),
                 );
 
-                let onclick = link.callback(move |_: MouseEvent| Msg::Select(Some(i)));
+                let onclick = link.callback(move |_: MouseEvent| Msg::SelectBand(i));
 
                 let title = format!(
                     "{} S{} E{} on ↔ {} S{} E{} on",

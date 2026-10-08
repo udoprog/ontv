@@ -1610,6 +1610,147 @@ pub async fn numbering_ranges_are_made_from_either_side(
         .await
 }
 
+/// Whether the element `selector` matches lies within `scroller`, its closest
+/// ancestor matching it, or with no scroller within every scrolling ancestor
+/// and the window.
+async fn in_view(driver: &TestDriver, selector: &str, scroller: Option<&str>) -> Result<bool> {
+    let script = format!(
+        r#"
+        const e = document.querySelector({selector:?});
+        if (!e) return false;
+        const r = e.getBoundingClientRect();
+        const within = (q) => r.top >= q.top - 1 && r.bottom <= q.bottom + 1 && r.left >= q.left - 1 && r.right <= q.right + 1;
+        const scroller = {scroller};
+        if (scroller) return within(e.closest(scroller).getBoundingClientRect());
+        for (let p = e.parentElement; p; p = p.parentElement) {{
+            const s = getComputedStyle(p);
+            if (/auto|scroll|hidden/.test(s.overflowX + s.overflowY) && !within(p.getBoundingClientRect())) return false;
+        }}
+        return within({{ top: 0, left: 0, bottom: innerHeight, right: innerWidth }});
+        "#,
+        scroller = scroller.map_or("null".to_owned(), |s| format!("{s:?}")),
+    );
+
+    let ret = driver.webdriver().execute(&script, Vec::new()).await?;
+    Ok(ret.convert::<bool>()?)
+}
+
+/// Selecting a range in the list scrolls the map to its episodes, and
+/// clicking an episode in the map scrolls the list to its range, at wide and
+/// phone widths.
+pub async fn numbering_list_and_map_follow_each_other(
+    driver: &mut TestDriver,
+    track: &mut Track,
+) -> Result<()> {
+    // Thirty more seasons of three episodes, a range each.
+    track.execute(
+        "INSERT INTO episodes (id, show_id, season, episode, aired)
+         WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 89)
+         SELECT 4000 + i, 1001, 2 + i / 3, 1 + i % 3, 1710000000000 + i * 604800000 FROM n;
+         INSERT INTO xem_episodes (show_id, entry, system, part, season, episode, absolute)
+         WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 89)
+         SELECT 1001, 100 + i, 'tvdb', 0, 3 + i / 3, 1 + i % 3, 100 + i FROM n;",
+    )?;
+
+    let ranges = (2..=31)
+        .map(|s| {
+            format!(
+                r#"{{"season":{s},"first":1,"last":3,"system":"tvdb","target_season":{},"target_first":1}}"#,
+                s + 1
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    track.execute(&format!(
+        r#"UPDATE shows SET numbering = '{{"ranges":[{{"season":1,"first":1,"last":3,"system":"tvdb","target_season":1,"target_first":1}},{{"season":1,"first":4,"last":5,"system":"tvdb","target_season":2,"target_first":1}},{ranges}]}}' WHERE id = 1001"#
+    ))?;
+
+    open_show(driver).await?;
+
+    let last = ".modal .numbering-range[aria-label='Range 32']";
+    let first_ep = ".modal .numbering-ep[aria-label='TMDB S31 E1']";
+    let target_ep = ".modal .numbering-ep[aria-label='TheTVDB S32 E1']";
+
+    let top = async || {
+        driver
+            .webdriver()
+            .execute(
+                "for (const e of document.querySelectorAll('.modal, .modal *')) { e.scrollTop = 0; }",
+                Vec::new(),
+            )
+            .await
+    };
+
+    driver
+        .find_one_by("[title='Settings']:not(#toolbar *)")
+        .await?
+        .click()
+        .await?;
+    driver
+        .find_one_by(".modal [title='Edit ranges']")
+        .await?
+        .click()
+        .await?;
+    driver.wait_count(".modal .numbering-range", 32).await?;
+    driver.find_one_by(first_ep).await?;
+
+    for (width, height) in [(1400, 900), (400, 850)] {
+        driver.set_window_size(width, height).await?;
+        top().await?;
+
+        // The list picks the last range: the map scrolls to its episodes.
+        ensure!(!in_view(driver, first_ep, Some(".numbering-map-scroll")).await?);
+        driver
+            .find_one_by(".modal [title='Edit range 32']")
+            .await?
+            .click()
+            .await?;
+        driver.wait_count(&format!("{last}.selected"), 1).await?;
+        ensure!(
+            in_view(driver, first_ep, Some(".numbering-map-scroll")).await?,
+            "the map did not scroll to TMDB S31 E1 at {width}px"
+        );
+        ensure!(
+            in_view(driver, target_ep, Some(".numbering-map-scroll")).await?,
+            "the map did not scroll to TheTVDB S32 E1 at {width}px"
+        );
+
+        // Back at the top of both, a click on the last episode in the map
+        // scrolls the list to its range.
+        driver
+            .find_one_by(".modal [title='Done editing range 32']")
+            .await?
+            .click()
+            .await?;
+        driver
+            .wait_count(".modal .numbering-range.selected", 0)
+            .await?;
+        top().await?;
+        ensure!(!in_view(driver, last, None).await?);
+        driver
+            .find_one_by(".modal .numbering-ep[aria-label='TMDB S31 E3']")
+            .await?
+            .click()
+            .await?;
+        driver.wait_count(&format!("{last}.selected"), 1).await?;
+        ensure!(
+            in_view(driver, last, None).await?,
+            "the list did not scroll to range 32 at {width}px"
+        );
+
+        driver
+            .find_one_by(".modal [title='Done editing range 32']")
+            .await?
+            .click()
+            .await?;
+        driver
+            .wait_count(".modal .numbering-range.selected", 0)
+            .await?;
+    }
+
+    Ok(())
+}
+
 /// A suggestion leaves the still-airing season open, drawn fading past its
 /// last episode. Only the last range of a TMDB season can be open, and an
 /// open range saved without a last episode maps episodes added after it.
