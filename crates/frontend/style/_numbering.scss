@@ -119,6 +119,20 @@ $numbering-map-chrome: 120px;
     }
 }
 
+// The season at the top of the map in a column, picked to jump to another.
+.numbering-map-source>.numbering-map-in-view {
+    height: 22px;
+    min-width: 0;
+    max-width: 100%;
+    padding-block: 0;
+    padding-inline: v.$padding v.$padding-lg * 2;
+    background-position:
+        calc(100% - 10px) 55%,
+        calc(100% - 5px) 55%;
+    font-size: v.$font-xs;
+    font-variant-numeric: tabular-nums;
+}
+
 .numbering-map-scroll {
     max-height: calc(90vh - #{$numbering-map-chrome});
     overflow-y: auto;

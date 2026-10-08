@@ -1901,6 +1901,111 @@ pub async fn numbering_list_and_map_follow_each_other(
     Ok(())
 }
 
+/// The map's head names the season at the top of each column as the map
+/// scrolls, a dash past a column's last, and picking a season there scrolls
+/// the map to it, at wide and phone widths.
+pub async fn numbering_map_names_the_season_in_view(
+    driver: &mut TestDriver,
+    track: &mut Track,
+) -> Result<()> {
+    // Thirty more seasons of three episodes, on TMDB and TheTVDB.
+    track.execute(
+        r#"INSERT INTO episodes (id, show_id, season, episode, aired)
+         WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 89)
+         SELECT 4000 + i, 1001, 2 + i / 3, 1 + i % 3, 1710000000000 + i * 604800000 FROM n;
+         INSERT INTO xem_episodes (show_id, entry, system, part, season, episode, absolute)
+         WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 89)
+         SELECT 1001, 100 + i, 'tvdb', 0, 3 + i / 3, 1 + i % 3, 100 + i FROM n;
+         UPDATE shows SET numbering = '{"ranges":[{"season":1,"first":1,"last":3,"system":"tvdb","target_season":1,"target_first":1}]}' WHERE id = 1001;"#,
+    )?;
+
+    open_show(driver).await?;
+    driver
+        .find_one_by("[title='Settings']:not(#toolbar *)")
+        .await?
+        .click()
+        .await?;
+    driver
+        .find_one_by(".modal [title='Edit ranges']")
+        .await?
+        .click()
+        .await?;
+    driver
+        .find_one_by(".modal .numbering-ep[aria-label='TMDB S31 E1']")
+        .await?;
+
+    let checked = |label: &str, season: &str| {
+        format!(
+            ".modal select[aria-label='{label} season in view'] option[value='{season}']:checked"
+        )
+    };
+
+    for (width, height) in [(1400, 900), (400, 850)] {
+        driver.set_window_size(width, height).await?;
+        driver
+            .webdriver()
+            .execute(
+                "for (const e of document.querySelectorAll('.modal, .modal *')) { e.scrollTop = 0; }",
+                Vec::new(),
+            )
+            .await?;
+        driver.wait_count(&checked("TMDB", "1"), 1).await?;
+        driver.wait_count(&checked("TheTVDB", "1"), 1).await?;
+        driver.wait_count(&checked("Scene", "1"), 1).await?;
+
+        // Scrolled into TMDB S10's heading, which sits beside TheTVDB S10.
+        driver
+            .webdriver()
+            .execute(
+                "const s = document.querySelector('.modal .numbering-map-scroll'); \
+                 const e = document.querySelector(\".modal .numbering-ep[aria-label='TMDB S10 E1']\"); \
+                 s.scrollTop += e.getBoundingClientRect().top - s.getBoundingClientRect().top - 13;",
+                Vec::new(),
+            )
+            .await?;
+        driver.wait_count(&checked("TMDB", "10"), 1).await?;
+        driver.wait_count(&checked("TheTVDB", "10"), 1).await?;
+        driver.wait_count(&checked("Scene", ""), 1).await?;
+
+        // Picking TMDB S20 scrolls the map to it.
+        driver
+            .find_one_by(".modal select[aria-label='TMDB season in view'] option[value='20']")
+            .await?
+            .click()
+            .await?;
+        driver.wait_count(&checked("TheTVDB", "20"), 1).await?;
+        driver.wait_count(&checked("TMDB", "20"), 1).await?;
+        ensure!(
+            in_view(
+                driver,
+                ".modal .numbering-ep[aria-label='TMDB S20 E1']",
+                Some(".numbering-map-scroll")
+            )
+            .await?,
+            "the map did not scroll to TMDB S20 at {width}px"
+        );
+
+        let ret = driver
+            .webdriver()
+            .execute(
+                "const e = document.querySelector('.modal .numbering-map-head'); return [e.scrollWidth, e.clientWidth];",
+                Vec::new(),
+            )
+            .await?;
+        let [scroll, client] = ret.convert::<[f64; 2]>()?;
+        ensure!(
+            scroll <= client,
+            "the map's head is {scroll}px wide in {client}px"
+        );
+
+        driver
+            .snapshot(&format!("numbering-season-in-view-{width}"))
+            .await?;
+    }
+
+    Ok(())
+}
+
 /// A suggestion leaves the still-airing season open, drawn fading past its
 /// last episode. Only the last range of a TMDB season can be open, and an
 /// open range saved without a last episode maps episodes added after it.

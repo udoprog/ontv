@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use musli_web::web03::prelude::*;
+use wasm_bindgen::JsCast as _;
 use web_sys::{
     Element, Event, HtmlInputElement, HtmlSelectElement, InputEvent, MouseEvent,
     ScrollIntoViewOptions, ScrollLogicalPosition,
@@ -78,6 +79,10 @@ pub(crate) enum Msg {
     SelectBand(usize),
     /// A click on an episode in a column of the map.
     Pick(Side, u32, u32),
+    /// The map scrolled to this offset.
+    MapScrolled(u32),
+    /// Scroll the map to this offset, the top of a season.
+    JumpTo(u32),
     ToggleSpecials,
     ToggleDetails,
     Add,
@@ -369,6 +374,15 @@ impl Column {
     }
 }
 
+/// The season among `seasons`, as `(season, top, bottom)`, whose heading or
+/// episodes are at `y` in the map.
+fn season_at(seasons: &[(u32, u32, u32)], y: u32) -> Option<u32> {
+    seasons
+        .iter()
+        .find(|&&(_, top, bottom)| top <= y && y < bottom)
+        .map(|&(season, ..)| season)
+}
+
 /// The ranges reaching each episode of a column, as `(row, TMDB code)`.
 type Reach = BTreeMap<(u32, u32), Vec<(usize, (u32, u32))>>;
 
@@ -395,6 +409,10 @@ pub(crate) struct NumberingEditor {
     specials: bool,
     reveal: Option<Reveal>,
     map_scroll: NodeRef,
+    map_head: NodeRef,
+    /// How far the map is scrolled, which names the season in view in each
+    /// column.
+    map_top: u32,
     ranges: NodeRef,
     /// The status's warnings and unmapped episodes are unfolded.
     details: bool,
@@ -444,6 +462,8 @@ impl Component for NumberingEditor {
             specials: false,
             reveal: None,
             map_scroll: NodeRef::default(),
+            map_head: NodeRef::default(),
+            map_top: 0,
             ranges: NodeRef::default(),
             details: false,
             rejected: Vec::new(),
@@ -463,6 +483,8 @@ impl Component for NumberingEditor {
     }
 
     fn rendered(&mut self, _: &Context<Self>, _: bool) {
+        self.show_in_view();
+
         match self.reveal.take() {
             Some(Reveal::Map) => self.reveal_in_map(),
             Some(Reveal::List) => self.reveal_in_list(),
@@ -635,6 +657,19 @@ impl NumberingEditor {
                 self.reveal = self.selected.map(|_| Reveal::List);
                 Ok(true)
             }
+            Msg::MapScrolled(top) => {
+                self.map_top = top;
+                Ok(true)
+            }
+            Msg::JumpTo(top) => {
+                let Some(scroll) = self.map_scroll.cast::<Element>() else {
+                    return Ok(false);
+                };
+
+                scroll.set_scroll_top(top as i32);
+                self.map_top = scroll.scroll_top().max(0) as u32;
+                Ok(true)
+            }
             Msg::ToggleSpecials => {
                 self.specials = !self.specials;
                 Ok(true)
@@ -797,6 +832,31 @@ impl NumberingEditor {
             };
 
             scroll.set_scroll_left(scroll.scroll_left() + by as i32);
+        }
+    }
+
+    /// Set each season picker of the map's head to its `selected` option,
+    /// which a picker stops following once it has been picked from.
+    fn show_in_view(&self) {
+        let Some(selects) = self
+            .map_head
+            .cast::<Element>()
+            .and_then(|e| e.query_selector_all("select").ok())
+        else {
+            return;
+        };
+
+        for i in 0..selects.length() {
+            let Some(select) = selects
+                .get(i)
+                .and_then(|n| n.dyn_into::<HtmlSelectElement>().ok())
+            else {
+                continue;
+            };
+
+            if let Ok(Some(option)) = select.query_selector("option[selected]") {
+                select.set_value(&option.get_attribute("value").unwrap_or_default());
+            }
         }
     }
 
@@ -1526,11 +1586,58 @@ impl NumberingEditor {
             }
         }
 
-        let heads = columns.iter().map(|c| {
+        let spans = columns
+            .iter()
+            .map(|c| {
+                c.seasons
+                    .iter()
+                    .map(|s| (s.season, s.top, s.top + HEAD + (s.hi - s.lo + 1) * ROW))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        let current = spans
+            .iter()
+            .map(|s| season_at(s, self.map_top))
+            .collect::<Vec<_>>();
+
+        // Render only when a column's season in view changes.
+        let onscroll = {
+            let scroll = self.map_scroll.clone();
+            let spans = spans.clone();
+            let current = current.clone();
+
+            link.batch_callback(move |_: Event| {
+                let top = scroll.cast::<Element>()?.scroll_top().max(0) as u32;
+                let next = spans.iter().map(|s| season_at(s, top)).collect::<Vec<_>>();
+                (next != current).then_some(Msg::MapScrolled(top))
+            })
+        };
+
+        let heads = columns.iter().zip(&spans).zip(&current).map(|((c, spans), current)| {
+            let label = c.side.label().to_owned();
+            let options = spans.clone();
+
+            let onchange = link.batch_callback(move |e: Event| {
+                let season = e.target_dyn_into::<HtmlSelectElement>()?.value().parse::<u32>().ok()?;
+                let &(_, top, _) = options.iter().find(|(s, ..)| *s == season)?;
+                Some(Msg::JumpTo(top))
+            });
+
             html! {
-                <span class="numbering-map-source" title={c.side.label().to_owned()}>
+                <span class="numbering-map-source" title={label.clone()}>
                     <span class={classes!("logo", c.side.logo().to_owned())} aria-hidden="true" />
-                    <span class="numbering-map-label visually-hidden">{c.side.label().to_owned()}</span>
+                    <span class="numbering-map-label visually-hidden">{label.clone()}</span>
+                    <select class="input-select numbering-map-in-view" aria-label={format!("{label} season in view")} title={format!("{label} season in view: pick one to jump to it")} {onchange}>
+                        if current.is_none() {
+                            <option value="" selected=true hidden=true>{"–"}</option>
+                        }
+                        for &(season, ..) in spans {
+                            <option value={season.to_string()} selected={*current == Some(season)}>
+                                { if season == 0 { "Sp".to_owned() } else { format!("S{season}") } }
+                            </option>
+                        }
+                    </select>
                 </span>
             }
         });
@@ -1542,7 +1649,7 @@ impl NumberingEditor {
 
         html! {
             <div class={classes!("numbering-map-pane", (!self.manual).then_some("read-only"))}>
-                <div class="numbering-map-head" style={template.clone()}>
+                <div class="numbering-map-head" style={template.clone()} ref={self.map_head.clone()}>
                     for head in heads {
                         {head}
                     }
@@ -1558,7 +1665,7 @@ impl NumberingEditor {
                     </mask>
                 </svg>
 
-                <div class="numbering-map-scroll" ref={self.map_scroll.clone()}>
+                <div class="numbering-map-scroll" ref={self.map_scroll.clone()} {onscroll}>
                     <div class="numbering-map" style={format!("{template}; height: {height}px")}>
                         for part in map {
                             {part}
