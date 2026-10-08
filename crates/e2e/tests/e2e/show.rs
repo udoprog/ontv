@@ -1753,6 +1753,104 @@ pub async fn numbering_ranges_are_left_open(
         .await
 }
 
+/// Forty one-episode ranges, each to the same TheTVDB episode, so the range
+/// list runs well past the screen.
+const LONG_NUMBERING: &str = "
+    WITH RECURSIVE n(i) AS (SELECT 6 UNION ALL SELECT i + 1 FROM n WHERE i < 40)
+    INSERT INTO episodes (id, show_id, season, episode, aired)
+    SELECT 3000 + i, 1001, 1, i, 1700000000000 + i * 604800000 FROM n;
+    DELETE FROM xem_episodes WHERE show_id = 1001 AND system = 'tvdb';
+    WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 40)
+    INSERT INTO xem_episodes (show_id, entry, system, part, season, episode, absolute)
+    SELECT 1001, i - 1, 'tvdb', 0, 1, i, i FROM n;
+    WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 40)
+    UPDATE shows SET numbering = (
+        SELECT json_object('ranges', json_group_array(json_object(
+            'season', 1, 'first', i, 'last', i, 'system', 'tvdb',
+            'target_season', 1, 'target_first', i)))
+        FROM n
+    ) WHERE id = 1001;";
+
+/// Where the editor's map, its last range and the modal's visible content are,
+/// as `[top, bottom, left, right]` each, and how far the content is scrolled.
+async fn numbering_layout(driver: &TestDriver) -> Result<([[f64; 4]; 3], f64)> {
+    let ret = driver
+        .webdriver()
+        .execute(
+            "const r = s => { const b = document.querySelector(s).getBoundingClientRect(); \
+                 return [b.top, b.bottom, b.left, b.right]; }; \
+             const c = document.querySelector('.numbering-modal .modal-content'); \
+             return [[r('.numbering-modal .numbering-map-pane'), \
+                 r('.numbering-modal .numbering-range:last-child .numbering-range-head'), \
+                 r('.numbering-modal .modal-content')], c.scrollTop];",
+            Vec::new(),
+        )
+        .await?;
+    Ok(ret.convert()?)
+}
+
+/// On a long show the map stays in view while the last ranges are edited:
+/// beside the list on a wide screen, above it on a phone.
+pub async fn numbering_map_stays_in_view(driver: &mut TestDriver, track: &mut Track) -> Result<()> {
+    track.execute(LONG_NUMBERING)?;
+    driver.set_window_size(1280, 900).await?;
+    open_show(driver).await?;
+    driver
+        .find_one_by("[title='Settings']:not(#toolbar *)")
+        .await?
+        .click()
+        .await?;
+    driver
+        .find_one_by(".modal [title='Edit ranges']")
+        .await?
+        .click()
+        .await?;
+    driver.wait_count(".modal .numbering-range", 40).await?;
+
+    let modal = driver.find_one_by(".numbering-modal").await?.rect().await?;
+    ensure!(modal.width > 1000.0, "the editor is {}px wide", modal.width);
+
+    driver
+        .find_one_by(".modal [title='Edit range 40']")
+        .await?
+        .click()
+        .await?;
+    driver
+        .wait_count(".modal .numbering-range.selected[aria-label='Range 40']", 1)
+        .await?;
+    let ([map, last, content], scrolled) = numbering_layout(driver).await?;
+    ensure!(scrolled > 0.0, "the ranges fit without scrolling");
+    ensure!(
+        map[0] >= content[0] - 1.0 && map[1] <= content[1] + 1.0,
+        "the map {map:?} left the modal {content:?}"
+    );
+    ensure!(
+        map[3] <= last[2] && last[1] <= content[1] + 1.0,
+        "the last range {last:?} is not in view beside the map {map:?}"
+    );
+    driver.snapshot("numbering-long-wide").await?;
+
+    driver.set_window_size(400, 850).await?;
+    driver
+        .webdriver()
+        .execute(
+            "document.querySelector('.numbering-modal .numbering-range:last-child').scrollIntoView({ block: 'end' });",
+            Vec::new(),
+        )
+        .await?;
+    let ([map, last, content], scrolled) = numbering_layout(driver).await?;
+    ensure!(scrolled > 0.0, "the ranges fit without scrolling");
+    ensure!(
+        map[0] >= content[0] - 1.0 && map[1] <= content[1] + 1.0,
+        "the map {map:?} left the modal {content:?}"
+    );
+    ensure!(
+        last[0] >= map[1] && last[1] <= content[1] + 1.0,
+        "the last range {last:?} is not in view under the map {map:?}"
+    );
+    driver.snapshot("numbering-long-phone").await
+}
+
 /// XEM's other names for the show and its seasons are not on the page but in
 /// the Other names modal: the show's with their language, then the season's
 /// under the TheTVDB season they name.

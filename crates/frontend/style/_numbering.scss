@@ -8,9 +8,14 @@
 $numbering-row: 22px;
 $numbering-head: 26px;
 
+// What the modal's header, padding and the map's own head and footer take
+// from its height, leaving the rest to the map's episodes.
+$numbering-map-chrome: 120px;
+
 .modal.numbering-modal {
     @include g.on-desktop {
-        width: min(960px, calc(100vw - #{v.$gap-sm * 2}));
+        width: min(1280px, 96vw);
+        max-height: 90vh;
     }
 
     // A colour per range, cycling.
@@ -71,6 +76,16 @@ $numbering-head: 26px;
     min-width: 0;
 }
 
+// The map stays in view while the ranges scroll the modal: beside them on wide
+// screens, above them on phones. A negative top lets it cover the modal
+// content's padding, so nothing shows above it.
+.numbering-map-pane {
+    position: sticky;
+    top: calc(-1 * #{v.$gap});
+    z-index: 1;
+    background: v.$bg-surface;
+}
+
 // A column of episodes per numbering with bands between them; the editor
 // sets the tracks, a column and a gap per numbering but the last.
 .numbering-map-head,
@@ -105,7 +120,7 @@ $numbering-head: 26px;
 }
 
 .numbering-map-scroll {
-    max-height: min(60vh, 560px);
+    max-height: calc(90vh - #{$numbering-map-chrome});
     overflow-y: auto;
     overscroll-behavior: contain;
     padding-inline: v.$padding;
@@ -113,7 +128,7 @@ $numbering-head: 26px;
     background: v.$bg-panel;
 
     @include g.on-mobile {
-        max-height: 45vh;
+        max-height: 40vh;
     }
 }
 

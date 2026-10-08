@@ -478,5 +478,6 @@ yew_e2e::harness! {
         phones_open_names_from_actions(numbering),
         numbering_ranges_are_made_from_either_side(numbering),
         numbering_ranges_are_left_open(numbering),
+        numbering_map_stays_in_view(numbering),
     },
 }
