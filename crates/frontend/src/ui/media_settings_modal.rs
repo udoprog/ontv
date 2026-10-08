@@ -784,24 +784,30 @@ impl MediaSettingsModal {
             None => {
                 let on_review = ctx.props().on_edit_numbering.reform(|_: MouseEvent| false);
 
-                let warning = api::numbering_mismatches(&data.episodes, data.system("tvdb"))
+                // Seasons that line up still have a map to look at.
+                let warning = match api::numbering_mismatches(&data.episodes, data.system("tvdb"))
                     .into_iter()
                     .next()
-                    .map(|m| {
-                        html! {
-                            <div class="numbering-warning">
-                                <span class="icon exclamation-triangle" aria-hidden="true" />
-                                <span>
-                                    {mismatch_message(&m)}{" "}
-                                    <button type="button" class="link-button" onclick={on_review}>
-                                        {"Compare in the range editor"}
-                                    </button>
-                                </span>
-                            </div>
-                        }
-                    });
+                {
+                    Some(m) => html! {
+                        <div class="numbering-warning">
+                            <span class="icon exclamation-triangle" aria-hidden="true" />
+                            <span>
+                                {mismatch_message(&m)}{" "}
+                                <button type="button" class="link-button" onclick={on_review}>
+                                    {"Compare in the range editor"}
+                                </button>
+                            </span>
+                        </div>
+                    },
+                    None => html! {
+                        <button type="button" class="link-button numbering-view-map" onclick={on_review}>
+                            {"View map"}
+                        </button>
+                    },
+                };
 
-                (None, warning)
+                (None, Some(warning))
             }
         };
 

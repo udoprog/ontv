@@ -480,5 +480,7 @@ yew_e2e::harness! {
         numbering_ranges_are_left_open(numbering),
         numbering_map_stays_in_view(numbering),
         numbering_list_and_map_follow_each_other(numbering),
+        numbering_warnings_fold_into_a_summary(numbering),
+        numbering_map_opens_when_seasons_line_up(numbering),
     },
 }

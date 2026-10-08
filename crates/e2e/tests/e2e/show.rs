@@ -1330,6 +1330,11 @@ pub async fn numbering_ranges_are_edited(driver: &mut TestDriver, track: &mut Tr
         .click()
         .await?;
     driver
+        .find_one_by(".modal .numbering-details-toggle")
+        .await?
+        .click()
+        .await?;
+    driver
         .wait_texts(
             ".modal .numbering-status .numbering-missing",
             ["XEM has no TheTVDB S1 E4–E5, so TMDB S1 E4–E5 get no other numbers."],
@@ -1414,8 +1419,11 @@ pub async fn numbering_ranges_are_edited(driver: &mut TestDriver, track: &mut Tr
     driver
         .wait_texts(
             ".modal .numbering-coverage",
-            ["3 of 5 regular TMDB episodes are mapped. Not mapped: S1 E4–E5."],
+            ["3 of 5 regular TMDB episodes are mapped."],
         )
+        .await?;
+    driver
+        .wait_texts(".modal .numbering-unmapped", ["Not mapped: S1 E4–E5."])
         .await?;
 
     // An unmapped episode starts a range that continues the one before it,
@@ -1526,6 +1534,11 @@ pub async fn numbering_ranges_are_made_from_either_side(
         )
         .await?;
     driver
+        .find_one_by(".modal .numbering-details-toggle")
+        .await?
+        .click()
+        .await?;
+    driver
         .wait_texts(
             ".modal .numbering-unreached",
             ["No TMDB episode maps to TheTVDB S1 E1."],
@@ -1608,6 +1621,143 @@ pub async fn numbering_ranges_are_made_from_either_side(
                 == [r#"{"ranges":[{"season":1,"first":1,"last":3,"system":"tvdb","target_season":1,"target_first":1},{"season":1,"first":4,"last":5,"system":"tvdb","target_season":2,"target_first":1}]}"#])
         })
         .await
+}
+
+/// Automatic mode folds its warnings into a one-line summary with Suggest
+/// right under it, and manual mode folds what no range maps the same way.
+pub async fn numbering_warnings_fold_into_a_summary(
+    driver: &mut TestDriver,
+    _: &mut Track,
+) -> Result<()> {
+    open_show(driver).await?;
+    driver
+        .find_one_by("[title='Settings']:not(#toolbar *)")
+        .await?
+        .click()
+        .await?;
+    driver
+        .find_one_by(".modal .numbering-warning .link-button")
+        .await?
+        .click()
+        .await?;
+
+    driver
+        .wait_texts(
+            ".modal .numbering-summary",
+            ["1 season differs from TheTVDB. Show details"],
+        )
+        .await?;
+    ensure!(
+        driver
+            .count(
+                ".modal .numbering-summary + .numbering-tools [title='Suggest from episode order']"
+            )
+            .await?
+            == 1
+    );
+    ensure!(driver.count(".modal .numbering-details").await? == 0);
+
+    // The details unfold under Suggest, which stays where it was.
+    let toggle = ".modal .numbering-details-toggle";
+    driver.find_one_by(toggle).await?.click().await?;
+    driver
+        .wait_texts(
+            ".modal .numbering-details .numbering-warning",
+            ["TMDB Season 1 has 5 episodes but TheTVDB Season 1 has 3, so from S01E04 on, other numberings would be wrong."],
+        )
+        .await?;
+    driver
+        .wait_texts(
+            ".modal .numbering-details .numbering-missing",
+            ["XEM has no TheTVDB S1 E4–E5, so TMDB S1 E4–E5 get no other numbers."],
+        )
+        .await?;
+    driver
+        .wait_texts(
+            ".modal .numbering-details .numbering-unreached",
+            ["No TMDB episode maps to TheTVDB S2 E1–E2."],
+        )
+        .await?;
+    driver
+        .wait_count(".modal .numbering-tools + .numbering-details", 1)
+        .await?;
+    driver.wait_texts(toggle, ["Hide details"]).await?;
+    ensure!(
+        driver
+            .find_one_by(toggle)
+            .await?
+            .attr("aria-expanded")
+            .await?
+            == "true"
+    );
+
+    driver.find_one_by(toggle).await?.click().await?;
+    driver.wait_count(".modal .numbering-details", 0).await?;
+
+    // Manual ranges fold the episodes no range maps under their count.
+    driver
+        .find_one_by(".modal [title='Manual ranges']")
+        .await?
+        .click()
+        .await?;
+    suggest_from(driver, "TheTVDB").await?;
+    driver
+        .find_one_by(".modal [title='Remove range 2']")
+        .await?
+        .click()
+        .await?;
+    driver
+        .wait_texts(
+            ".modal .numbering-coverage",
+            ["3 of 5 regular TMDB episodes are mapped."],
+        )
+        .await?;
+    ensure!(driver.count(".modal .numbering-unmapped").await? == 0);
+
+    driver.find_one_by(toggle).await?.click().await?;
+    driver
+        .wait_texts(
+            ".modal .numbering-details .numbering-unmapped",
+            ["Not mapped: S1 E4–E5."],
+        )
+        .await
+}
+
+/// A show whose seasons line up with TheTVDB's opens the read-only map from
+/// its settings without switching to manual ranges.
+pub async fn numbering_map_opens_when_seasons_line_up(
+    driver: &mut TestDriver,
+    track: &mut Track,
+) -> Result<()> {
+    track.execute("DELETE FROM episodes WHERE id IN (3004, 3005);")?;
+
+    open_show(driver).await?;
+    driver
+        .find_one_by("[title='Settings']:not(#toolbar *)")
+        .await?
+        .click()
+        .await?;
+    driver
+        .find_one_by(".modal .numbering-view-map")
+        .await?
+        .click()
+        .await?;
+
+    driver
+        .wait_texts(
+            ".modal .numbering-status .hint",
+            ["Automatic numbering reads the show's episode codes as TheTVDB's, and its seasons line up."],
+        )
+        .await?;
+    driver.wait_count(".modal .numbering-map-source", 5).await?;
+    ensure!(
+        driver
+            .count(".modal [title='Automatic: same as TheTVDB'][aria-pressed='true']")
+            .await?
+            == 1
+    );
+    ensure!(driver.count(".modal .numbering-range").await? == 0);
+    Ok(())
 }
 
 /// Whether the element `selector` matches lies within `scroller`, its closest

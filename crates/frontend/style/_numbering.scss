@@ -304,9 +304,16 @@ $numbering-map-chrome: 120px;
         margin: 0;
     }
 
-    >.numbering-missing {
+    .numbering-details>.numbering-missing {
         font-size: v.$font-xs;
     }
+}
+
+// The status's warnings and unmapped episodes, unfolded under its summary.
+.numbering-details {
+    display: flex;
+    flex-direction: column;
+    gap: v.$padding-md;
 }
 
 .numbering-note {

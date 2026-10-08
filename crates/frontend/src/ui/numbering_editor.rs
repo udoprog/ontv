@@ -79,6 +79,7 @@ pub(crate) enum Msg {
     /// A click on an episode in a column of the map.
     Pick(Side, u32, u32),
     ToggleSpecials,
+    ToggleDetails,
     Add,
     Remove(usize),
     /// Suggest from episode order, asking for the basis when the numberings
@@ -395,6 +396,8 @@ pub(crate) struct NumberingEditor {
     reveal: Option<Reveal>,
     map_scroll: NodeRef,
     ranges: NodeRef,
+    /// The status's warnings and unmapped episodes are unfolded.
+    details: bool,
     /// Problems the server reported on the last save.
     rejected: Vec<api::RangeError>,
     saving: bool,
@@ -442,6 +445,7 @@ impl Component for NumberingEditor {
             reveal: None,
             map_scroll: NodeRef::default(),
             ranges: NodeRef::default(),
+            details: false,
             rejected: Vec::new(),
             saving: false,
             background,
@@ -565,6 +569,7 @@ impl NumberingEditor {
             }
             Msg::SetManual(manual) => {
                 self.manual = manual;
+                self.details = false;
                 self.selected = None;
                 self.anchor = None;
                 self.asking = false;
@@ -632,6 +637,10 @@ impl NumberingEditor {
             }
             Msg::ToggleSpecials => {
                 self.specials = !self.specials;
+                Ok(true)
+            }
+            Msg::ToggleDetails => {
+                self.details = !self.details;
                 Ok(true)
             }
             Msg::Add => {
@@ -1240,8 +1249,10 @@ impl NumberingEditor {
 
         let drawn = self.drawn(ranges);
 
-        let unreached = self
-            .unreached(&drawn)
+        let unreached = self.unreached(&drawn);
+        let unreached_count = unreached.len();
+
+        let unreached = unreached
             .into_iter()
             .map(|(system, s, episodes)| {
                 html! {
@@ -1253,6 +1264,12 @@ impl NumberingEditor {
             .collect::<Html>();
 
         let asking = self.view_bases(ctx, bases);
+
+        let toggle = html! {
+            <button type="button" class="link-button numbering-details-toggle" aria-expanded={self.details.to_string()} onclick={link.callback(|_: MouseEvent| Msg::ToggleDetails)}>
+                { if self.details { "Hide details" } else { "Show details" } }
+            </button>
+        };
 
         if !self.manual {
             let mismatches = api::numbering_mismatches(&data.episodes, data.system("tvdb"));
@@ -1282,21 +1299,37 @@ impl NumberingEditor {
                     } else {
                         <p class="hint">{"Automatic numbering reads the show's episode codes as TheTVDB's."}</p>
 
-                        for m in &mismatches {
-                            <div class="numbering-warning" role="alert">
-                                <span class="icon exclamation-triangle" aria-hidden="true" />
-                                <span>{mismatch_message(m)}</span>
-                            </div>
-                        }
-
-                        {missing}
-                        {unreached}
+                        <div class="numbering-warning numbering-summary" role="alert">
+                            <span class="icon exclamation-triangle" aria-hidden="true" />
+                            <span>
+                                { match mismatches.len() {
+                                    1 => "1 season differs from TheTVDB.".to_owned(),
+                                    n => format!("{n} seasons differ from TheTVDB."),
+                                } }
+                                {" "}
+                                {toggle}
+                            </span>
+                        </div>
 
                         if self.asking {
                             {asking}
                         } else {
                             <div class="numbering-tools">
                                 <Button icon="sparkles" label="Suggest from episode order" title={suggest_title.to_owned()} disabled={bases.is_empty()} onclick={link.callback(|_: MouseEvent| Msg::Suggest)} />
+                            </div>
+                        }
+
+                        if self.details {
+                            <div class="numbering-details">
+                                for m in &mismatches {
+                                    <div class="numbering-warning">
+                                        <span class="icon exclamation-triangle" aria-hidden="true" />
+                                        <span>{mismatch_message(m)}</span>
+                                    </div>
+                                }
+
+                                {missing}
+                                {unreached}
                             </div>
                         }
                     }
@@ -1320,6 +1353,7 @@ impl NumberingEditor {
         }
 
         let mapped = regular - unmapped.values().map(Vec::len).sum::<usize>();
+        let has_details = !unmapped.is_empty() || unreached_count > 0;
 
         let hint = match (self.selected, &self.anchor) {
             (Some(_), Some((side, s, e))) => format!(
@@ -1344,15 +1378,24 @@ impl NumberingEditor {
                     </p>
                 }
 
-                <p class="hint numbering-coverage">
-                    {format!("{mapped} of {regular} regular TMDB episodes are mapped.")}
+                <p class="hint">
+                    <span class="numbering-coverage">{format!("{mapped} of {regular} regular TMDB episodes are mapped.")}</span>
 
-                    for (s, episodes) in &unmapped {
-                        {format!(" Not mapped: S{s} {}.", runs(episodes))}
+                    if has_details {
+                        {" "}
+                        {toggle}
                     }
                 </p>
 
-                {unreached}
+                if self.details && has_details {
+                    <div class="numbering-details">
+                        for (s, episodes) in &unmapped {
+                            <p class="hint numbering-unmapped">{format!("Not mapped: S{s} {}.", runs(episodes))}</p>
+                        }
+
+                        {unreached}
+                    </div>
+                }
 
                 <p class="hint numbering-hint">{hint}</p>
             </div>
