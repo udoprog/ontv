@@ -5,11 +5,12 @@ use super::Track;
 const ESCAPE: &str = "\u{E00C}";
 
 /// The sections the help lists, in order.
-const SECTIONS: [&str; 5] = [
+const SECTIONS: [&str; 6] = [
     "Finding and adding shows and movies",
     "Marking things watched",
     "Remotes and syncing",
     "Other numberings and names",
+    "Other names",
     "Settings",
 ];
 

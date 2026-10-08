@@ -51,10 +51,8 @@ setting is not shown.
 
 ## Alternative names
 
-XEM also knows other names for a show and its seasons. When it has some,
-the show's ![Names](button:tag) **Names** action lists them: the show's own,
-with their language, then each season's, grouped by the season of the other
-numbering they name, following the show's episode numbering.
+XEM also knows other names for a show and its seasons, which the show's
+![Names](button:tag) **Names** action lists; see [Other names](names).
 
 ## Settings
 

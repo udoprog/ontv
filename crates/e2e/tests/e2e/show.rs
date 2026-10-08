@@ -1798,6 +1798,35 @@ pub async fn alternative_names_are_listed(driver: &mut TestDriver, _: &mut Track
     driver.wait_count(".modal", 0).await
 }
 
+/// The Other names modal says what the names are, and its help mark opens the
+/// section explaining them.
+pub async fn names_modal_opens_its_help(driver: &mut TestDriver, _: &mut Track) -> Result<()> {
+    open_show(driver).await?;
+    driver.find_one_by("#S01E05").await?;
+    open_names(driver).await?;
+
+    driver
+        .wait_texts(
+            ".names-modal .names-intro",
+            ["Other titles XEM knows this show and its seasons by."],
+        )
+        .await?;
+
+    let mark = driver
+        .find_one_by(".names-modal .names-intro button.help-mark")
+        .await?;
+    ensure!(
+        mark.attr("title").await? == "Help: Other names",
+        "the names modal's help mark does not name its section"
+    );
+    mark.click().await?;
+
+    driver
+        .wait_texts("[data-test=help-title]", ["Other names"])
+        .await?;
+    driver.snapshot("show-names-help").await
+}
+
 /// On phones the Other names modal opens from the show's actions menu; a show
 /// without XEM names has no such entry.
 pub async fn phones_open_names_from_actions(

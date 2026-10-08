@@ -23,7 +23,7 @@ merged from every source.
 AniDB, XEM and scene remotes provide none of these:
 
 - **XEM** (thexem.info) maps a show's episodes between numberings and knows
-  other names for it and its seasons; see [Other numberings and
+  [other names](names) for it and its seasons; see [Other numberings and
   names](numberings). Syncing finds a show's XEM entry through its TheTVDB or
   AniDB id and adds it as a remote; while it is turned on, syncing keeps the
   mappings and names up to date. It links to the show's XEM page once syncing

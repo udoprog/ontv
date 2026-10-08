@@ -516,6 +516,12 @@ $numbering-head: 26px;
     }
 }
 
+// The Other names modal's intro line, with its help mark beside the text.
+.names-intro {
+    display: flex;
+    align-items: center;
+}
+
 // A season of another numbering in the Other names modal.
 .names-target {
     display: flex;

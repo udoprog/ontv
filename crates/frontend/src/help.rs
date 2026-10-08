@@ -12,6 +12,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("20-watching.md", include_str!("../help/20-watching.md")),
     ("30-remotes.md", include_str!("../help/30-remotes.md")),
     ("35-numberings.md", include_str!("../help/35-numberings.md")),
+    ("36-names.md", include_str!("../help/36-names.md")),
     ("40-settings.md", include_str!("../help/40-settings.md")),
 ];
 
@@ -21,8 +22,10 @@ pub(crate) const FINDING: &str = "finding";
 pub(crate) const WATCHING: &str = "watching";
 /// The section about remotes and syncing.
 pub(crate) const REMOTES: &str = "remotes";
-/// The section about other numberings and alternative names.
+/// The section about other numberings.
 pub(crate) const NUMBERINGS: &str = "numberings";
+/// The section about the other names XEM has for a show.
+pub(crate) const NAMES: &str = "names";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Section {
@@ -104,7 +107,9 @@ pub(crate) fn search(query: &str) -> Vec<&'static Section> {
 mod tests {
     use pulldown_cmark::{CodeBlockKind, Event, Tag, TagEnd};
 
-    use super::{FINDING, NUMBERINGS, REMOTES, SOURCES, WATCHING, search, section, sections};
+    use super::{
+        FINDING, NAMES, NUMBERINGS, REMOTES, SOURCES, WATCHING, search, section, sections,
+    };
 
     #[test]
     fn every_file_is_listed_and_parses() {
@@ -130,7 +135,7 @@ mod tests {
         ids.dedup();
         assert_eq!(ids.len(), sections().len(), "two sections share an id");
 
-        for id in [FINDING, WATCHING, REMOTES, NUMBERINGS, "settings"] {
+        for id in [FINDING, WATCHING, REMOTES, NUMBERINGS, NAMES, "settings"] {
             assert!(section(id).is_some(), "no section {id}");
         }
     }

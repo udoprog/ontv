@@ -1,6 +1,7 @@
 use yew::prelude::*;
 
-use crate::ui::Modal;
+use crate::help;
+use crate::ui::{Help, Modal};
 
 #[derive(Properties, PartialEq)]
 pub(crate) struct Props {
@@ -17,6 +18,11 @@ pub(crate) struct Props {
 pub(crate) fn NamesModal(props: &Props) -> Html {
     html! {
         <Modal icon="tag" title="Other names" class="names-modal" on_close={props.on_close.clone()}>
+            <p class="names-intro text-muted">
+                {"Other titles XEM knows this show and its seasons by."}
+                <Help section={help::NAMES} />
+            </p>
+
             <div class="translations">
                 if !props.names.is_empty() {
                     <section>
