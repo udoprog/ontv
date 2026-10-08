@@ -331,8 +331,12 @@ impl Search {
         if self.query.is_empty() {
             return html! {
                 <p class="text-muted">
-                    {"Search TMDB and TVDB for shows and movies to track."}
-                    <Help section={help::FINDING} />
+                    {"Search TMDB and TVDB for shows and movies to "}
+                    // Wraps with the last word instead of alone on a line.
+                    <span style="white-space: nowrap">
+                        {"track."}
+                        <Help section={help::FINDING} />
+                    </span>
                 </p>
             };
         }

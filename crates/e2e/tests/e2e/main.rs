@@ -470,7 +470,7 @@ yew_e2e::harness! {
     navigation::{phone_menu_rows_align, opens_every_page, tab_shows_a_focus_ring, navigation_is_links(seeded), pages_have_landmarks_and_one_heading, page_scrolls_the_window, toolbar_icons_are_small, app_bar_items_have_room, errors_show_as_a_card, every_button_has_a_title(seeded)},
     people::{lists_people_by_credits(seeded), shows_no_count_while_loading(seeded), shows_a_silhouette_without_a_photo(seeded), phone_person_page_keeps_the_photo_shape(seeded), known_for_lists_each_title_once(seeded), edits_a_persons_remotes(seeded)},
     queue::{lists_tasks_in_columns, empty_filters_say_what_is_missing, keeps_rows_in_place(seeded), follows_the_next_task(crowded), shows_failed_tasks(seeded), shows_sync_progress(slow_tmdb), phone_shows_sync_progress(slow_tmdb)},
-    search::{focuses_the_input, says_what_it_searches},
+    search::{focuses_the_input, says_what_it_searches, help_mark_sits_beside_its_text},
     settings::{reorders_sync_sources, reorders_xem_lookup, shows_and_hides_numberings, theme_applies_live, theme_is_remembered, adds_languages_and_rules, switches_work_from_the_keyboard, fields_follow_the_theme, settings_are_labelled_rows, tab_completes_the_time_zone, configures_cloudflare_access, warns_about_trusting_only_the_email_header, phones_list_the_settings_pages},
     users::{creates_a_user_who_registers, regular_users_do_not_see_users(login_link), changes_a_role(login_link), revokes_links_and_deletes(login_link), regular_users_cannot_remove_media(seeded, movie, login_link), regular_users_cannot_edit_shared_data(seeded, movie, login_link)},
     sync::{spinner_survives_a_reload(crowded, remotes), spinner_opens_the_task_in_the_queue(crowded, remotes)},

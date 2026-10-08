@@ -41,3 +41,58 @@ pub async fn says_what_it_searches(driver: &mut TestDriver, _: &mut Track) -> Re
         )
         .await
 }
+
+/// The help mark after the empty page's text sits on the text's last line,
+/// centred on it, at desktop and phone widths, and opens the Finding section.
+pub async fn help_mark_sits_beside_its_text(driver: &mut TestDriver, _: &mut Track) -> Result<()> {
+    driver
+        .find_one_by(".toolbar-item[title=Search]")
+        .await?
+        .click()
+        .await?;
+
+    for width in [1200, 400] {
+        driver.set_window_size(width, 800).await?;
+        driver
+            .find_one_by("#page p.text-muted button.help-mark")
+            .await?;
+
+        let ret = driver
+            .webdriver()
+            .execute(
+                "const mark = document.querySelector('#page p.text-muted button.help-mark');
+                const range = document.createRange();
+                range.selectNodeContents(mark.closest('p'));
+                range.setEndBefore(mark);
+                const lines = [...range.getClientRects()].filter(r => r.width > 0);
+                const text = lines[lines.length - 1];
+                const button = mark.getBoundingClientRect();
+                return [(text.top + text.bottom) / 2, (button.top + button.bottom) / 2, button.left - text.right];",
+                Vec::new(),
+            )
+            .await?;
+        let [text, button, gap] = ret.convert::<[f64; 3]>()?;
+
+        ensure!(
+            (text - button).abs() <= 2.0,
+            "at {width}px the help mark is not centred on its text: {text} vs {button}"
+        );
+        ensure!(
+            (0.0..=16.0).contains(&gap),
+            "at {width}px the help mark is not beside its text: {gap}px away"
+        );
+    }
+
+    driver
+        .find_one_by("#page p.text-muted button.help-mark")
+        .await?
+        .click()
+        .await?;
+
+    driver
+        .wait_texts(
+            "[data-test=help-title]",
+            ["Finding and adding shows and movies"],
+        )
+        .await
+}

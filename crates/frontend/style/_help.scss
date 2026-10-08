@@ -169,6 +169,7 @@ mark.help-hit {
 
 // The question mark beside a control that opens its help section.
 button.help-mark {
+    display: inline-flex;
     height: auto;
     min-height: 0;
     padding: 2px;
