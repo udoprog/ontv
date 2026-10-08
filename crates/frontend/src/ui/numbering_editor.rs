@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Range;
 
 use musli_web::web03::prelude::*;
 use wasm_bindgen::JsCast as _;
@@ -85,6 +86,8 @@ pub(crate) enum Msg {
     JumpTo(u32),
     ToggleSpecials,
     ToggleDetails,
+    /// Unfold or fold the run of rows that map whole seasons alike.
+    SetFold(Range<usize>, bool),
     Add,
     Remove(usize),
     /// Suggest from episode order, asking for the basis when the numberings
@@ -416,6 +419,8 @@ pub(crate) struct NumberingEditor {
     ranges: NodeRef,
     /// The status's warnings and unmapped episodes are unfolded.
     details: bool,
+    /// The runs unfolded in the list, by their system and first season.
+    unfolded: BTreeSet<(String, u32)>,
     /// Problems the server reported on the last save.
     rejected: Vec<api::RangeError>,
     saving: bool,
@@ -466,6 +471,7 @@ impl Component for NumberingEditor {
             map_top: 0,
             ranges: NodeRef::default(),
             details: false,
+            unfolded: BTreeSet::new(),
             rejected: Vec::new(),
             saving: false,
             background,
@@ -528,8 +534,12 @@ impl Component for NumberingEditor {
                     if self.manual {
                         <div class="numbering-side">
                             <div class="numbering-ranges" ref={self.ranges.clone()}>
-                                for (index, row) in self.rows.iter().enumerate() {
-                                    { self.view_row(ctx, index, row, ranges[index].as_ref(), &errors) }
+                                for group in self.folds(&ranges, &errors) {
+                                    if group.len() > 1 {
+                                        { self.view_fold(ctx, group, &ranges, &errors) }
+                                    } else {
+                                        { self.view_row(ctx, group.start, &self.rows[group.start], ranges[group.start].as_ref(), &errors) }
+                                    }
                                 }
                             </div>
 
@@ -676,6 +686,26 @@ impl NumberingEditor {
             }
             Msg::ToggleDetails => {
                 self.details = !self.details;
+                Ok(true)
+            }
+            Msg::SetFold(group, unfold) => {
+                let Some(first) = self.rows.get(group.start).and_then(Row::parse) else {
+                    return Ok(false);
+                };
+
+                let key = (first.system, first.season);
+
+                if unfold {
+                    self.unfolded.insert(key);
+                } else {
+                    self.unfolded.remove(&key);
+
+                    if self.selected.is_some_and(|i| group.contains(&i)) {
+                        self.selected = None;
+                        self.anchor = None;
+                    }
+                }
+
                 Ok(true)
             }
             Msg::Add => {
@@ -1232,6 +1262,63 @@ impl NumberingEditor {
                 )
             })
             .collect()
+    }
+
+    /// Whether `r` maps all of its season onto the same season of its system,
+    /// episode for episode, with each side ending where the other does.
+    fn season_for_season(&self, r: &api::NumberingRange) -> bool {
+        let Some(data) = &self.data else {
+            return false;
+        };
+
+        let last = |codes: &[(u32, u32)]| {
+            codes
+                .iter()
+                .filter(|&&(s, _)| s == r.season)
+                .map(|&(_, e)| e)
+                .max()
+        };
+
+        drawable(r)
+            && r.season == r.target_season
+            && r.first == 1
+            && r.target_first == 1
+            && last(&data.episodes).is_some_and(|own| {
+                own == end(&materialised(Some(data), r))
+                    && last(data.system(&r.system)) == Some(own)
+            })
+            && self.missing_targets(r).is_empty()
+    }
+
+    /// The rows to list in order, as groups: consecutive rows that map
+    /// consecutive seasons [season for season](Self::season_for_season) in
+    /// one system share a group, every other row is a group of its own.
+    fn folds(
+        &self,
+        ranges: &[Option<api::NumberingRange>],
+        errors: &[(usize, String)],
+    ) -> Vec<Range<usize>> {
+        let alike = |i: usize| {
+            ranges[i]
+                .as_ref()
+                .filter(|r| !errors.iter().any(|(e, _)| *e == i) && self.season_for_season(r))
+        };
+
+        let mut groups = Vec::<Range<usize>>::new();
+
+        for i in 0..ranges.len() {
+            if let Some(group) = groups.last_mut()
+                && let (Some(prev), Some(r)) = (alike(group.end - 1), alike(i))
+                && prev.system == r.system
+                && prev.season + 1 == r.season
+            {
+                group.end = i + 1;
+            } else {
+                groups.push(i..i + 1);
+            }
+        }
+
+        groups
     }
 
     /// The target episodes of `r` XEM doesn't know, when it knows the
@@ -1935,6 +2022,55 @@ impl NumberingEditor {
         }
     }
 
+    /// A run of rows that map whole seasons alike, as one row that unfolds
+    /// into them, also while one of them is selected.
+    fn view_fold(
+        &self,
+        ctx: &Context<Self>,
+        group: Range<usize>,
+        ranges: &[Option<api::NumberingRange>],
+        errors: &[(usize, String)],
+    ) -> Html {
+        let (Some(first), Some(last)) = (&ranges[group.start], &ranges[group.end - 1]) else {
+            return Html::default();
+        };
+
+        let open = self
+            .unfolded
+            .contains(&(first.system.clone(), first.season))
+            || self.selected.is_some_and(|i| group.contains(&i));
+
+        let label = format!(
+            "S{}–S{} match {} season for season · {} ranges",
+            first.season,
+            last.season,
+            api::xem_system_label(&first.system),
+            group.len()
+        );
+
+        let title = if open {
+            "Fold these ranges"
+        } else {
+            "Show these ranges"
+        };
+        let toggle = group.clone();
+
+        html! {
+            <div class={classes!("numbering-fold", open.then_some("open"))} role="group" aria-label={label.clone()}>
+                <button type="button" class="numbering-fold-summary" {title} aria-expanded={open.to_string()} onclick={ctx.link().callback(move |_: MouseEvent| Msg::SetFold(toggle.clone(), !open))}>
+                    <span class={classes!("icon", if open { "chevron-down" } else { "chevron-right" })} aria-hidden="true" />
+                    <span class="numbering-fold-label">{label}</span>
+                </button>
+
+                if open {
+                    for index in group {
+                        { self.view_row(ctx, index, &self.rows[index], ranges[index].as_ref(), errors) }
+                    }
+                }
+            </div>
+        }
+    }
+
     fn view_row(
         &self,
         ctx: &Context<Self>,
@@ -1953,16 +2089,28 @@ impl NumberingEditor {
         let n = index + 1;
         let selected = self.selected == Some(index);
 
+        // A cell each for the season, first and last episode, so they line up
+        // in columns from row to row.
+        let cells = |season: u32, first: u32, last: Option<u32>| {
+            html! {
+                <span class="numbering-span">
+                    <span class="numbering-season">{format!("S{season}")}</span>{" "}
+                    <span class="numbering-first">{format!("E{first}")}</span>
+                    <span class="numbering-last">{last.map(|l| format!("–E{l}")).unwrap_or_else(|| "–".to_owned())}</span>
+                </span>
+            }
+        };
+
         let summary = match range.filter(|r| drawable(r)) {
             Some(r) => html! {
                 <>
-                    <span class="numbering-span">{format!("S{} {}", r.season, r.span())}</span>
+                    { cells(r.season, r.first, r.last) }
                     <span class="icon arrows-right-left" aria-hidden="true" />
                     <span class={classes!("logo", r.system.clone())} title={api::xem_system_label(&r.system).to_owned()} />
-                    <span class="numbering-span">{format!("S{} {}", r.target_season, r.target_span())}</span>
+                    { cells(r.target_season, r.target_first, r.target_last()) }
                 </>
             },
-            None => html! { <span class="numbering-span">{"Incomplete range"}</span> },
+            None => html! { <span class="numbering-incomplete">{"Incomplete range"}</span> },
         };
 
         let missing = range.map(|r| self.missing_targets(r)).unwrap_or_default();

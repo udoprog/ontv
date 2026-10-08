@@ -344,16 +344,30 @@ $numbering-map-chrome: 120px;
     }
 }
 
+// One grid for every range, so their numbers line up: a swatch, TMDB's season,
+// first and last episode, the arrows, the numbering's logo, its season, first
+// and last episode, then the remove button.
 .numbering-ranges {
-    display: flex;
-    flex-direction: column;
-    gap: v.$padding-md;
+    display: grid;
+    grid-template-columns: repeat(9, auto) 1fr auto;
+    column-gap: v.$padding-md;
+    row-gap: v.$padding-md;
+}
+
+.numbering-range,
+.numbering-fold {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    row-gap: v.$padding-md;
+}
+
+.numbering-range>*,
+.numbering-fold>* {
+    grid-column: 1 / -1;
 }
 
 .numbering-range {
-    display: flex;
-    flex-direction: column;
-    gap: v.$padding-md;
     padding: v.$padding-md v.$padding-lg;
     background: v.$bg-panel;
     border: 1px solid transparent;
@@ -369,19 +383,18 @@ $numbering-map-chrome: 120px;
 }
 
 .numbering-range-head {
-    display: flex;
+    display: grid;
+    grid-template-columns: subgrid;
     align-items: center;
-    gap: v.$gap-xs;
 }
 
 // Under its head to outrank the centring of icon buttons.
 .numbering-range-head>.numbering-range-summary {
-    flex: 1;
-    display: flex;
-    flex-wrap: wrap;
+    grid-column: 1 / -2;
+    display: grid;
+    grid-template-columns: subgrid;
     align-items: center;
-    justify-content: flex-start;
-    gap: v.$padding-md;
+    justify-items: start;
     min-width: 0;
     min-height: v.$input-height-sm;
     padding: 0;
@@ -402,9 +415,58 @@ $numbering-map-chrome: 120px;
 }
 
 .numbering-span {
+    display: contents;
+
+    >span {
+        font-size: v.$font-sm;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+}
+
+.numbering-season,
+.numbering-first {
+    justify-self: end;
+}
+
+// The dash joins the first episode across the column gap.
+.numbering-last {
+    margin-inline-start: calc(-1 * #{v.$padding-md});
+}
+
+.numbering-incomplete {
+    grid-column: 2 / -1;
     font-size: v.$font-sm;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+}
+
+// A run of ranges that map whole seasons alike, folded into one row; its
+// ranges hang under it when unfolded.
+.numbering-fold.open {
+    padding-inline-start: v.$padding-md;
+    border-inline-start: 2px solid v.$border-input;
+}
+
+// Under its fold to outrank the centring of buttons.
+.numbering-fold>.numbering-fold-summary {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: v.$padding-md;
+    min-height: v.$input-height-sm;
+    padding: v.$padding-md v.$padding-lg;
+    background: v.$bg-panel;
+    border: 0;
+    border-radius: v.$radius;
+    color: inherit;
+    font: inherit;
+    font-size: v.$font-sm;
+    text-align: start;
+    cursor: pointer;
+
+    >.icon {
+        flex-shrink: 0;
+        height: v.$icon-size-sm;
+    }
 }
 
 .numbering-swatch {

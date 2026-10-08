@@ -1257,6 +1257,23 @@ pub async fn tvmaze_remote_is_added(driver: &mut TestDriver, _: &mut Track) -> R
 }
 
 /// The value of every element `selector` matches, in order.
+/// Wait for the listed ranges' spans, each side read as `S1 E1–E3`. Their
+/// numbers are cells of a grid, which visible text would split into lines.
+async fn wait_spans(driver: &TestDriver, expected: &[&str]) -> Result<()> {
+    driver
+        .wait_until(format!("the ranges to read {expected:?}"), async || {
+            let ret = driver
+                .webdriver()
+                .execute(
+                    "return [...document.querySelectorAll('.modal .numbering-range-summary .numbering-span')].map(e => e.textContent);",
+                    Vec::new(),
+                )
+                .await?;
+            Ok(ret.convert::<Vec<String>>()? == expected)
+        })
+        .await
+}
+
 async fn values(driver: &TestDriver, selector: &str) -> Result<Vec<String>> {
     let mut out = Vec::new();
 
@@ -1358,10 +1375,7 @@ pub async fn numbering_ranges_are_edited(driver: &mut TestDriver, track: &mut Tr
         .click()
         .await?;
     suggest_from(driver, "TheTVDB").await?;
-    let spans = ".modal .numbering-range-summary .numbering-span";
-    driver
-        .wait_texts(spans, ["S1 E1–E3", "S1 E1–E3", "S1 E4–", "S2 E1–"])
-        .await?;
+    wait_spans(driver, &["S1 E1–E3", "S1 E1–E3", "S1 E4–", "S2 E1–"]).await?;
     // Two ranges, each banded across the four gaps between five columns.
     driver
         .wait_count(".modal .numbering-band:not(.open-end)", 8)
@@ -1442,9 +1456,7 @@ pub async fn numbering_ranges_are_edited(driver: &mut TestDriver, track: &mut Tr
     pick(driver, "TheTVDB S2 E1").await?;
     driver.wait_count(".modal .numbering-missing", 0).await?;
     ensure!(values(driver, fields).await? == ["1", "4", "5", "2", "1"]);
-    driver
-        .wait_texts(spans, ["S1 E1–E3", "S1 E1–E3", "S1 E4–E5", "S2 E1–E2"])
-        .await?;
+    wait_spans(driver, &["S1 E1–E3", "S1 E1–E3", "S1 E4–E5", "S2 E1–E2"]).await?;
 
     driver
         .find_one_by(".modal [title='Save']")
@@ -1525,8 +1537,7 @@ pub async fn numbering_ranges_are_made_from_either_side(
     ensure!(driver.count(".modal .numbering-range").await? == 0);
 
     suggest_from(driver, "Trakt").await?;
-    let spans = ".modal .numbering-range-summary .numbering-span";
-    driver.wait_texts(spans, ["S1 E1–E4", "S1 E1–E4"]).await?;
+    wait_spans(driver, &["S1 E1–E4", "S1 E1–E4"]).await?;
     driver
         .wait_texts(
             ".modal .numbering-note",
@@ -1564,9 +1575,7 @@ pub async fn numbering_ranges_are_made_from_either_side(
         .await?;
     pick(driver, "TheTVDB S2 E1").await?;
     pick(driver, "TheTVDB S2 E2").await?;
-    driver
-        .wait_texts(spans, ["S1 E1–E3", "S1 E1–E3", "S1 E4–E5", "S2 E1–E2"])
-        .await?;
+    wait_spans(driver, &["S1 E1–E3", "S1 E1–E3", "S1 E4–E5", "S2 E1–E2"]).await?;
     driver
         .wait_texts(
             ".modal .numbering-coverage",
@@ -2030,11 +2039,7 @@ pub async fn numbering_ranges_are_left_open(
         .click()
         .await?;
     suggest_from(driver, "TheTVDB").await?;
-
-    let spans = ".modal .numbering-range-summary .numbering-span";
-    driver
-        .wait_texts(spans, ["S1 E1–E3", "S1 E1–E3", "S1 E4–", "S2 E1–"])
-        .await?;
+    wait_spans(driver, &["S1 E1–E3", "S1 E1–E3", "S1 E4–", "S2 E1–"]).await?;
     // The open end fades over the episode after the last in each of the four
     // gaps, past what TMDB and XEM know.
     driver
@@ -2074,9 +2079,7 @@ pub async fn numbering_ranges_are_left_open(
         .await?;
     driver.find_one_by(&open_end(1)).await?.click().await?;
     driver.wait_count(".modal .numbering-errors", 0).await?;
-    driver
-        .wait_texts(spans, ["S1 E1–E3", "S1 E1–E3", "S1 E4–", "S2 E1–"])
-        .await?;
+    wait_spans(driver, &["S1 E1–E3", "S1 E1–E3", "S1 E4–", "S2 E1–"]).await?;
 
     // Closing the second ends it at the last episode drawn, and opening it
     // again leaves the last episode out.
@@ -2086,9 +2089,7 @@ pub async fn numbering_ranges_are_left_open(
         .click()
         .await?;
     driver.find_one_by(&open_end(2)).await?.click().await?;
-    driver
-        .wait_texts(spans, ["S1 E1–E3", "S1 E1–E3", "S1 E4–E5", "S2 E1–E2"])
-        .await?;
+    wait_spans(driver, &["S1 E1–E3", "S1 E1–E3", "S1 E4–E5", "S2 E1–E2"]).await?;
     driver
         .wait_count(".modal .numbering-band.open-end", 0)
         .await?;
@@ -2099,9 +2100,7 @@ pub async fn numbering_ranges_are_left_open(
             1,
         )
         .await?;
-    driver
-        .wait_texts(spans, ["S1 E1–E3", "S1 E1–E3", "S1 E4–", "S2 E1–"])
-        .await?;
+    wait_spans(driver, &["S1 E1–E3", "S1 E1–E3", "S1 E4–", "S2 E1–"]).await?;
 
     driver
         .find_one_by(".modal [title='Save']")
@@ -2512,4 +2511,151 @@ pub async fn episodes_show_other_numberings(
             ["Seeded First", "Seeded Second"],
         )
         .await
+}
+
+/// Ranges that map consecutive seasons onto the same seasons of TheTVDB fold
+/// into one row, which unfolds on a click or when the map selects one of its
+/// ranges; the rows' numbers line up in columns.
+pub async fn numbering_ranges_fold_and_line_up(
+    driver: &mut TestDriver,
+    track: &mut Track,
+) -> Result<()> {
+    // Ten more seasons of three episodes. TheTVDB's S2 has two, its E3 being
+    // the second part of E2, so S2 is out of step.
+    track.execute(
+        "INSERT INTO episodes (id, show_id, season, episode, aired)
+         WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 29)
+         SELECT 4000 + i, 1001, 2 + i / 3, 1 + i % 3, 1710000000000 + i * 604800000 FROM n;
+         INSERT INTO xem_episodes (show_id, entry, system, part, season, episode, absolute)
+         WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 26)
+         SELECT 1001, 100 + i, 'tvdb', 0, 3 + i / 3, 1 + i % 3, 100 + i FROM n;",
+    )?;
+
+    let range = |season: u32, first: u32, last: Option<u32>, target: u32| {
+        let last = last.map_or("null".to_owned(), |l| l.to_string());
+        format!(
+            r#"{{"season":{season},"first":{first},"last":{last},"system":"tvdb","target_season":{target},"target_first":1}}"#
+        )
+    };
+
+    let ranges = [range(1, 1, Some(3), 1)]
+        .into_iter()
+        .chain((2..=9).map(|s| range(s, 1, Some(3), s)))
+        .chain([range(10, 1, None, 10), range(11, 2, Some(3), 11)])
+        .collect::<Vec<_>>()
+        .join(",");
+    track.execute(&format!(
+        r#"UPDATE shows SET numbering = '{{"ranges":[{ranges}]}}' WHERE id = 1001"#
+    ))?;
+
+    driver.set_window_size(1280, 900).await?;
+    open_show(driver).await?;
+    driver
+        .find_one_by("[title='Settings']:not(#toolbar *)")
+        .await?
+        .click()
+        .await?;
+    driver
+        .find_one_by(".modal [title='Edit ranges']")
+        .await?
+        .click()
+        .await?;
+
+    let fold = ".modal .numbering-fold-summary";
+    driver
+        .wait_texts(fold, ["S3–S10 match TheTVDB season for season · 8 ranges"])
+        .await?;
+    ensure!(driver.count(".modal .numbering-range").await? == 3);
+    let s1 = ["S1 E1–E3", "S1 E1–E3", "S2 E1–E3", "S2 E1–E3"];
+    let s11 = ["S11 E2–E3", "S11 E1–E2"];
+    wait_spans(driver, &[&s1[..], &s11[..]].concat()).await?;
+
+    // The starts and ends of both sides line up from row to row.
+    let ret = driver
+        .webdriver()
+        .execute(
+            "return [...document.querySelectorAll('.modal .numbering-range-summary')].map(s => \
+                 [...s.querySelectorAll('.numbering-first, .numbering-last')].map(e => { \
+                     const b = e.getBoundingClientRect(); \
+                     return e.classList.contains('numbering-first') ? b.right : b.left; }));",
+            Vec::new(),
+        )
+        .await?;
+    let edges = ret.convert::<Vec<[f64; 4]>>()?;
+    ensure!(
+        edges.windows(2).all(|w| w[0] == w[1]),
+        "the ranges' numbers do not line up: {edges:?}"
+    );
+
+    driver.find_one_by(fold).await?.click().await?;
+    driver.wait_count(".modal .numbering-range", 11).await?;
+    let run = (3..=10)
+        .flat_map(|s| {
+            let span = if s == 10 { "E1–" } else { "E1–E3" };
+            [format!("S{s} {span}"), format!("S{s} {span}")]
+        })
+        .collect::<Vec<_>>();
+    let run = run.iter().map(String::as_str).collect::<Vec<_>>();
+    wait_spans(driver, &[&s1[..], &run, &s11[..]].concat()).await?;
+    driver.snapshot("numbering-fold-open-wide").await?;
+    driver.find_one_by(fold).await?.click().await?;
+    driver.wait_count(".modal .numbering-range", 3).await?;
+    driver.snapshot("numbering-fold-wide").await?;
+
+    // The map selects a range in the folded run: the run unfolds to it, and
+    // folds again when done.
+    pick(driver, "TMDB S5 E2").await?;
+    let selected = ".modal .numbering-range.selected[aria-label='Range 5']";
+    driver.wait_count(selected, 1).await?;
+    ensure!(
+        in_view(driver, selected, None).await?,
+        "the list did not scroll to range 5"
+    );
+
+    // Editing it out of step splits the run around it.
+    driver
+        .find_one_by(".modal [aria-label='Range 5 last episode']")
+        .await?
+        .send_keys("\u{E003}2")
+        .await?;
+    driver
+        .wait_texts(
+            fold,
+            [
+                "S3–S4 match TheTVDB season for season · 2 ranges",
+                "S6–S10 match TheTVDB season for season · 5 ranges",
+            ],
+        )
+        .await?;
+    driver.wait_count(selected, 1).await?;
+    driver
+        .find_one_by(".modal [title='Done editing range 5']")
+        .await?
+        .click()
+        .await?;
+    driver.wait_count(".modal .numbering-range", 4).await?;
+    wait_spans(
+        driver,
+        &[&s1[..], &["S5 E1–E2", "S5 E1–E2"], &s11[..]].concat(),
+    )
+    .await?;
+
+    // A phone fits the list without scrolling sideways.
+    driver.set_window_size(400, 850).await?;
+    driver.find_all(By::Css(fold)).await?[1].click().await?;
+    driver.wait_count(".modal .numbering-range", 9).await?;
+    let ret = driver
+        .webdriver()
+        .execute(
+            "const e = document.querySelector('.numbering-modal .modal-content'); return [e.scrollWidth, e.clientWidth];",
+            Vec::new(),
+        )
+        .await?;
+    let [scroll, client] = ret.convert::<[f64; 2]>()?;
+    ensure!(
+        scroll <= client,
+        "the list is {scroll}px wide in {client}px"
+    );
+    driver.snapshot("numbering-fold-phone").await?;
+    Ok(())
 }
