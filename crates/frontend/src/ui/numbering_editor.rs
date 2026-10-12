@@ -22,6 +22,11 @@ const ROW: u32 = 22;
 const HEAD: u32 = 26;
 /// How far past a season's last known episode a range is drawn.
 const OVERRUN: u32 = 100;
+/// How many episodes in a row of a column must look alike for the map to
+/// fold them, less the first and last, which stay to be clicked.
+const FOLD_RUN: u32 = 10;
+/// How many range colours the map and list cycle through.
+const TONES: usize = 6;
 
 #[derive(Properties, PartialEq)]
 pub(crate) struct Props {
@@ -88,6 +93,11 @@ pub(crate) enum Msg {
     ToggleDetails,
     /// Unfold or fold the run of rows that map whole seasons alike.
     SetFold(Range<usize>, bool),
+    /// Unfold a run of episodes `first..=last` of a season in a column of
+    /// the map, and where the same ranges reach in the other columns.
+    Unfold(Side, u32, u32, u32),
+    /// Fold every long run of the map, or none.
+    FoldAll(bool),
     Add,
     Remove(usize),
     /// Suggest from episode order, asking for the basis when the numberings
@@ -105,6 +115,16 @@ pub(crate) enum Msg {
 enum Reveal {
     Map,
     List,
+}
+
+/// A row of the map to hold in place while the map changes around it: the
+/// row of episode `season`/`episode` in the column of `side`, at `top` in
+/// the window.
+struct Pin {
+    side: String,
+    season: u32,
+    episode: u32,
+    top: f64,
 }
 
 /// A range as typed: numbers stay text until they parse.
@@ -287,6 +307,44 @@ struct ColumnSeason {
     /// How many of its episodes the source knows.
     known: usize,
     top: u32,
+    /// Runs of episodes drawn as one row each, as `(first, last)` in order.
+    folds: Vec<(u32, u32)>,
+}
+
+impl ColumnSeason {
+    fn rows(&self) -> u32 {
+        self.hi - self.lo + 1 - self.folds.iter().map(|(a, b)| b - a).sum::<u32>()
+    }
+
+    fn bottom(&self) -> u32 {
+        self.top + HEAD + self.rows() * ROW
+    }
+
+    /// The top and bottom of `episode`, held to the drawn episodes. An
+    /// episode in a fold gets its share of the fold's row, so bands keep
+    /// their order through it.
+    fn y(&self, episode: u32) -> (f64, f64) {
+        let e = episode.clamp(self.lo, self.hi);
+        let mut row = e - self.lo;
+        let mut share = (0, 1);
+
+        for &(a, b) in &self.folds {
+            if e > b {
+                row -= b - a;
+            } else if e >= a {
+                row -= e - a;
+                share = (e - a, b - a + 1);
+                break;
+            }
+        }
+
+        let top = f64::from(self.top + HEAD + row * ROW);
+        let part = f64::from(ROW) / f64::from(share.1);
+        (
+            top + f64::from(share.0) * part,
+            top + f64::from(share.0 + 1) * part,
+        )
+    }
 }
 
 /// One column of the map: the seasons of a numbering, laid out top to bottom.
@@ -337,44 +395,69 @@ impl Column {
         // Regular seasons in order, then specials.
         order.sort_by_key(|&(s, _)| (s == 0, s));
 
-        let mut top = 0;
-        let mut seasons = Vec::new();
-
-        for (season, (lo, hi, known)) in order {
-            seasons.push(ColumnSeason {
+        let seasons = order
+            .into_iter()
+            .map(|(season, (lo, hi, known))| ColumnSeason {
                 season,
                 lo,
                 hi,
                 known,
-                top,
-            });
+                top: 0,
+                folds: Vec::new(),
+            })
+            .collect();
 
-            top += HEAD + (hi - lo + 1) * ROW;
-        }
-
-        Self {
+        let mut column = Self {
             side,
             seasons,
             known,
             tails,
+        };
+
+        column.fold(|_| Vec::new());
+        column
+    }
+
+    /// Fold each season's runs as `folds` gives them, laying the seasons out
+    /// again.
+    fn fold(&mut self, mut folds: impl FnMut(&ColumnSeason) -> Vec<(u32, u32)>) {
+        let mut top = 0;
+
+        for s in &mut self.seasons {
+            s.folds = folds(s);
+            s.top = top;
+            top = s.bottom();
         }
     }
 
     fn height(&self) -> u32 {
-        self.seasons
-            .last()
-            .map_or(0, |s| s.top + HEAD + (s.hi - s.lo + 1) * ROW)
+        self.seasons.last().map_or(0, ColumnSeason::bottom)
     }
 
-    /// The top of `episode` in `season`, held to the drawn episodes.
-    fn y(&self, season: u32, episode: u32) -> Option<u32> {
+    /// The top and bottom of `episode` in `season`, held to the drawn
+    /// episodes.
+    fn y(&self, season: u32, episode: u32) -> Option<(f64, f64)> {
         let s = self.seasons.iter().find(|s| s.season == season)?;
-        Some(s.top + HEAD + (episode.clamp(s.lo, s.hi) - s.lo) * ROW)
+        Some(s.y(episode))
     }
 
     fn has(&self, season: u32, episode: u32) -> bool {
         self.known.contains(&(season, episode))
     }
+}
+
+/// `top..bottom` drawn a pixel in at both ends to part it from its
+/// neighbours, or less when it is a thin share of a fold.
+fn inset(top: f64, bottom: f64) -> (f64, f64) {
+    let by = ((bottom - top) / 4.0).min(1.0);
+    (top + by, bottom - by)
+}
+
+/// A band from `y1..y2` on the left to `y3..y4` on the right.
+fn band(y1: f64, y2: f64, y3: f64, y4: f64) -> String {
+    format!(
+        "M0 {y1:.2} C50 {y1:.2} 50 {y3:.2} 100 {y3:.2} L100 {y4:.2} C50 {y4:.2} 50 {y2:.2} 0 {y2:.2} Z"
+    )
 }
 
 /// The season among `seasons`, as `(season, top, bottom)`, whose heading or
@@ -388,6 +471,71 @@ fn season_at(seasons: &[(u32, u32, u32)], y: u32) -> Option<u32> {
 
 /// The ranges reaching each episode of a column, as `(row, TMDB code)`.
 type Reach = BTreeMap<(u32, u32), Vec<(usize, (u32, u32))>>;
+
+/// How an episode is drawn in a column of the map.
+struct Cell {
+    classes: Vec<String>,
+    /// The ranges reaching it or running on over it.
+    owners: Vec<usize>,
+    title: String,
+    /// It is where an open range runs on.
+    tail: bool,
+}
+
+impl Cell {
+    fn alike(&self, other: &Cell) -> bool {
+        self.classes == other.classes && self.owners == other.owners
+    }
+}
+
+/// The runs of season `s` to fold: those of at least [`FOLD_RUN`] episodes
+/// that look alike, less their first and last and any episode `shown`.
+fn map_folds(
+    s: &ColumnSeason,
+    cells: &BTreeMap<(u32, u32), Cell>,
+    shown: impl Fn(u32) -> bool,
+) -> Vec<(u32, u32)> {
+    let alike = |a: u32, b: u32| match (cells.get(&(s.season, a)), cells.get(&(s.season, b))) {
+        (Some(a), Some(b)) => a.alike(b),
+        _ => false,
+    };
+
+    let mut out = Vec::new();
+    let mut start = s.lo;
+
+    while start <= s.hi {
+        let mut end = start;
+
+        while end < s.hi && alike(start, end + 1) {
+            end += 1;
+        }
+
+        if end - start + 1 >= FOLD_RUN {
+            let mut e = start + 1;
+
+            while e < end {
+                if shown(e) {
+                    e += 1;
+                    continue;
+                }
+
+                let first = e;
+
+                while e < end && !shown(e) {
+                    e += 1;
+                }
+
+                if e - first >= FOLD_RUN - 2 {
+                    out.push((first, e - 1));
+                }
+            }
+        }
+
+        start = end + 1;
+    }
+
+    out
+}
 
 /// The editor for a show's episode numbering: the show's episodes beside
 /// those of every numbering XEM has for it, with a band for each range
@@ -421,6 +569,11 @@ pub(crate) struct NumberingEditor {
     details: bool,
     /// The runs unfolded in the list, by their system and first season.
     unfolded: BTreeSet<(String, u32)>,
+    /// Long runs of alike episodes fold in the map.
+    fold: bool,
+    /// Episodes of the map unfolded by hand, by column, season and episode.
+    shown: BTreeSet<(String, u32, u32)>,
+    pin: Option<Pin>,
     /// Problems the server reported on the last save.
     rejected: Vec<api::RangeError>,
     saving: bool,
@@ -472,6 +625,9 @@ impl Component for NumberingEditor {
             ranges: NodeRef::default(),
             details: false,
             unfolded: BTreeSet::new(),
+            fold: true,
+            shown: BTreeSet::new(),
+            pin: None,
             rejected: Vec::new(),
             saving: false,
             background,
@@ -490,6 +646,10 @@ impl Component for NumberingEditor {
 
     fn rendered(&mut self, _: &Context<Self>, _: bool) {
         self.show_in_view();
+
+        if let Some(pin) = self.pin.take() {
+            self.restore(&pin);
+        }
 
         match self.reveal.take() {
             Some(Reveal::Map) => self.reveal_in_map(),
@@ -663,6 +823,7 @@ impl NumberingEditor {
                     return Ok(false);
                 }
 
+                self.pin = self.pin_at(side.logo(), season, episode);
                 self.pick(side, season, episode);
                 self.reveal = self.selected.map(|_| Reveal::List);
                 Ok(true)
@@ -706,6 +867,46 @@ impl NumberingEditor {
                     }
                 }
 
+                Ok(true)
+            }
+            Msg::Unfold(side, season, first, last) => {
+                self.pin = self.pin_at(side.logo(), season, first);
+
+                let parsed = self.rows.iter().map(Row::parse).collect::<Vec<_>>();
+                let drawn = self.drawn(&parsed);
+                let reach = self.reach(&drawn, &side);
+
+                let sides = [Side::Tmdb]
+                    .into_iter()
+                    .chain(
+                        self.systems()
+                            .into_iter()
+                            .map(|s| Side::System(s.to_owned())),
+                    )
+                    .collect::<Vec<_>>();
+
+                for e in first..=last {
+                    self.shown.insert((side.logo().to_owned(), season, e));
+
+                    for (i, (_, te)) in reach.get(&(season, e)).into_iter().flatten() {
+                        let Some((_, r)) = drawn.iter().find(|(j, _)| j == i) else {
+                            continue;
+                        };
+
+                        for other in &sides {
+                            if let Some((s, x)) = self.address(r, *te, other) {
+                                self.shown.insert((other.logo().to_owned(), s, x));
+                            }
+                        }
+                    }
+                }
+
+                Ok(true)
+            }
+            Msg::FoldAll(fold) => {
+                self.pin = self.pin_top();
+                self.fold = fold;
+                self.shown.clear();
                 Ok(true)
             }
             Msg::Add => {
@@ -862,6 +1063,75 @@ impl NumberingEditor {
             };
 
             scroll.set_scroll_left(scroll.scroll_left() + by as i32);
+        }
+    }
+
+    /// The row of `side`'s column in the map showing `season`/`episode`.
+    fn map_row(&self, side: &str, season: u32, episode: u32) -> Option<Element> {
+        let rows = self
+            .map_scroll
+            .cast::<Element>()?
+            .query_selector_all(&format!(
+                ".numbering-column[data-side='{side}'] [data-season='{season}']"
+            ))
+            .ok()?;
+
+        let attr = |e: &Element, name: &str| e.get_attribute(name)?.parse::<u32>().ok();
+
+        (0..rows.length())
+            .filter_map(|i| rows.get(i)?.dyn_into::<Element>().ok())
+            .find(|e| {
+                attr(e, "data-first").is_some_and(|a| a <= episode)
+                    && attr(e, "data-last").is_some_and(|b| episode <= b)
+            })
+    }
+
+    fn pin_at(&self, side: &str, season: u32, episode: u32) -> Option<Pin> {
+        let row = self.map_row(side, season, episode)?;
+
+        Some(Pin {
+            side: side.to_owned(),
+            season,
+            episode,
+            top: row.get_bounding_client_rect().top(),
+        })
+    }
+
+    /// Pin the first TMDB row wholly in view.
+    fn pin_top(&self) -> Option<Pin> {
+        let scroll = self.map_scroll.cast::<Element>()?;
+        let top = scroll.get_bounding_client_rect().top();
+        let rows = scroll
+            .query_selector_all(".numbering-column[data-side='tmdb'] [data-season]")
+            .ok()?;
+
+        let row = (0..rows.length())
+            .filter_map(|i| rows.get(i)?.dyn_into::<Element>().ok())
+            .find(|e| e.get_bounding_client_rect().top() >= top - 0.5)?;
+
+        let attr = |name: &str| row.get_attribute(name)?.parse::<u32>().ok();
+
+        Some(Pin {
+            side: "tmdb".to_owned(),
+            season: attr("data-season")?,
+            episode: attr("data-first")?,
+            top: row.get_bounding_client_rect().top(),
+        })
+    }
+
+    /// Scroll the map so the pinned row is back where it was.
+    fn restore(&self, pin: &Pin) {
+        let (Some(scroll), Some(row)) = (
+            self.map_scroll.cast::<Element>(),
+            self.map_row(&pin.side, pin.season, pin.episode),
+        ) else {
+            return;
+        };
+
+        let by = row.get_bounding_client_rect().top() - pin.top;
+
+        if by.abs() >= 0.5 {
+            scroll.set_scroll_top(scroll.scroll_top() + by.round() as i32);
         }
     }
 
@@ -1656,6 +1926,33 @@ impl NumberingEditor {
             ));
         }
 
+        // The episodes folded, and those that would be with every run folded.
+        let (mut folded, mut foldable) = (0, 0);
+        let count = |folds: &[(u32, u32)]| folds.iter().map(|(a, b)| b - a + 1).sum::<u32>();
+        let mut parts = Vec::new();
+
+        for column in &mut columns {
+            let reach = self.reach(&drawn, &column.side);
+            let cells = self.cells(column, &drawn, &reach, errors);
+            let key = column.side.logo().to_owned();
+
+            column.fold(|s| {
+                foldable += count(&map_folds(s, &cells, |_| false));
+
+                if !self.fold {
+                    return Vec::new();
+                }
+
+                let folds = map_folds(s, &cells, |e| {
+                    self.shown.contains(&(key.clone(), s.season, e))
+                });
+                folded += count(&folds);
+                folds
+            });
+
+            parts.push(cells);
+        }
+
         let height = columns.iter().map(Column::height).max().unwrap_or(0);
         let template = format!(
             "grid-template-columns: repeat({}, var(--numbering-col) var(--numbering-gap)) var(--numbering-col)",
@@ -1664,9 +1961,8 @@ impl NumberingEditor {
 
         let mut map = Vec::new();
 
-        for (index, column) in columns.iter().enumerate() {
-            let reach = self.reach(&drawn, &column.side);
-            map.push(self.view_column(ctx, column, &drawn, &reach, errors));
+        for (index, (column, cells)) in columns.iter().zip(&parts).enumerate() {
+            map.push(self.view_column(ctx, column, cells));
 
             if let Some(next) = columns.get(index + 1) {
                 map.push(self.view_bands(ctx, column, next, &drawn, errors, height));
@@ -1678,7 +1974,7 @@ impl NumberingEditor {
             .map(|c| {
                 c.seasons
                     .iter()
-                    .map(|s| (s.season, s.top, s.top + HEAD + (s.hi - s.lo + 1) * ROW))
+                    .map(|s| (s.season, s.top, s.bottom()))
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
@@ -1760,10 +2056,26 @@ impl NumberingEditor {
                     </div>
                 </div>
 
-                if has_specials {
-                    <button type="button" class="link-button numbering-specials" onclick={link.callback(|_: MouseEvent| Msg::ToggleSpecials)}>
-                        { if self.specials { "Hide specials" } else { "Show specials" } }
-                    </button>
+                if has_specials || folded > 0 || foldable > folded {
+                    <div class="numbering-map-foot">
+                        if has_specials {
+                            <button type="button" class="link-button numbering-specials" onclick={link.callback(|_: MouseEvent| Msg::ToggleSpecials)}>
+                                { if self.specials { "Hide specials" } else { "Show specials" } }
+                            </button>
+                        }
+
+                        if folded > 0 {
+                            <button type="button" class="link-button numbering-unfold-all" title="Show every episode of the map" onclick={link.callback(|_: MouseEvent| Msg::FoldAll(false))}>
+                                {"Unfold all"}
+                            </button>
+                        }
+
+                        if foldable > folded {
+                            <button type="button" class="link-button numbering-fold-all" title="Fold long runs of episodes that look alike" onclick={link.callback(|_: MouseEvent| Msg::FoldAll(true))}>
+                                {"Fold long runs"}
+                            </button>
+                        }
+                    </div>
                 }
             </div>
         }
@@ -1828,14 +2140,12 @@ impl NumberingEditor {
                     continue;
                 };
 
-                let (y1, y2, y3, y4) = (y1 + 1, y2 + ROW - 1, y3 + 1, y4 + ROW - 1);
-                let d = format!(
-                    "M0 {y1} C50 {y1} 50 {y3} 100 {y3} L100 {y4} C50 {y4} 50 {y2} 0 {y2} Z"
-                );
+                let ((y1, y2), (y3, y4)) = (inset(y1.0, y2.1), inset(y3.0, y4.1));
+                let d = band(y1, y2, y3, y4);
 
                 let class = classes!(
                     "numbering-band",
-                    format!("tone-{}", i % 4),
+                    format!("tone-{}", i % TONES),
                     (self.manual && self.selected == Some(i)).then_some("selected"),
                     (self.manual && errors.iter().any(|(e, _)| *e == i)).then_some("invalid"),
                     missing.then_some("missing"),
@@ -1867,15 +2177,12 @@ impl NumberingEditor {
             if let (Some(a), Some(b)) = (tail(left), tail(right))
                 && let (Some(ya), Some(yb)) = (left.y(a.0, a.1), right.y(b.0, b.1))
             {
-                let (y1, y2, y3, y4) = (ya - 1, ya + ROW - 1, yb - 1, yb + ROW - 1);
-                let d = format!(
-                    "M0 {y1} C50 {y1} 50 {y3} 100 {y3} L100 {y4} C50 {y4} 50 {y2} 0 {y2} Z"
-                );
+                let d = band(ya.0 - 1.0, ya.1 - 1.0, yb.0 - 1.0, yb.1 - 1.0);
 
                 let class = classes!(
                     "numbering-band",
                     "open-end",
-                    format!("tone-{}", i % 4),
+                    format!("tone-{}", i % TONES),
                     (self.manual && self.selected == Some(i)).then_some("selected"),
                     (self.manual && errors.iter().any(|(e, _)| *e == i)).then_some("invalid"),
                 );
@@ -1909,51 +2216,51 @@ impl NumberingEditor {
         }
     }
 
-    /// A column's episodes, each marked by the ranges reaching it.
-    fn view_column(
+    /// How each episode of `column` is drawn, by its code.
+    fn cells(
         &self,
-        ctx: &Context<Self>,
         column: &Column,
         drawn: &[(usize, api::NumberingRange)],
         reach: &Reach,
         errors: &[(usize, String)],
-    ) -> Html {
-        let link = ctx.link();
+    ) -> BTreeMap<(u32, u32), Cell> {
         let side = &column.side;
         let label = side.label();
         let tmdb = *side == Side::Tmdb;
+        let mut out = BTreeMap::new();
 
-        let seasons = column.seasons.iter().map(|s| {
-            let (heading, name) = if s.season == 0 {
-                ("Sp".to_owned(), "Specials".to_owned())
-            } else {
-                (format!("S{}", s.season), format!("Season {}", s.season))
-            };
+        for s in &column.seasons {
+            let season = s.season;
 
-            let cells = (s.lo..=s.hi).map(|e| {
-                let season = s.season;
+            for e in s.lo..=s.hi {
                 let owners = reach.get(&(season, e)).map_or(&[][..], Vec::as_slice);
                 let known = column.has(season, e);
-                let tail = column.tails.get(&(season, e)).copied().filter(|_| owners.is_empty());
+                let tail = column
+                    .tails
+                    .get(&(season, e))
+                    .copied()
+                    .filter(|_| owners.is_empty());
 
                 let state = match owners {
-                    [] if let Some(i) = tail => format!("tone-{} open-end", i % 4),
+                    [] if let Some(i) = tail => format!("tone-{} open-end", i % TONES),
                     [] if tmdb && known && season > 0 => "unmapped".to_owned(),
                     [] => String::new(),
-                    [(i, _)] => format!("tone-{}", i % 4),
+                    [(i, _)] => format!("tone-{}", i % TONES),
                     _ => "overlap".to_owned(),
                 };
 
                 let code = format!("{label} S{season} E{e}");
 
                 let title = match owners {
-                    [] if tail.is_some() => format!("{code} on: mapped by the open range as they are added"),
+                    [] if tail.is_some() => {
+                        format!("{code} on: mapped by the open range as they are added")
+                    }
                     _ if !tmdb && !known && !owners.is_empty() => format!("{code}: not in XEM"),
                     [] if tmdb && known => format!("{code}: not mapped"),
                     [] if tmdb => format!("{code}: not on TMDB"),
                     [] if known => format!("{code}: no TMDB episode"),
                     [] => format!("{code}: not in XEM"),
-                    [(i, (ts, te))] if tmdb => {
+                    [(i, (_, te))] if tmdb => {
                         let target = drawn.iter().find(|(j, _)| j == i).and_then(|(_, r)| {
                             let system = Side::System(r.system.clone());
                             Some((system.label().to_owned(), self.address(r, *te, &system)?))
@@ -1971,11 +2278,13 @@ impl NumberingEditor {
 
                 let mine = |i: &usize| tail == Some(*i) || owners.iter().any(|(o, _)| o == i);
 
-                let class = classes!(
-                    "numbering-ep",
-                    state,
+                let flags = [
                     (!tmdb && known && owners.is_empty() && tail.is_none()).then_some("untargeted"),
-                    (!known && tail.is_none()).then_some(if tmdb || owners.is_empty() { "future" } else { "missing" }),
+                    (!known && tail.is_none()).then_some(if tmdb || owners.is_empty() {
+                        "future"
+                    } else {
+                        "missing"
+                    }),
                     self.selected
                         .filter(|i| self.manual && mine(i))
                         .map(|_| "selected"),
@@ -1987,27 +2296,99 @@ impl NumberingEditor {
                         .as_ref()
                         .is_some_and(|(a, s, x)| a == side && (*s, *x) == (season, e))
                         .then_some("anchor"),
+                ];
+
+                let classes = (!state.is_empty())
+                    .then_some(state)
+                    .into_iter()
+                    .chain(flags.into_iter().flatten().map(str::to_owned))
+                    .collect();
+
+                out.insert(
+                    (season, e),
+                    Cell {
+                        classes,
+                        owners: owners.iter().map(|&(o, _)| o).chain(tail).collect(),
+                        title,
+                        tail: tail.is_some(),
+                    },
                 );
+            }
+        }
+
+        out
+    }
+
+    /// A column's episodes, each marked by the ranges reaching it, with long
+    /// runs that look alike folded into a row that unfolds on a click.
+    fn view_column(
+        &self,
+        ctx: &Context<Self>,
+        column: &Column,
+        cells: &BTreeMap<(u32, u32), Cell>,
+    ) -> Html {
+        let link = ctx.link();
+        let side = &column.side;
+        let label = side.label();
+
+        let seasons = column.seasons.iter().map(|s| {
+            let (heading, name) = if s.season == 0 {
+                ("Sp".to_owned(), "Specials".to_owned())
+            } else {
+                (format!("S{}", s.season), format!("Season {}", s.season))
+            };
+
+            let season = s.season;
+            let mut rows = Vec::new();
+            let mut folds = s.folds.iter().copied().peekable();
+            let mut e = s.lo;
+
+            while e <= s.hi {
+                let Some(cell) = cells.get(&(season, e)) else {
+                    e += 1;
+                    continue;
+                };
+
+                if let Some((first, last)) = folds.next_if(|&(a, _)| a == e) {
+                    let n = last - first + 1;
+                    let code = format!("{label} S{season} E{first}–E{last}");
+                    let title = format!("{code}: {n} episodes folded, click to show them");
+                    let pick = side.clone();
+                    let onclick = link.callback(move |_: MouseEvent| Msg::Unfold(pick.clone(), season, first, last));
+
+                    rows.push(html! {
+                        <button type="button" class={classes!("numbering-ep", "numbering-fold-row", cell.classes.clone())} data-season={season.to_string()} data-first={first.to_string()} data-last={last.to_string()} aria-label={code} aria-expanded="false" {title} {onclick}>
+                            <span>
+                                <span>{format!("E{first}–E{last}")}</span>
+                                <span class="numbering-fold-count">{format!("· {n}")}</span>
+                            </span>
+                        </button>
+                    });
+
+                    e = last + 1;
+                    continue;
+                }
 
                 let pick = side.clone();
                 let onclick = link.callback(move |_: MouseEvent| Msg::Pick(pick.clone(), season, e));
+                let text = if cell.tail { format!("E{e}…") } else { format!("E{e}") };
 
-                let text = if tail.is_some() { format!("E{e}…") } else { format!("E{e}") };
-
-                html! {
-                    <button type="button" {class} aria-label={code} {title} disabled={!self.manual} {onclick}>
+                rows.push(html! {
+                    <button type="button" class={classes!("numbering-ep", cell.classes.clone())} data-season={season.to_string()} data-first={e.to_string()} data-last={e.to_string()} aria-label={format!("{label} S{season} E{e}")} title={cell.title.clone()} disabled={!self.manual} {onclick}>
                         <span>{text}</span>
                     </button>
-                }
-            });
+                });
+
+                e += 1;
+            }
 
             html! {
                 <>
                     <div class="numbering-map-season" title={format!("{label} {name}: {} episodes", s.known)}>
                         {heading}<span class="text-muted">{format!(" · {}", s.known)}</span>
                     </div>
-                    for cell in cells {
-                        {cell}
+                    for row in rows {
+                        {row}
                     }
                 </>
             }
@@ -2122,7 +2503,7 @@ impl NumberingEditor {
             <div class={classes!("numbering-range", selected.then_some("selected"), (!messages.is_empty()).then_some("invalid"))} role="group" aria-label={format!("Range {n}")}>
                 <div class="numbering-range-head">
                     <button type="button" class="numbering-range-summary" title={format!("Edit range {n}")} aria-expanded={selected.to_string()} onclick={on_select}>
-                        <span class={classes!("numbering-swatch", format!("tone-{}", index % 4))} aria-hidden="true" />
+                        <span class={classes!("numbering-swatch", format!("tone-{}", index % TONES))} aria-hidden="true" />
                         {summary}
                     </button>
                     <Button class="numbering-remove" icon="trash" title={format!("Remove range {n}")} onclick={link.callback(move |_: MouseEvent| Msg::Remove(index))} />

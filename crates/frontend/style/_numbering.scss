@@ -13,9 +13,17 @@ $numbering-head: 26px;
 $numbering-map-chrome: 120px;
 
 .modal.numbering-modal {
+    // Anchored at the top on wide screens and at full height as a phone's
+    // sheet, so the map growing as runs unfold leaves its rows in place.
     @include g.on-desktop {
+        align-self: flex-start;
         width: min(1280px, 96vw);
         max-height: 90vh;
+        margin-top: 5vh;
+    }
+
+    @include g.on-mobile {
+        height: 90vh;
     }
 
     // A colour per range, cycling.
@@ -33,6 +41,14 @@ $numbering-map-chrome: 120px;
 
     .tone-3 {
         --tone: color-mix(in srgb, var(--accent-selected) 45%, #b5793a);
+    }
+
+    .tone-4 {
+        --tone: color-mix(in srgb, var(--accent-selected) 45%, #c4476e);
+    }
+
+    .tone-5 {
+        --tone: color-mix(in srgb, var(--accent-selected) 45%, #6f9a2a);
     }
 }
 
@@ -304,8 +320,33 @@ $numbering-map-chrome: 120px;
     }
 }
 
-.numbering-specials {
-    align-self: flex-start;
+// A run of alike episodes folded into one row, drawn as a stack of them. Its
+// count wraps out of sight when the column is too narrow for it.
+.numbering-ep.numbering-fold-row {
+    padding-bottom: 3px;
+
+    >span {
+        flex-wrap: wrap;
+        align-content: flex-start;
+        column-gap: 0.3em;
+        overflow: hidden;
+        line-height: $numbering-row - 6px;
+        box-shadow: 0 2px 0 -1px v.$border-input;
+    }
+
+    &:disabled {
+        cursor: pointer;
+    }
+}
+
+.numbering-fold-count {
+    opacity: 0.8;
+}
+
+.numbering-map-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: v.$gap-xs v.$padding-lg;
     font-size: v.$font-xs;
 }
 

@@ -484,5 +484,6 @@ yew_e2e::harness! {
         numbering_warnings_fold_into_a_summary(numbering),
         numbering_map_opens_when_seasons_line_up(numbering),
         numbering_ranges_fold_and_line_up(numbering),
+        numbering_map_folds_long_runs(numbering),
     },
 }

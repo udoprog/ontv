@@ -2659,3 +2659,264 @@ pub async fn numbering_ranges_fold_and_line_up(
     driver.snapshot("numbering-fold-phone").await?;
     Ok(())
 }
+
+/// The top in the window of the element `selector` matches, after scrolling
+/// it to the middle of the map when `center`.
+async fn map_row_top(driver: &TestDriver, selector: &str, center: bool) -> Result<f64> {
+    let ret = driver
+        .webdriver()
+        .execute(
+            "const e = document.querySelector(arguments[0]); \
+             if (arguments[1]) e.scrollIntoView({ block: 'center' }); \
+             return e.getBoundingClientRect().top;",
+            vec![selector.into(), center.into()],
+        )
+        .await?;
+    Ok(ret.convert()?)
+}
+
+/// How far below the top of the map's view the element `selector` matches is.
+async fn map_offset(driver: &TestDriver, selector: &str) -> Result<f64> {
+    let ret = driver
+        .webdriver()
+        .execute(
+            "const s = document.querySelector('.modal .numbering-map-scroll'); \
+             return document.querySelector(arguments[0]).getBoundingClientRect().top - s.getBoundingClientRect().top;",
+            vec![selector.into()],
+        )
+        .await?;
+    Ok(ret.convert()?)
+}
+
+/// Click the element `selector` matches without scrolling to it.
+async fn js_click(driver: &TestDriver, selector: &str) -> Result<()> {
+    driver
+        .webdriver()
+        .execute(
+            "document.querySelector(arguments[0]).click();",
+            vec![selector.into()],
+        )
+        .await?;
+    Ok(())
+}
+
+/// Long runs of alike episodes fold in the map, keeping their first and last
+/// to click, and bands run on through them. A fold unfolds on a click, with
+/// the same ranges' folds in the other columns, without moving under the
+/// pointer and keeping a span being picked; the map folds and unfolds all
+/// at once, and six range colours keep neighbours apart.
+pub async fn numbering_map_folds_long_runs(
+    driver: &mut TestDriver,
+    track: &mut Track,
+) -> Result<()> {
+    // Fifty episodes in TMDB's and TheTVDB's S1: E1-E30 in one range, E31-E35
+    // one range each, E36-E50 unmapped.
+    track.execute(
+        "WITH RECURSIVE n(i) AS (SELECT 6 UNION ALL SELECT i + 1 FROM n WHERE i < 50)
+         INSERT INTO episodes (id, show_id, season, episode, aired)
+         SELECT 5000 + i, 1001, 1, i, 1700000000000 + i * 604800000 FROM n;
+         DELETE FROM xem_episodes WHERE show_id = 1001 AND system = 'tvdb';
+         WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 50)
+         INSERT INTO xem_episodes (show_id, entry, system, part, season, episode, absolute)
+         SELECT 1001, i - 1, 'tvdb', 0, 1, i, i FROM n;",
+    )?;
+
+    let range = |first: u32, last: u32| {
+        format!(
+            r#"{{"season":1,"first":{first},"last":{last},"system":"tvdb","target_season":1,"target_first":{first}}}"#
+        )
+    };
+    let ranges = [range(1, 30)]
+        .into_iter()
+        .chain((31..=35).map(|e| range(e, e)))
+        .collect::<Vec<_>>()
+        .join(",");
+    track.execute(&format!(
+        r#"UPDATE shows SET numbering = '{{"ranges":[{ranges}]}}' WHERE id = 1001"#
+    ))?;
+
+    driver.set_window_size(1280, 900).await?;
+    open_show(driver).await?;
+    driver
+        .find_one_by("[title='Settings']:not(#toolbar *)")
+        .await?
+        .click()
+        .await?;
+    driver
+        .find_one_by(".modal [title='Edit ranges']")
+        .await?
+        .click()
+        .await?;
+
+    let folds =
+        |side: &str| format!(".modal .numbering-column[data-side='{side}'] .numbering-fold-row");
+    driver.wait_count(&folds("tmdb"), 2).await?;
+    ensure!(
+        driver.find_all_attrs(&folds("tmdb"), "aria-label").await?
+            == ["TMDB S1 E2–E29", "TMDB S1 E37–E49"]
+    );
+    ensure!(
+        driver.find_all_attrs(&folds("tvdb"), "aria-label").await?
+            == ["TheTVDB S1 E2–E29", "TheTVDB S1 E37–E49"]
+    );
+    ensure!(
+        driver
+            .count(".modal .numbering-ep[aria-label='TMDB S1 E15']")
+            .await?
+            == 0
+    );
+
+    // The runs' ends stay, and the band runs on through the folds.
+    for label in ["TMDB S1 E1", "TMDB S1 E30", "TMDB S1 E36", "TMDB S1 E50"] {
+        ensure!(
+            driver
+                .count(&format!(".modal .numbering-ep[aria-label='{label}']"))
+                .await?
+                == 1,
+            "{label} is folded"
+        );
+    }
+    let ret = driver
+        .webdriver()
+        .execute(
+            "return [...document.querySelectorAll('.modal .numbering-band title')].map(e => e.textContent);",
+            Vec::new(),
+        )
+        .await?;
+    let titles = ret.convert::<Vec<String>>()?;
+    ensure!(
+        titles
+            .iter()
+            .any(|t| t == "TMDB S1 E1–E30 ↔ TheTVDB S1 E1–E30"),
+        "no band through the folds: {titles:?}"
+    );
+
+    // Six colours: the sixth range has its own.
+    ensure!(driver.count(".modal .numbering-swatch.tone-5").await? == 1);
+    ensure!(
+        driver
+            .count(".modal .numbering-ep.tone-5[aria-label='TMDB S1 E35']")
+            .await?
+            == 1
+    );
+    driver.snapshot("numbering-map-folded").await?;
+
+    // Unfolding keeps the row in place and unfolds TheTVDB's too.
+    let fold = ".modal .numbering-fold-row[aria-label='TMDB S1 E2–E29']";
+    let before = map_row_top(driver, fold, true).await?;
+    driver.find_one_by(fold).await?.click().await?;
+    driver
+        .wait_count(".modal .numbering-ep[aria-label='TMDB S1 E15']", 1)
+        .await?;
+    let after = map_row_top(
+        driver,
+        ".modal .numbering-ep[aria-label='TMDB S1 E2']",
+        false,
+    )
+    .await?;
+    ensure!(
+        (after - before).abs() <= 1.0,
+        "the unfolded row moved from {before} to {after}"
+    );
+    ensure!(
+        driver
+            .count(".modal .numbering-ep[aria-label='TheTVDB S1 E15']")
+            .await?
+            == 1
+    );
+    ensure!(driver.count(&folds("tmdb")).await? == 1);
+
+    // Folding all again.
+    driver
+        .find_one_by(".modal .numbering-fold-all")
+        .await?
+        .click()
+        .await?;
+    driver.wait_count(&folds("tmdb"), 2).await?;
+    ensure!(driver.count(".modal .numbering-fold-all").await? == 0);
+
+    // Picking a span whose end is folded: the fold opens and keeps the first
+    // click.
+    pick(driver, "TMDB S1 E1").await?;
+    driver
+        .wait_count(".modal .numbering-range.selected[aria-label='Range 1']", 1)
+        .await?;
+    pick(driver, "TMDB S1 E1").await?;
+    driver
+        .wait_count(".modal .numbering-ep.anchor[aria-label='TMDB S1 E1']", 1)
+        .await?;
+    let fold = ".modal .numbering-fold-row[aria-label='TMDB S1 E3–E29']";
+    driver.wait_count(fold, 1).await?;
+    let before = map_row_top(driver, fold, true).await?;
+    driver.find_one_by(fold).await?.click().await?;
+    driver
+        .wait_count(".modal .numbering-ep[aria-label='TMDB S1 E20']", 1)
+        .await?;
+    let after = map_row_top(
+        driver,
+        ".modal .numbering-ep[aria-label='TMDB S1 E3']",
+        false,
+    )
+    .await?;
+    ensure!(
+        (after - before).abs() <= 1.0,
+        "the unfolded row moved from {before} to {after}"
+    );
+    ensure!(
+        driver
+            .count(".modal .numbering-ep.anchor[aria-label='TMDB S1 E1']")
+            .await?
+            == 1
+    );
+    pick(driver, "TMDB S1 E20").await?;
+    let singles = (31..=35)
+        .flat_map(|e| [format!("S1 E{e}–E{e}"), format!("S1 E{e}–E{e}")])
+        .collect::<Vec<_>>();
+    let singles = singles.iter().map(String::as_str).collect::<Vec<_>>();
+    wait_spans(
+        driver,
+        &[&["S1 E1–E20", "S1 E1–E20"][..], &singles].concat(),
+    )
+    .await?;
+
+    // Unfolding everything.
+    driver
+        .find_one_by(".modal .numbering-unfold-all")
+        .await?
+        .click()
+        .await?;
+    driver.wait_count(".modal .numbering-fold-row", 0).await?;
+    ensure!(
+        driver
+            .count(".modal .numbering-column[data-side='tmdb'] .numbering-ep")
+            .await?
+            == 50
+    );
+    driver.snapshot("numbering-map-unfolded").await?;
+
+    // On a short phone, folding the runs above the map's top row leaves that
+    // row where it was.
+    driver.set_window_size(400, 500).await?;
+    let row = ".modal .numbering-ep[aria-label='TMDB S1 E30']";
+    let top = map_offset(driver, row).await?;
+    driver
+        .webdriver()
+        .execute(
+            "document.querySelector('.modal .numbering-map-scroll').scrollTop += arguments[0];",
+            vec![top.into()],
+        )
+        .await?;
+    let before = map_offset(driver, row).await?;
+    ensure!(
+        before.abs() <= 1.0,
+        "the map did not scroll to E30: {before}"
+    );
+    js_click(driver, ".modal .numbering-fold-all").await?;
+    driver.wait_count(&folds("tmdb"), 3).await?;
+    let after = map_offset(driver, row).await?;
+    ensure!(
+        (after - before).abs() <= 1.0,
+        "the map's top row moved from {before} to {after}"
+    );
+    driver.snapshot("numbering-map-folded-phone").await
+}
