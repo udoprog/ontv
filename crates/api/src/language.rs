@@ -34,6 +34,10 @@ impl Language {
     /// English (`eng`).
     pub const ENG: Language = Language::new(b"eng");
 
+    /// Undetermined (`und`): the language of a string a remote handed over
+    /// without saying which language it is in.
+    pub const UND: Language = Language::new(b"und");
+
     /// Filter the current language, returning `DEFAULT` if the predicate
     /// returns false.
     #[inline]

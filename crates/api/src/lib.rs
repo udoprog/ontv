@@ -984,6 +984,10 @@ pub enum StringKind {
     Title,
     Overview,
     Character,
+    /// A crew credit's job, such as "Director".
+    Job,
+    /// A crew credit's or a person's department, such as "Directing".
+    Department,
     Unknown,
 }
 
@@ -993,6 +997,8 @@ impl StringKind {
             StringKind::Title => "title",
             StringKind::Overview => "overview",
             StringKind::Character => "character",
+            StringKind::Job => "job",
+            StringKind::Department => "department",
             StringKind::Unknown => "unknown",
         }
     }
@@ -1013,6 +1019,8 @@ impl ::sqll::FromColumn<'_> for StringKind {
             1 => Ok(StringKind::Title),
             2 => Ok(StringKind::Overview),
             3 => Ok(StringKind::Character),
+            4 => Ok(StringKind::Job),
+            5 => Ok(StringKind::Department),
             _ => Ok(StringKind::Unknown),
         }
     }
@@ -1025,6 +1033,8 @@ impl ::sqll::BindValue for StringKind {
             StringKind::Title => 1,
             StringKind::Overview => 2,
             StringKind::Character => 3,
+            StringKind::Job => 4,
+            StringKind::Department => 5,
             StringKind::Unknown => 0,
         };
 
@@ -1626,9 +1636,10 @@ pub struct Credit {
     pub name: Translations,
     pub profile: Option<Image>,
     pub kind: CreditKind,
-    pub character: Translations,
-    pub department: Option<String>,
-    pub job: Option<String>,
+    /// The cast character or the crew job and department; resolve with
+    /// [`Translations::character`], [`Translations::job`] and
+    /// [`Translations::department`].
+    pub role: Translations,
     pub episode_count: Option<u32>,
     pub order: Option<u32>,
 }
@@ -1645,7 +1656,8 @@ pub struct Person {
     /// Localized biography (kind=Overview); resolve with [`Translations::overview`].
     pub biography: Translations,
     pub profile: Option<Image>,
-    pub department: Option<String>,
+    /// Localized department the person is known for (kind=Department).
+    pub department: Translations,
     pub remotes: Vec<RemoteEntry>,
     pub last_synced_at: Option<Timestamp>,
 }
@@ -1668,7 +1680,8 @@ pub struct PersonItem {
     /// Localized name strings; filter across locales with [`Translations::texts`].
     pub name: Translations,
     pub profile: Option<Image>,
-    pub department: Option<String>,
+    /// Localized department the person is known for (kind=Department).
+    pub department: Translations,
     /// Number of show + movie credits, shown on the card.
     pub credit_count: u32,
 }
@@ -1683,10 +1696,8 @@ pub struct PersonCredit {
     pub title: Translations,
     pub poster: Option<Image>,
     pub kind: CreditKind,
-    /// The character played, when a cast credit.
-    pub character: Translations,
-    pub department: Option<String>,
-    pub job: Option<String>,
+    /// The character played (cast) or the job and department (crew).
+    pub role: Translations,
     pub episode_count: Option<u32>,
     pub order: Option<u32>,
     /// The owner's release/first-air date, for sorting the filmography.

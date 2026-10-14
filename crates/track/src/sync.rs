@@ -737,8 +737,8 @@ struct DraftImage {
     score: f64,
 }
 
-/// A cast/crew credit accumulated during sync: the person's identity and role,
-/// plus the person's name and the character name in each synced language. Merged
+/// A cast/crew credit accumulated during sync: the person's identity, plus the
+/// person's name and the role strings in each synced language. Merged
 /// across the per-language credit fetches by the remote's stable credit id. The
 /// person's name is only a placeholder seed here - the authoritative localized
 /// name comes from the independent person sync.
@@ -747,15 +747,40 @@ struct CreditDraft {
     remote_person_id: u32,
     profile: Option<Image>,
     kind: api::CreditKind,
-    department: Option<String>,
-    job: Option<String>,
     order: Option<u32>,
     episode_count: Option<u32>,
     /// `(locale, name)` seed for the person, one per synced language.
     names: Vec<(api::Locale, String)>,
-    /// `(locale, character)`, one entry per synced language that returned a
-    /// character name.
+    /// `(locale, text)` of the character, job and department, one entry per
+    /// synced language that returned them.
     characters: Vec<(api::Locale, String)>,
+    jobs: Vec<(api::Locale, String)>,
+    departments: Vec<(api::Locale, String)>,
+}
+
+impl CreditDraft {
+    fn roles(&self) -> [(api::StringKind, &[(api::Locale, String)]); 3] {
+        [
+            (api::StringKind::Character, &self.characters),
+            (api::StringKind::Job, &self.jobs),
+            (api::StringKind::Department, &self.departments),
+        ]
+    }
+}
+
+/// The locales to store a string under that a remote returned once per synced
+/// locale: one string of unknown language when every locale returned the same
+/// text (the remote did not translate it), otherwise each as returned.
+fn by_language(strings: &[(api::Locale, String)]) -> Vec<(api::Locale, &str)> {
+    match strings.split_first() {
+        Some(((_, first), rest)) if rest.iter().all(|(_, text)| text == first) => {
+            vec![(api::Locale::UNKNOWN, first.as_str())]
+        }
+        _ => strings
+            .iter()
+            .map(|(locale, text)| (*locale, text.as_str()))
+            .collect(),
+    }
 }
 
 /// A season's metadata contributed by the base layer.
@@ -1808,8 +1833,8 @@ async fn collect_tvdb_strings(
 /// metadata, accumulated graphics, seasons, episodes (with stable ids), and
 /// per-source air-date releases; prune anything no longer present.
 /// Merge one language's fetched credits into `merged`, keyed by the remote's
-/// stable credit id. Person and role fields are set from the first language that
-/// returns each credit; the character name is appended per language.
+/// stable credit id. Person fields are set from the first language that returns
+/// each credit; the name and role strings are appended per language.
 fn merge_credits(
     merged: &mut BTreeMap<String, CreditDraft>,
     credits: Vec<tmdb::CreditInfo>,
@@ -1839,22 +1864,28 @@ fn merge_credits(
             remote_person_id: tmdb_person_id,
             profile: profile_path.as_deref().map(Image::tmdb),
             kind,
-            department,
-            job,
             order,
             episode_count,
             names: Vec::new(),
             characters: Vec::new(),
+            jobs: Vec::new(),
+            departments: Vec::new(),
         });
 
         if !name.trim().is_empty() {
             entry.names.push((locale, name));
         }
 
-        if let Some(character) = character
-            && !character.trim().is_empty()
-        {
-            entry.characters.push((locale, character));
+        for (strings, text) in [
+            (&mut entry.characters, character),
+            (&mut entry.jobs, job),
+            (&mut entry.departments, department),
+        ] {
+            if let Some(text) = text
+                && !text.trim().is_empty()
+            {
+                strings.push((locale, text));
+            }
         }
     }
 }
@@ -1916,7 +1947,6 @@ fn slugify(name: &str) -> String {
 /// The data a person layer accumulates before it is persisted in one pass.
 #[derive(Default)]
 struct PersonDraft {
-    department: Option<String>,
     /// Remotes discovered from the source (e.g. an IMDb cross-reference), added to
     /// `person_remotes` like shows/movies rather than kept as a scalar column.
     remotes: Vec<(Option<String>, api::Remote)>,
@@ -2021,7 +2051,6 @@ pub(crate) async fn sync_person(
     if persisted {
         db.persist_person_sync(
             person_id,
-            draft.department,
             draft.default_language,
             draft.strings,
             draft.images,
@@ -2082,7 +2111,19 @@ async fn tmdb_person_layer(
         anyhow::bail!("Sync aborted: service is shutting down");
     }
 
-    draft.department = info.department.clone();
+    // TMDB returns the name and department untranslated.
+    push_string(
+        &mut draft.strings,
+        api::Locale::UNKNOWN,
+        api::StringKind::Title,
+        info.name.clone(),
+    );
+    push_string(
+        &mut draft.strings,
+        api::Locale::UNKNOWN,
+        api::StringKind::Department,
+        info.department.clone(),
+    );
 
     // Update the TMDB remote's slug from the person's name so external links resolve
     // to the canonical `/person/{id}-{slug}` URL (TMDB doesn't return a slug).
@@ -2139,7 +2180,9 @@ async fn tmdb_person_layer(
             &mut draft.strings,
             t.locale,
             api::StringKind::Title,
-            t.name.clone().or_else(|| info.name.clone()),
+            t.name
+                .clone()
+                .filter(|name| Some(name) != info.name.as_ref()),
         );
         push_string(
             &mut draft.strings,
@@ -2151,12 +2194,6 @@ async fn tmdb_person_layer(
 
     // Targets with no translation fall back to the detail (default-language) data.
     for locale in remaining {
-        push_string(
-            &mut draft.strings,
-            locale,
-            api::StringKind::Title,
-            info.name.clone(),
-        );
         push_string(
             &mut draft.strings,
             locale,
@@ -2183,16 +2220,21 @@ fn seed_person(s: &mut InnerWrite, credit: &CreditDraft) -> Result<api::PersonId
     let (person_id, last_synced) = s.upsert_person(credit.source, credit.remote_person_id)?;
 
     if last_synced.is_none() {
-        for (locale, name) in &credit.names {
-            s.seed_person_string(person_id, *locale, api::StringKind::Title, name)?;
+        let names = by_language(&credit.names);
+
+        for &(locale, name) in &names {
+            s.seed_person_string(person_id, locale, api::StringKind::Title, name)?;
         }
 
         // Anchor the display language to a locale we actually seeded a name under,
         // so the name resolves on the person page/list before the person's own sync
         // runs. The person's original language isn't known from the credit response
         // and may not even be among the fetched locales, so it can't be used here.
-        if let Some((locale, _)) = credit.names.first() {
-            s.seed_person_default_language(person_id, *locale)?;
+        // A name of unknown language resolves in any display language.
+        if let Some(&(locale, _)) = names.first()
+            && locale != api::Locale::UNKNOWN
+        {
+            s.seed_person_default_language(person_id, locale)?;
         }
 
         if let Some(profile) = &credit.profile {
@@ -2220,14 +2262,14 @@ fn persist_show_credits(
             show_id,
             person_id,
             credit.kind,
-            credit.department.as_deref(),
-            credit.job.as_deref(),
             credit.order,
             credit.episode_count,
         )?;
 
-        for (locale, character) in &credit.characters {
-            s.insert_show_credit_string(credit_id, *locale, api::StringKind::Character, character)?;
+        for (kind, strings) in credit.roles() {
+            for (locale, text) in by_language(strings) {
+                s.insert_show_credit_string(credit_id, locale, kind, text)?;
+            }
         }
     }
 
@@ -3712,19 +3754,14 @@ fn persist_movie_credits(
             movie_id,
             person_id,
             credit.kind,
-            credit.department.as_deref(),
-            credit.job.as_deref(),
             credit.order,
             credit.episode_count,
         )?;
 
-        for (locale, character) in &credit.characters {
-            s.insert_movie_credit_string(
-                credit_id,
-                *locale,
-                api::StringKind::Character,
-                character,
-            )?;
+        for (kind, strings) in credit.roles() {
+            for (locale, text) in by_language(strings) {
+                s.insert_movie_credit_string(credit_id, locale, kind, text)?;
+            }
         }
     }
 
@@ -3845,6 +3882,22 @@ mod tests {
     use super::*;
 
     use crate::db::OpenMode;
+
+    /// A string every synced locale returned alike is stored once, of unknown
+    /// language; strings that differ keep their locales.
+    #[test]
+    fn untranslated_strings_are_stored_in_unknown_language() {
+        let en = api::Locale::from_iso("en").unwrap();
+        let sv = api::Locale::from_iso("sv").unwrap();
+
+        let same = [(en, "Director".to_owned()), (sv, "Director".to_owned())];
+        assert_eq!(by_language(&same), [(api::Locale::UNKNOWN, "Director")]);
+
+        let differ = [(en, "The Doctor".to_owned()), (sv, "Doktorn".to_owned())];
+        assert_eq!(by_language(&differ), [(en, "The Doctor"), (sv, "Doktorn")]);
+
+        assert!(by_language(&[]).is_empty());
+    }
 
     fn draft(season: u32, poster: &str) -> ShowDraft {
         let number = SeasonNumber::from_ordinal(season);

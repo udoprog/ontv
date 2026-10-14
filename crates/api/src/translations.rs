@@ -21,9 +21,10 @@ struct Entry {
 /// Strings are held in a flat `entries` array; `by_locale` and `by_language`
 /// index into it for exact and country-relaxed lookups. [`Translations::get`]
 /// resolves using the entity's configured display [`locale`](Self::locale),
-/// falling back to the same language (any country). A kind with no entry for that
-/// language resolves to `None` - a missing translation is reported as missing
-/// rather than substituting an unrelated locale.
+/// falling back to the same language (any country), then to a string of unknown
+/// language ([`Locale::UNKNOWN`]). A kind with none of these resolves to `None` -
+/// a missing translation is reported as missing rather than substituting an
+/// unrelated locale.
 ///
 /// Built incrementally with [`new`](Self::new) + [`insert`](Self::insert):
 /// inserting a `(kind, locale)` that already exists replaces it (no duplicate
@@ -113,6 +114,18 @@ impl Translations {
         self.get(StringKind::Character)
     }
 
+    /// The resolved crew job, equivalent to `get(StringKind::Job)`.
+    #[inline]
+    pub fn job(&self) -> Option<&str> {
+        self.get(StringKind::Job)
+    }
+
+    /// The resolved department, equivalent to `get(StringKind::Department)`.
+    #[inline]
+    pub fn department(&self) -> Option<&str> {
+        self.get(StringKind::Department)
+    }
+
     /// Resolve a string of `kind` using the configured display locale. See
     /// [`Translations::get_with`].
     #[inline]
@@ -121,9 +134,10 @@ impl Translations {
     }
 
     /// Resolve a string of `kind`, preferring an exact match for `locale`, then
-    /// the same language as `locale` (any country). Returns `None` when no entry
-    /// matches that language, so a missing translation is reported as missing
-    /// rather than falling back to an unrelated locale.
+    /// the same language as `locale` (any country), then the string of unknown
+    /// language. Returns `None` when none of these exist, so a missing
+    /// translation is reported as missing rather than falling back to an
+    /// unrelated locale.
     pub fn get_with(&self, kind: StringKind, locale: Locale) -> Option<&str> {
         let idx = self.index(kind, locale)?;
         Some(self.entries[idx].text.as_str())
@@ -156,7 +170,7 @@ impl Translations {
 
     /// The index of the entry [`get_with`](Self::get_with) resolves for `(kind,
     /// locale)`: an exact locale match, falling back to the same language (any
-    /// country).
+    /// country), then to [`Locale::UNKNOWN`].
     fn index(&self, kind: StringKind, locale: Locale) -> Option<usize> {
         if let Some(&idx) = self.by_locale.get(&(kind, locale)) {
             return Some(idx);
@@ -164,11 +178,13 @@ impl Translations {
 
         let language = locale.language();
 
-        if language.is_default() {
-            return None;
+        if !language.is_default()
+            && let Some(&idx) = self.by_language.get(&(kind, language))
+        {
+            return Some(idx);
         }
 
-        self.by_language.get(&(kind, language)).copied()
+        self.by_locale.get(&(kind, Locale::UNKNOWN)).copied()
     }
 }
 
@@ -253,6 +269,52 @@ impl fmt::Debug for Translations {
             .field("locale", &self.locale)
             .field("entries", &self.entries)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod unknown_language_tests {
+    use super::*;
+    use crate::{Country, Language};
+
+    #[test]
+    fn a_string_of_unknown_language_resolves_when_no_translation_matches() {
+        let sv = Locale::new(Language::from_iso("sv").unwrap(), Country::DEFAULT);
+
+        let mut role = Translations::new(sv);
+        role.insert(StringKind::Character, Locale::UNKNOWN, "Ada");
+        assert_eq!(role.character(), Some("Ada"));
+        assert_eq!(
+            role.resolved_locale(StringKind::Character),
+            Some(Locale::UNKNOWN)
+        );
+
+        let mut role = Translations::new(Locale::DEFAULT);
+        role.insert(StringKind::Character, Locale::UNKNOWN, "Ada");
+        assert_eq!(role.character(), Some("Ada"));
+        assert_eq!(role.job(), None);
+    }
+
+    #[test]
+    fn a_real_translation_wins_over_unknown_language() {
+        let sv_se = Locale::from_iso("sv-SE").unwrap();
+        let sv = Locale::new(sv_se.language(), Country::DEFAULT);
+
+        let mut role = Translations::new(sv_se);
+        role.insert(StringKind::Job, Locale::UNKNOWN, "Director");
+        role.insert(StringKind::Job, sv, "Regissör");
+        assert_eq!(role.job(), Some("Regissör"));
+
+        let mut role = Translations::new(sv_se);
+        role.insert(StringKind::Job, sv, "Regissör");
+        role.insert(StringKind::Job, Locale::UNKNOWN, "Director");
+        assert_eq!(role.job(), Some("Regissör"));
+    }
+
+    #[test]
+    fn unknown_language_round_trips_as_und() {
+        assert_eq!(Locale::UNKNOWN.to_string(), "und");
+        assert_eq!("und".parse::<Locale>().unwrap(), Locale::UNKNOWN);
     }
 }
 

@@ -756,6 +756,11 @@ async fn next_episode_follows_the_most_recent_watch_in_scope() -> Result<()> {
 /// The base schema of databases created before users, frozen.
 const BEFORE_USERS_SCHEMA: &str = include_str!("testdata/2026-06-05-before-users.sql");
 
+/// The base schema of databases created before strings of unknown language,
+/// frozen.
+const BEFORE_UNKNOWN_LANGUAGE_SCHEMA: &str =
+    include_str!("testdata/2026-06-05-before-unknown-language.sql");
+
 /// One text column of every row `sql` returns.
 fn texts(c: &sqll::Connection, sql: &str) -> Result<Vec<String>> {
     let mut q = c.prepare(sql)?;
@@ -1039,6 +1044,179 @@ fn migrations_convert_a_database_from_before_users() -> Result<()> {
         rows("SELECT key FROM config ORDER BY key")?,
         ["tvdb_api_key"]
     );
+    Ok(())
+}
+
+/// A database created before strings of unknown language, with every migration
+/// up to then recorded as applied.
+fn before_unknown_language_db(path: &Path) -> Result<sqll::Connection> {
+    let c = OpenOptions::new()
+        .read_write()
+        .create()
+        .no_mutex()
+        .open(path)?;
+
+    c.execute(BEFORE_UNKNOWN_LANGUAGE_SCHEMA)?;
+    c.execute(MIGRATIONS_INIT)?;
+    c.execute(
+        "INSERT INTO migrations (id, applied_at) VALUES
+            ('2026-06-05.sql', '2026-06-05T00:00:00Z'),
+            ('2026-10-01-users.sql', '2026-10-01T00:00:00Z'),
+            ('2026-10-01-watch-history-per-user.sql', '2026-10-01T00:00:00Z'),
+            ('2026-10-02-user-preferences.sql', '2026-10-02T00:00:00Z'),
+            ('2026-10-08-xem-numbering.sql', '2026-10-08T00:00:00Z'),
+            ('2026-10-08-xem.sql', '2026-10-08T00:00:00Z')",
+    )?;
+    Ok(c)
+}
+
+/// A database from before strings of unknown language migrates to exactly the
+/// schema a fresh one gets. Character and person names identical in every
+/// locale collapse into one string of unknown language, names that differ keep
+/// their locales, and the plain department and job columns become strings of
+/// unknown language.
+#[tokio::test]
+async fn migrations_store_untranslated_strings_in_unknown_language() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let old = dir.path().join("old.db");
+    let fresh = dir.path().join("fresh.db");
+
+    let en_us = api::Locale::from_iso("en-US").context("en-US")?;
+    let sv = api::Locale::from_iso("sv").context("sv")?;
+    let ru = api::Locale::from_iso("ru").context("ru")?;
+
+    {
+        let c = before_unknown_language_db(&old)?;
+
+        c.execute(format!(
+            "INSERT INTO shows (id, default_language) VALUES (1, {en_us});
+            INSERT INTO movies (id) VALUES (2);
+            INSERT INTO people (id, department, default_language) VALUES
+                (10, 'Acting', {en_us}),
+                (11, NULL, {en_us});
+            INSERT INTO person_strings (person_id, language, kind, text) VALUES
+                (10, {en_us}, 1, 'Ada Lovelace'),
+                (10, {sv}, 1, 'Ada Lovelace'),
+                (10, {en_us}, 2, 'Bio'),
+                (10, {sv}, 2, 'Bio'),
+                (11, {en_us}, 1, 'Anton Chekhov'),
+                (11, {ru}, 1, 'Антон Чехов');
+            INSERT INTO show_credits (id, show_id, person_id, credit_type, department, job) VALUES
+                (100, 1, 10, 1, NULL, NULL),
+                (101, 1, 11, 2, 'Writing', 'Writer'),
+                (102, 1, 11, 1, NULL, NULL);
+            INSERT INTO show_credit_strings (credit_id, language, kind, text) VALUES
+                (100, {en_us}, 3, 'Ada'),
+                (100, {sv}, 3, 'Ada'),
+                (102, {en_us}, 3, 'The Doctor'),
+                (102, {sv}, 3, 'Doktorn');
+            INSERT INTO movie_credits (id, movie_id, person_id, credit_type, department, job) VALUES
+                (200, 2, 10, 1, '', NULL),
+                (201, 2, 11, 2, 'Directing', 'Director');
+            INSERT INTO movie_credit_strings (credit_id, language, kind, text) VALUES
+                (200, {sv}, 3, 'Ada');",
+            en_us = en_us.to_u64(),
+            sv = sv.to_u64(),
+            ru = ru.to_u64(),
+        ))?;
+    }
+
+    drop(Database::open(&fresh, OpenMode::Bulk, 1)?);
+    let db = Database::open(&old, OpenMode::Bulk, 1)?;
+
+    {
+        let old = OpenOptions::new().read_write().no_mutex().open(&old)?;
+        let fresh = OpenOptions::new().read_write().no_mutex().open(&fresh)?;
+
+        assert_eq!(schema(&old)?, schema(&fresh)?);
+        assert_eq!(
+            texts(&old, "SELECT id FROM migrations ORDER BY id")?,
+            texts(&fresh, "SELECT id FROM migrations ORDER BY id")?
+        );
+
+        let strings = |table: &str, owner: &str| -> Result<Vec<String>> {
+            let rows = texts(
+                &old,
+                &format!(
+                    "SELECT {owner} || ' ' || language || ' ' || kind || ' ' || text FROM {table}"
+                ),
+            )?;
+
+            // Name the locales so a failure reads.
+            let mut rows = rows
+                .into_iter()
+                .map(|row| {
+                    let mut parts = row.splitn(4, ' ');
+                    let owner = parts.next().unwrap_or_default();
+                    let locale = parts
+                        .next()
+                        .and_then(|n| n.parse::<i64>().ok())
+                        .map(|n| api::Locale::from_u64(n.cast_unsigned()).to_string())
+                        .unwrap_or_default();
+                    let rest = parts.collect::<Vec<_>>().join(" ");
+                    format!("{owner} {locale} {rest}")
+                })
+                .collect::<Vec<_>>();
+            rows.sort();
+            Ok(rows)
+        };
+
+        assert_eq!(
+            strings("show_credit_strings", "credit_id")?,
+            [
+                "100 und 3 Ada",
+                "101 und 4 Writer",
+                "101 und 5 Writing",
+                "102 en-US 3 The Doctor",
+                "102 sv 3 Doktorn",
+            ]
+        );
+        assert_eq!(
+            strings("movie_credit_strings", "credit_id")?,
+            ["200 und 3 Ada", "201 und 4 Director", "201 und 5 Directing",]
+        );
+        assert_eq!(
+            strings("person_strings", "person_id")?,
+            [
+                "10 en-US 2 Bio",
+                "10 sv 2 Bio",
+                "10 und 1 Ada Lovelace",
+                "10 und 5 Acting",
+                "11 en-US 1 Anton Chekhov",
+                "11 ru 1 Антон Чехов",
+            ]
+        );
+    }
+
+    // Strings of unknown language resolve in any display language, here en-US.
+    let root = db.default_owner().await?;
+    let credits = db.list_show_credits(root, api::ShowId::new(1)).await?;
+    let roles = credits
+        .iter()
+        .map(|c| {
+            (
+                c.name.title(),
+                c.role.character(),
+                c.role.job(),
+                c.role.department(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        roles,
+        [
+            (Some("Ada Lovelace"), Some("Ada"), None, None),
+            (Some("Anton Chekhov"), Some("The Doctor"), None, None),
+            (Some("Anton Chekhov"), None, Some("Writer"), Some("Writing")),
+        ]
+    );
+
+    let person = db
+        .person_by_id(Some(root), api::PersonId::new(10))
+        .await?
+        .context("person")?;
+    assert_eq!(person.name.title(), Some("Ada Lovelace"));
+    assert_eq!(person.department.department(), Some("Acting"));
     Ok(())
 }
 

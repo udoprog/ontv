@@ -386,12 +386,11 @@ CREATE TABLE
 -- People are shared across shows and movies and synced independently (their own
 -- `last_synced_at`). Identity is a random PersonId; the source-specific ids live
 -- in `person_remotes`, mirroring show_remotes/movie_remotes, and the person points
--- back at its primary (selected) remote via remote_id. The localized name and
--- biography live in `person_strings`.
+-- back at its primary (selected) remote via remote_id. The localized name,
+-- biography and department live in `person_strings`.
 CREATE TABLE
     people (
         id INTEGER PRIMARY KEY,
-        department TEXT,
         default_language INTEGER NOT NULL DEFAULT 0,
         last_synced_at INTEGER,
         remote_id INTEGER REFERENCES person_remotes (id) ON DELETE SET NULL
@@ -417,7 +416,9 @@ CREATE TABLE
         UNIQUE (person_id, source, value)
     );
 
--- Per-language name (kind=Title) and biography (kind=Overview) for a person.
+-- Per-language name (kind=Title), biography (kind=Overview) and department
+-- (kind=Department) for a person. A string a remote does not translate, such as
+-- the name, is stored once under the unknown language (`und`).
 CREATE TABLE
     person_strings (
         id INTEGER PRIMARY KEY,
@@ -447,15 +448,14 @@ CREATE TABLE
 CREATE INDEX idx_person_image_candidates_rank ON person_image_candidates (person_id, kind, rank);
 
 -- A credit links a person to a show/movie in one cast role or crew job. One row
--- per role/job; the character name is translated (see show_credit_strings).
+-- per role/job; the character name, job and department are translated (see
+-- show_credit_strings).
 CREATE TABLE
     show_credits (
         id INTEGER PRIMARY KEY,
         show_id INTEGER NOT NULL REFERENCES shows (id) ON DELETE CASCADE,
         person_id INTEGER NOT NULL REFERENCES people (id) ON DELETE CASCADE,
         credit_type INTEGER NOT NULL,
-        department TEXT,
-        job TEXT,
         sort_order INTEGER,
         episode_count INTEGER
     );
@@ -497,14 +497,15 @@ CREATE TABLE
         movie_id INTEGER NOT NULL REFERENCES movies (id) ON DELETE CASCADE,
         person_id INTEGER NOT NULL REFERENCES people (id) ON DELETE CASCADE,
         credit_type INTEGER NOT NULL,
-        department TEXT,
-        job TEXT,
         sort_order INTEGER,
         episode_count INTEGER
     );
 
 CREATE INDEX idx_movie_credits_movie ON movie_credits (movie_id);
 
+-- Per-language character (kind=Character), job (kind=Job) and department
+-- (kind=Department) of a credit. Strings a remote returns untranslated are
+-- stored once under the unknown language (`und`).
 CREATE TABLE
     show_credit_strings (
         id INTEGER PRIMARY KEY,

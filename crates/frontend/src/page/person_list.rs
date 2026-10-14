@@ -374,8 +374,8 @@ impl PersonList {
                 <div class="person-info">
                     <div class="person-name">{ name }</div>
 
-                    if let Some(department) = &p.department {
-                        <div class="person-department text-muted">{ department.clone() }</div>
+                    if let Some(department) = p.department.department() {
+                        <div class="person-department text-muted">{ department.to_owned() }</div>
                     }
 
                     <div class="person-credits text-muted">

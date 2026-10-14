@@ -62,6 +62,14 @@ impl Locale {
         country: Country::US,
     };
 
+    /// The locale of a string whose language is unknown: [`Language::UND`] with
+    /// no country. A string stored under it is what a remote handed over
+    /// untranslated, such as a person's name; any real translation wins over it.
+    pub const UNKNOWN: Locale = Locale {
+        language: Language::UND,
+        country: Country::DEFAULT,
+    };
+
     /// Construct a locale from its language and country components.
     #[inline]
     pub const fn new(language: Language, country: Country) -> Self {

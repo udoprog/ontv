@@ -418,8 +418,8 @@ impl PersonDetail {
                         </div>
                     </div>
 
-                    if let Some(department) = &person.department {
-                        <div class="text-muted">{ department.clone() }</div>
+                    if let Some(department) = person.department.department() {
+                        <div class="text-muted">{ department.to_owned() }</div>
                     }
 
                     <div class="row detail-sources">
@@ -485,10 +485,10 @@ impl PersonDetail {
         for credit in &self.credits {
             // Prefer the character (cast); fall back to the crew job.
             let role = credit
-                .character
+                .role
                 .character()
-                .map(str::to_owned)
-                .or_else(|| credit.job.clone());
+                .or(credit.role.job())
+                .map(str::to_owned);
 
             let at = match titles.iter().position(|(c, _)| c.owner == credit.owner) {
                 Some(at) => at,

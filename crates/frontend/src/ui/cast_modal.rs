@@ -20,7 +20,7 @@ impl PartialEq for Props {
 
 /// The subtitle under a credit's name: the character for cast, the job for crew.
 pub(crate) fn credit_subtitle(credit: &api::Credit) -> Option<&str> {
-    credit.character.character().or(credit.job.as_deref())
+    credit.role.character().or(credit.role.job())
 }
 
 /// A clickable credit card - photo, name and subtitle - that navigates to the

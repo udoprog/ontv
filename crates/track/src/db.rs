@@ -106,14 +106,12 @@ struct MovieImageRow {
 }
 
 /// A credit row plus its person's best-ranked profile image. Person names and
-/// character names are folded in separately from the `*_strings` tables.
+/// roles are folded in separately from the `*_strings` tables.
 #[derive(Row)]
 struct CreditRow {
     id: CreditId,
     person_id: PersonId,
     credit_type: CreditKind,
-    department: Option<String>,
-    job: Option<String>,
     sort_order: Option<u32>,
     episode_count: Option<u32>,
     profile_source: Option<ImageSource>,
@@ -130,7 +128,6 @@ struct PersonSyncRow {
 /// A person's own row; identity/remotes (incl. IMDb) live in `person_remotes`.
 #[derive(Row)]
 struct PersonRow {
-    department: Option<String>,
     default_language: api::Locale,
     last_synced_at: Option<Timestamp>,
 }
@@ -139,7 +136,6 @@ struct PersonRow {
 #[derive(Row)]
 struct PersonListRow {
     id: PersonId,
-    department: Option<String>,
     default_language: api::Locale,
 }
 
@@ -163,7 +159,7 @@ struct ProfileRow {
 }
 
 /// A person's credit on a show or movie, with the owner's date and best poster.
-/// Character names are folded in separately from `*_credit_strings`.
+/// Roles are folded in separately from `*_credit_strings`.
 #[derive(Row)]
 struct PersonCreditRow {
     id: CreditId,
@@ -174,8 +170,6 @@ struct PersonCreditRow {
     /// display language matches (mirrors show/movie title resolution).
     owner_language: api::Locale,
     credit_type: CreditKind,
-    department: Option<String>,
-    job: Option<String>,
     sort_order: Option<u32>,
     episode_count: Option<u32>,
     date: Option<Timestamp>,
@@ -851,37 +845,39 @@ pub(crate) struct InnerRead {
 
     // credits (cast & crew; person + character names folded in from *_strings).
     // The person's best-ranked profile is pulled via correlated subqueries.
-    #[sql = "SELECT c.id, c.person_id, c.credit_type, c.department, c.job, c.sort_order, c.episode_count,"]
+    #[sql = "SELECT c.id, c.person_id, c.credit_type, c.sort_order, c.episode_count,"]
     #[sql = "  (SELECT source FROM person_image_candidates WHERE person_id = c.person_id AND kind = 5 ORDER BY rank, id LIMIT 1) AS profile_source,"]
     #[sql = "  (SELECT path FROM person_image_candidates WHERE person_id = c.person_id AND kind = 5 ORDER BY rank, id LIMIT 1) AS profile_path"]
     #[sql = "FROM show_credits c"]
     #[sql = "WHERE c.show_id = ? ORDER BY c.credit_type, c.episode_count DESC, c.sort_order, c.id"]
     list_show_credits: TypedStatement<(ShowId,), CreditRow>,
-    #[sql = "SELECT cs.credit_id, cs.language, cs.text FROM show_credit_strings cs"]
+    #[sql = "SELECT cs.credit_id, cs.language, cs.kind, cs.text FROM show_credit_strings cs"]
     #[sql = "JOIN show_credits c ON c.id = cs.credit_id"]
     #[sql = "WHERE c.show_id = ? ORDER BY cs.credit_id"]
-    list_show_credit_strings: TypedStatement<(ShowId,), (CreditId, api::Locale, String)>,
+    list_show_credit_strings:
+        TypedStatement<(ShowId,), (CreditId, api::Locale, api::StringKind, String)>,
     // Person names (kind=Title) for a show's credits, keyed by credit id.
     #[sql = "SELECT c.id, ps.language, ps.text FROM show_credits c"]
     #[sql = "JOIN person_strings ps ON ps.person_id = c.person_id AND ps.kind = 1"]
     #[sql = "WHERE c.show_id = ? ORDER BY c.id"]
     list_show_credit_names: TypedStatement<(ShowId,), (CreditId, api::Locale, String)>,
-    #[sql = "SELECT c.id, c.person_id, c.credit_type, c.department, c.job, c.sort_order, c.episode_count,"]
+    #[sql = "SELECT c.id, c.person_id, c.credit_type, c.sort_order, c.episode_count,"]
     #[sql = "  (SELECT source FROM person_image_candidates WHERE person_id = c.person_id AND kind = 5 ORDER BY rank, id LIMIT 1) AS profile_source,"]
     #[sql = "  (SELECT path FROM person_image_candidates WHERE person_id = c.person_id AND kind = 5 ORDER BY rank, id LIMIT 1) AS profile_path"]
     #[sql = "FROM movie_credits c"]
     #[sql = "WHERE c.movie_id = ? ORDER BY c.credit_type, c.episode_count DESC, c.sort_order, c.id"]
     list_movie_credits: TypedStatement<(MovieId,), CreditRow>,
-    #[sql = "SELECT cs.credit_id, cs.language, cs.text FROM movie_credit_strings cs"]
+    #[sql = "SELECT cs.credit_id, cs.language, cs.kind, cs.text FROM movie_credit_strings cs"]
     #[sql = "JOIN movie_credits c ON c.id = cs.credit_id"]
     #[sql = "WHERE c.movie_id = ? ORDER BY cs.credit_id"]
-    list_movie_credit_strings: TypedStatement<(MovieId,), (CreditId, api::Locale, String)>,
+    list_movie_credit_strings:
+        TypedStatement<(MovieId,), (CreditId, api::Locale, api::StringKind, String)>,
     #[sql = "SELECT c.id, ps.language, ps.text FROM movie_credits c"]
     #[sql = "JOIN person_strings ps ON ps.person_id = c.person_id AND ps.kind = 1"]
     #[sql = "WHERE c.movie_id = ? ORDER BY c.id"]
     list_movie_credit_names: TypedStatement<(MovieId,), (CreditId, api::Locale, String)>,
     // person reads
-    #[sql = "SELECT department, default_language, last_synced_at FROM people WHERE id = ?"]
+    #[sql = "SELECT default_language, last_synced_at FROM people WHERE id = ?"]
     person_row: TypedStatement<(PersonId,), PersonRow>,
     #[sql = "SELECT language, kind, text FROM person_strings WHERE person_id = ?"]
     list_person_strings: TypedStatement<(PersonId,), (api::Locale, api::StringKind, String)>,
@@ -891,10 +887,11 @@ pub(crate) struct InnerRead {
     #[sql = "SELECT id, slug, source, value, enabled, priority, sync_kinds, cache FROM person_remotes WHERE person_id = ? ORDER BY priority, id"]
     list_person_remotes: TypedStatement<(PersonId,), RemoteRow>,
     // people list (bulk, grouped in Rust like shows())
-    #[sql = "SELECT id, department, default_language FROM people"]
+    #[sql = "SELECT id, default_language FROM people"]
     list_people: TypedStatement<(), PersonListRow>,
-    #[sql = "SELECT person_id, language, text FROM person_strings WHERE kind = 1 ORDER BY person_id"]
-    list_all_person_names: TypedStatement<(), (PersonId, api::Locale, String)>,
+    // Names (kind=Title) and departments (kind=Department).
+    #[sql = "SELECT person_id, language, kind, text FROM person_strings WHERE kind IN (1, 5) ORDER BY person_id"]
+    list_all_person_names: TypedStatement<(), (PersonId, api::Locale, api::StringKind, String)>,
     #[sql = "SELECT person_id, source, path, width, height FROM person_image_candidates"]
     #[sql = "WHERE kind = 5 ORDER BY person_id, rank, id"]
     list_all_person_profiles: TypedStatement<(), PersonProfileRow>,
@@ -903,29 +900,31 @@ pub(crate) struct InnerRead {
     #[sql = "GROUP BY person_id"]
     list_person_credit_counts: TypedStatement<(), (PersonId, u32)>,
     // a person's filmography (shows + movies they are credited on)
-    #[sql = "SELECT c.id, c.show_id AS owner_id, s.default_language AS owner_language, c.credit_type, c.department, c.job, c.sort_order, c.episode_count, s.first_air AS date,"]
+    #[sql = "SELECT c.id, c.show_id AS owner_id, s.default_language AS owner_language, c.credit_type, c.sort_order, c.episode_count, s.first_air AS date,"]
     #[sql = "  (SELECT i.source FROM show_images si JOIN show_image_candidates i ON i.id = si.image_id WHERE si.show_id = c.show_id AND si.kind = 1) AS poster_source,"]
     #[sql = "  (SELECT i.path FROM show_images si JOIN show_image_candidates i ON i.id = si.image_id WHERE si.show_id = c.show_id AND si.kind = 1) AS poster_path"]
     #[sql = "FROM show_credits c JOIN shows s ON s.id = c.show_id WHERE c.person_id = ?"]
     list_person_show_credits: TypedStatement<(PersonId,), PersonCreditRow>,
-    #[sql = "SELECT c.id, c.movie_id AS owner_id, m.default_language AS owner_language, c.credit_type, c.department, c.job, c.sort_order, c.episode_count, m.release_date AS date,"]
+    #[sql = "SELECT c.id, c.movie_id AS owner_id, m.default_language AS owner_language, c.credit_type, c.sort_order, c.episode_count, m.release_date AS date,"]
     #[sql = "  (SELECT i.source FROM movie_images mi JOIN movie_image_candidates i ON i.id = mi.image_id WHERE mi.movie_id = c.movie_id AND mi.kind = 1) AS poster_source,"]
     #[sql = "  (SELECT i.path FROM movie_images mi JOIN movie_image_candidates i ON i.id = mi.image_id WHERE mi.movie_id = c.movie_id AND mi.kind = 1) AS poster_path"]
     #[sql = "FROM movie_credits c JOIN movies m ON m.id = c.movie_id WHERE c.person_id = ?"]
     list_person_movie_credits: TypedStatement<(PersonId,), PersonCreditRow>,
-    // Owner titles (kind=Title) and character names (kind=Character) for a person's credits.
+    // Owner titles (kind=Title) and roles for a person's credits.
     #[sql = "SELECT c.id, ss.language, ss.text FROM show_credits c"]
     #[sql = "JOIN show_strings ss ON ss.show_id = c.show_id AND ss.kind = 1 WHERE c.person_id = ? ORDER BY c.id"]
     list_person_show_titles: TypedStatement<(PersonId,), (CreditId, api::Locale, String)>,
     #[sql = "SELECT c.id, ms.language, ms.text FROM movie_credits c"]
     #[sql = "JOIN movie_strings ms ON ms.movie_id = c.movie_id AND ms.kind = 1 WHERE c.person_id = ? ORDER BY c.id"]
     list_person_movie_titles: TypedStatement<(PersonId,), (CreditId, api::Locale, String)>,
-    #[sql = "SELECT cs.credit_id, cs.language, cs.text FROM show_credit_strings cs"]
+    #[sql = "SELECT cs.credit_id, cs.language, cs.kind, cs.text FROM show_credit_strings cs"]
     #[sql = "JOIN show_credits c ON c.id = cs.credit_id WHERE c.person_id = ? ORDER BY cs.credit_id"]
-    list_person_show_credit_strings: TypedStatement<(PersonId,), (CreditId, api::Locale, String)>,
-    #[sql = "SELECT cs.credit_id, cs.language, cs.text FROM movie_credit_strings cs"]
+    list_person_show_credit_strings:
+        TypedStatement<(PersonId,), (CreditId, api::Locale, api::StringKind, String)>,
+    #[sql = "SELECT cs.credit_id, cs.language, cs.kind, cs.text FROM movie_credit_strings cs"]
     #[sql = "JOIN movie_credits c ON c.id = cs.credit_id WHERE c.person_id = ? ORDER BY cs.credit_id"]
-    list_person_movie_credit_strings: TypedStatement<(PersonId,), (CreditId, api::Locale, String)>,
+    list_person_movie_credit_strings:
+        TypedStatement<(PersonId,), (CreditId, api::Locale, api::StringKind, String)>,
     // Never-synced first, then stalest; a best-effort name for the task label.
     // Batch capped at 50 (PERSON_SYNC_BATCH) so a big cast drains gradually.
     #[sql = "SELECT p.id, (SELECT text FROM person_strings WHERE person_id = p.id AND kind = 1 LIMIT 1) AS name"]
@@ -1485,8 +1484,8 @@ pub(crate) struct InnerWrite {
     person_by_remote: TypedStatement<(RemoteSource, RemoteValue), (PersonId, Option<Timestamp>)>,
     #[sql = "INSERT INTO people (id) VALUES (?)"]
     insert_person: TypedStatement<(PersonId,), ()>,
-    #[sql = "UPDATE people SET department = ?, default_language = ? WHERE id = ?"]
-    update_person: TypedStatement<(Option<String>, api::Locale, PersonId), ()>,
+    #[sql = "UPDATE people SET default_language = ? WHERE id = ?"]
+    update_person: TypedStatement<(api::Locale, PersonId), ()>,
     #[sql = "UPDATE people SET last_synced_at = ? WHERE id = ?"]
     mark_person_synced: TypedStatement<(Timestamp, PersonId), ()>,
     #[sql = "UPDATE people SET remote_id = ? WHERE id = ?"]
@@ -1557,15 +1556,13 @@ pub(crate) struct InnerWrite {
     >,
     #[sql = "DELETE FROM show_credits WHERE show_id = ?"]
     clear_show_credits: TypedStatement<(ShowId,), ()>,
-    #[sql = "INSERT INTO show_credits (id, show_id, person_id, credit_type, department, job, sort_order, episode_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"]
+    #[sql = "INSERT INTO show_credits (id, show_id, person_id, credit_type, sort_order, episode_count) VALUES (?, ?, ?, ?, ?, ?)"]
     insert_show_credit: TypedStatement<
         (
             CreditId,
             ShowId,
             PersonId,
             CreditKind,
-            Option<String>,
-            Option<String>,
             Option<u32>,
             Option<u32>,
         ),
@@ -1575,15 +1572,13 @@ pub(crate) struct InnerWrite {
     insert_show_credit_string: TypedStatement<(CreditId, api::Locale, api::StringKind, String), ()>,
     #[sql = "DELETE FROM movie_credits WHERE movie_id = ?"]
     clear_movie_credits: TypedStatement<(MovieId,), ()>,
-    #[sql = "INSERT INTO movie_credits (id, movie_id, person_id, credit_type, department, job, sort_order, episode_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"]
+    #[sql = "INSERT INTO movie_credits (id, movie_id, person_id, credit_type, sort_order, episode_count) VALUES (?, ?, ?, ?, ?, ?)"]
     insert_movie_credit: TypedStatement<
         (
             CreditId,
             MovieId,
             PersonId,
             CreditKind,
-            Option<String>,
-            Option<String>,
             Option<u32>,
             Option<u32>,
         ),
@@ -2485,8 +2480,6 @@ impl InnerWrite {
         show_id: ShowId,
         person_id: PersonId,
         kind: CreditKind,
-        department: Option<&str>,
-        job: Option<&str>,
         order: Option<u32>,
         episode_count: Option<u32>,
     ) -> Result<()> {
@@ -2495,8 +2488,6 @@ impl InnerWrite {
             show_id,
             person_id,
             kind,
-            department,
-            job,
             order,
             episode_count,
         ))?;
@@ -2616,8 +2607,6 @@ impl InnerWrite {
         movie_id: MovieId,
         person_id: PersonId,
         kind: CreditKind,
-        department: Option<&str>,
-        job: Option<&str>,
         order: Option<u32>,
         episode_count: Option<u32>,
     ) -> Result<()> {
@@ -2626,8 +2615,6 @@ impl InnerWrite {
             movie_id,
             person_id,
             kind,
-            department,
-            job,
             order,
             episode_count,
         ))?;
@@ -4649,11 +4636,13 @@ impl Database {
             let locale = config.or(row.default_language);
             let mut name = api::Translations::new(locale);
             let mut biography = api::Translations::new(locale);
+            let mut department = api::Translations::new(locale);
 
             let mut stmt = s.list_person_strings.bind((person_id,))?;
             while let Some((language, kind, text)) = stmt.next()? {
                 match kind {
                     api::StringKind::Overview => biography.insert(kind, language, &text),
+                    api::StringKind::Department => department.insert(kind, language, &text),
                     // Everything else (name) resolves against the name translations.
                     _ => name.insert(kind, language, &text),
                 }
@@ -4686,7 +4675,7 @@ impl Database {
                 name,
                 biography,
                 profile,
-                department: row.department,
+                department,
                 remotes,
                 last_synced_at: row.last_synced_at,
             }))
@@ -4719,23 +4708,19 @@ impl Database {
         result.await?
     }
 
-    /// Replace a person's own data from its sync: department/imdb, per-language
-    /// name+biography, ranked profile images, then mark synced and store the ETag.
-    /// Replace a person's own data from its sync: department/imdb, per-language
-    /// name+biography, ranked profile images, then mark synced. The per-remote
+    /// Replace a person's own data from its sync: per-language name, biography
+    /// and department, ranked profile images, then mark synced. The per-remote
     /// [`api::RemoteCache`] is flushed separately via [`Self::set_remote_cache`].
     pub(crate) async fn persist_person_sync(
         &self,
         person_id: PersonId,
-        department: Option<String>,
         default_language: api::Locale,
         strings: Vec<(api::Locale, api::StringKind, String)>,
         images: Vec<(f64, Image)>,
         now: Timestamp,
     ) -> Result<()> {
         let result = self.transaction(move |s| {
-            s.update_person
-                .execute((department, default_language, person_id))?;
+            s.update_person.execute((default_language, person_id))?;
 
             s.clear_person_strings.execute((person_id,))?;
             for (language, kind, text) in strings {
@@ -4807,22 +4792,26 @@ impl Database {
             let mut stmt = s.list_people.query()?;
             while let Some(r) = stmt.next()? {
                 id_to_idx.insert(r.id, out.len());
+                let locale = config.or(r.default_language);
                 out.push(api::PersonItem {
                     id: r.id,
-                    name: api::Translations::new(config.or(r.default_language)),
+                    name: api::Translations::new(locale),
                     profile: None,
-                    department: r.department,
+                    department: api::Translations::new(locale),
                     credit_count: 0,
                 });
             }
             stmt.reset()?;
 
             let mut stmt = s.list_all_person_names.query()?;
-            while let Some((person_id, language, text)) = stmt.next()? {
+            while let Some((person_id, language, kind, text)) = stmt.next()? {
                 if let Some(&i) = id_to_idx.get(&person_id)
                     && let Some(o) = out.get_mut(i)
                 {
-                    o.name.insert(api::StringKind::Title, language, &text);
+                    match kind {
+                        api::StringKind::Department => o.department.insert(kind, language, &text),
+                        _ => o.name.insert(kind, language, &text),
+                    }
                 }
             }
             stmt.reset()?;
@@ -4871,7 +4860,7 @@ impl Database {
             let mut out: Vec<api::PersonCredit> = Vec::new();
 
             // Shows. Strings are collected raw (per credit) so each credit resolves
-            // its title/character against its own owner's display locale below.
+            // its title/role against its own owner's display locale below.
             let mut titles: HashMap<CreditId, Vec<(api::Locale, String)>> = HashMap::new();
             let mut stmt = s.list_person_show_titles.bind((person_id,))?;
             while let Some((credit_id, language, text)) = stmt.next()? {
@@ -4879,13 +4868,14 @@ impl Database {
             }
             stmt.reset()?;
 
-            let mut characters: HashMap<CreditId, Vec<(api::Locale, String)>> = HashMap::new();
+            let mut roles: HashMap<CreditId, Vec<(api::Locale, api::StringKind, String)>> =
+                HashMap::new();
             let mut stmt = s.list_person_show_credit_strings.bind((person_id,))?;
-            while let Some((credit_id, language, text)) = stmt.next()? {
-                characters
+            while let Some((credit_id, language, kind, text)) = stmt.next()? {
+                roles
                     .entry(credit_id)
                     .or_default()
-                    .push((language, text));
+                    .push((language, kind, text));
             }
             stmt.reset()?;
 
@@ -4897,7 +4887,7 @@ impl Database {
                     r,
                     owner,
                     &mut titles,
-                    &mut characters,
+                    &mut roles,
                     locale,
                 ));
             }
@@ -4911,13 +4901,14 @@ impl Database {
             }
             stmt.reset()?;
 
-            let mut characters: HashMap<CreditId, Vec<(api::Locale, String)>> = HashMap::new();
+            let mut roles: HashMap<CreditId, Vec<(api::Locale, api::StringKind, String)>> =
+                HashMap::new();
             let mut stmt = s.list_person_movie_credit_strings.bind((person_id,))?;
-            while let Some((credit_id, language, text)) = stmt.next()? {
-                characters
+            while let Some((credit_id, language, kind, text)) = stmt.next()? {
+                roles
                     .entry(credit_id)
                     .or_default()
-                    .push((language, text));
+                    .push((language, kind, text));
             }
             stmt.reset()?;
 
@@ -4929,7 +4920,7 @@ impl Database {
                     r,
                     owner,
                     &mut titles,
-                    &mut characters,
+                    &mut roles,
                     locale,
                 ));
             }
@@ -4971,14 +4962,14 @@ impl Database {
 
             stmt.reset()?;
 
-            let mut characters: HashMap<CreditId, api::Translations> = HashMap::new();
+            let mut roles: HashMap<CreditId, api::Translations> = HashMap::new();
             let mut stmt = s.list_show_credit_strings.bind((show_id,))?;
 
-            while let Some((credit_id, string_locale, text)) = stmt.next()? {
-                characters
+            while let Some((credit_id, string_locale, kind, text)) = stmt.next()? {
+                roles
                     .entry(credit_id)
                     .or_insert_with(|| api::Translations::new(locale))
-                    .insert(api::StringKind::Character, string_locale, &text);
+                    .insert(kind, string_locale, &text);
             }
 
             stmt.reset()?;
@@ -4987,7 +4978,7 @@ impl Database {
             let mut stmt = s.list_show_credits.bind((show_id,))?;
 
             while let Some(r) = stmt.next()? {
-                out.push(credit_from_row(r, &mut names, &mut characters, locale));
+                out.push(credit_from_row(r, &mut names, &mut roles, locale));
             }
 
             stmt.reset()?;
@@ -5027,14 +5018,14 @@ impl Database {
 
             stmt.reset()?;
 
-            let mut characters: HashMap<CreditId, api::Translations> = HashMap::new();
+            let mut roles: HashMap<CreditId, api::Translations> = HashMap::new();
             let mut stmt = s.list_movie_credit_strings.bind((movie_id,))?;
 
-            while let Some((credit_id, string_locale, text)) = stmt.next()? {
-                characters
+            while let Some((credit_id, string_locale, kind, text)) = stmt.next()? {
+                roles
                     .entry(credit_id)
                     .or_insert_with(|| api::Translations::new(locale))
-                    .insert(api::StringKind::Character, string_locale, &text);
+                    .insert(kind, string_locale, &text);
             }
 
             stmt.reset()?;
@@ -5043,7 +5034,7 @@ impl Database {
             let mut stmt = s.list_movie_credits.bind((movie_id,))?;
 
             while let Some(r) = stmt.next()? {
-                out.push(credit_from_row(r, &mut names, &mut characters, locale));
+                out.push(credit_from_row(r, &mut names, &mut roles, locale));
             }
 
             stmt.reset()?;
@@ -7151,13 +7142,13 @@ fn movie_image_from_row(r: MovieImageRow) -> api::MediaImage {
     }
 }
 
-/// Assemble an [`api::Credit`], taking the person-name and character
+/// Assemble an [`api::Credit`], taking the person-name and role
 /// [`Translations`] out of their maps (empty sets resolved to `locale` when
-/// absent - e.g. a person not yet synced, or crew with no character).
+/// absent - e.g. a person not yet synced, or a credit with no role).
 fn credit_from_row(
     r: CreditRow,
     names: &mut HashMap<CreditId, api::Translations>,
-    characters: &mut HashMap<CreditId, api::Translations>,
+    roles: &mut HashMap<CreditId, api::Translations>,
     locale: api::Locale,
 ) -> Credit {
     let profile = match (r.profile_source, r.profile_path) {
@@ -7172,24 +7163,22 @@ fn credit_from_row(
             .unwrap_or_else(|| api::Translations::new(locale)),
         profile,
         kind: r.credit_type,
-        character: characters
+        role: roles
             .remove(&r.id)
             .unwrap_or_else(|| api::Translations::new(locale)),
-        department: r.department,
-        job: r.job,
         episode_count: r.episode_count,
         order: r.sort_order,
     }
 }
 
 /// Assemble an [`api::PersonCredit`] for the person detail page, building the
-/// owner's title and (for cast) the character name from their raw per-locale
-/// strings, resolved against `locale` (the owner's display language).
+/// owner's title and the role from their raw per-locale strings, resolved
+/// against `locale` (the owner's display language).
 fn person_credit_from_row(
     r: PersonCreditRow,
     owner: api::CreditOwner,
     titles: &mut HashMap<CreditId, Vec<(api::Locale, String)>>,
-    characters: &mut HashMap<CreditId, Vec<(api::Locale, String)>>,
+    roles: &mut HashMap<CreditId, Vec<(api::Locale, api::StringKind, String)>>,
     locale: api::Locale,
 ) -> api::PersonCredit {
     let poster = match (r.poster_source, r.poster_path) {
@@ -7202,9 +7191,9 @@ fn person_credit_from_row(
         title.insert(api::StringKind::Title, loc, &text);
     }
 
-    let mut character = api::Translations::new(locale);
-    for (loc, text) in characters.remove(&r.id).unwrap_or_default() {
-        character.insert(api::StringKind::Character, loc, &text);
+    let mut role = api::Translations::new(locale);
+    for (loc, kind, text) in roles.remove(&r.id).unwrap_or_default() {
+        role.insert(kind, loc, &text);
     }
 
     api::PersonCredit {
@@ -7212,9 +7201,7 @@ fn person_credit_from_row(
         title,
         poster,
         kind: r.credit_type,
-        character,
-        department: r.department,
-        job: r.job,
+        role,
         episode_count: r.episode_count,
         order: r.sort_order,
         date: r.date,
