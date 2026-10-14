@@ -13,13 +13,13 @@ pub(crate) struct Props {
     pub(crate) on_close: Callback<()>,
 }
 
-/// XEM's other names for a show and its seasons, with their languages.
+/// A show's and its seasons' other names, with their languages and sources.
 #[function_component]
 pub(crate) fn NamesModal(props: &Props) -> Html {
     html! {
         <Modal icon="tag" title="Other names" class="names-modal" on_close={props.on_close.clone()}>
             <p class="names-intro text-muted">
-                {"Other titles XEM knows this show and its seasons by."}
+                {"Other titles this show and its seasons go by, with each one's language and where it comes from."}
                 <Help section={help::NAMES} />
             </p>
 
@@ -59,14 +59,36 @@ pub(crate) fn NamesModal(props: &Props) -> Html {
 fn view_names(names: &[api::AltName]) -> Html {
     html! {
         <div class="translation-rows">
-            { for names.iter().map(|n| html! {
-                <div class="translation-row alt-name">
-                    <span class="translation-language" title="Language">
-                        {n.language.as_deref().map(str::to_uppercase).unwrap_or_default()}
-                    </span>
-                    <span class="alt-name-text">{n.name.clone()}</span>
-                </div>
-            }) }
+            { for names.iter().map(view_name) }
+        </div>
+    }
+}
+
+/// A name with its language, which reads as unknown when its source gives no
+/// code or one that names no language, and where it comes from.
+fn view_name(n: &api::AltName) -> Html {
+    let origin = n.origin.label();
+    let language = n.language.and_then(|l| l.to_iso());
+
+    let title = match &n.code {
+        Some(code) => format!("{origin} language code: {code}"),
+        None => format!("{origin} gives no language"),
+    };
+
+    html! {
+        <div class="translation-row alt-name">
+            <span class={classes!("translation-language", language.is_none().then_some("unknown"))} {title}>
+                if let Some(flag) = language.and_then(|l| l.flag) {
+                    <span class={classes!("item-inline", "flag", flag)} aria-hidden="true" />
+                }
+
+                <span class="alt-name-language">{language.map_or("Unknown language", |l| l.name)}</span>
+            </span>
+
+            <span class="alt-name-text">
+                {n.name.clone()}
+                <span class={classes!("alt-name-origin", "logo", n.origin.as_id())} role="img" title={format!("From {origin}")} aria-label={format!("From {origin}")} />
+            </span>
         </div>
     }
 }

@@ -2273,7 +2273,7 @@ pub async fn alternative_names_are_listed(driver: &mut TestDriver, _: &mut Track
     driver
         .wait_texts(
             ".names-modal .translation-language",
-            ["DE", "FR", "JP", "US", "JP"],
+            ["German", "French", "Japanese", "English", "Japanese"],
         )
         .await?;
 
@@ -2291,6 +2291,86 @@ pub async fn alternative_names_are_listed(driver: &mut TestDriver, _: &mut Track
     driver.wait_count(".modal", 0).await
 }
 
+/// Each other name says where it comes from and its language, with the code its
+/// source gave on hover; a missing code or one that names no language reads as
+/// an unknown language.
+pub async fn names_show_their_origin_and_language(
+    driver: &mut TestDriver,
+    track: &mut Track,
+) -> Result<()> {
+    track.execute(
+        "INSERT INTO xem_names (show_id, season, language, name)
+        VALUES (1001, NULL, NULL, 'Seeded Bare'), (1001, NULL, 'zz', 'Seeded Zed');",
+    )?;
+
+    open_show(driver).await?;
+    driver.find_one_by("#S01E05").await?;
+    open_names(driver).await?;
+
+    let show = ".names-modal section:first-child";
+    driver
+        .wait_texts(
+            format!("{show} .translation-language").as_str(),
+            [
+                "Unknown language",
+                "German",
+                "French",
+                "Japanese",
+                "English",
+                "Unknown language",
+            ],
+        )
+        .await?;
+    driver
+        .wait_texts(
+            format!("{show} .alt-name-text").as_str(),
+            [
+                "Seeded Bare",
+                "Die Testserie",
+                "La Série",
+                "Shīdo Shō",
+                "Seeded",
+                "Seeded Zed",
+            ],
+        )
+        .await?;
+
+    let titles = driver
+        .find_all_attrs(&format!("{show} .translation-language"), "title")
+        .await?;
+    ensure!(
+        titles
+            == [
+                "XEM gives no language",
+                "XEM language code: de",
+                "XEM language code: fr",
+                "XEM language code: jp",
+                "XEM language code: us",
+                "XEM language code: zz",
+            ],
+        "the languages' titles are {titles:?}"
+    );
+
+    let unknown = driver
+        .find_all_attrs(".names-modal .translation-language.unknown", "title")
+        .await?;
+    ensure!(
+        unknown == ["XEM gives no language", "XEM language code: zz"],
+        "the unknown languages are {unknown:?}"
+    );
+
+    let origins = driver
+        .find_all_attrs(".names-modal .alt-name-origin", "title")
+        .await?;
+    ensure!(
+        origins.len() == driver.count(".names-modal .alt-name").await?
+            && origins.iter().all(|o| o == "From XEM"),
+        "not every name says it is from XEM: {origins:?}"
+    );
+
+    driver.snapshot("show-names-origin").await
+}
+
 /// The Other names modal says what the names are, and its help mark opens the
 /// section explaining them.
 pub async fn names_modal_opens_its_help(driver: &mut TestDriver, _: &mut Track) -> Result<()> {
@@ -2301,7 +2381,7 @@ pub async fn names_modal_opens_its_help(driver: &mut TestDriver, _: &mut Track) 
     driver
         .wait_texts(
             ".names-modal .names-intro",
-            ["Other titles XEM knows this show and its seasons by."],
+            ["Other titles this show and its seasons go by, with each one's language and where it comes from."],
         )
         .await?;
 

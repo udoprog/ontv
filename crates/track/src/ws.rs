@@ -506,6 +506,7 @@ impl WsHandler {
             }
             api::Request::SetShowNumbering => self.set_show_numbering(incoming, outgoing).await?,
             api::Request::GetShowNumbering => self.get_show_numbering(incoming, outgoing).await?,
+            api::Request::ListShowAltNames => self.list_show_alt_names(incoming, outgoing).await?,
             api::Request::SetMovieLanguage => self.set_movie_language(incoming, outgoing).await?,
             api::Request::SetMovieReleaseFilters => {
                 self.set_movie_release_filters(incoming, outgoing).await?

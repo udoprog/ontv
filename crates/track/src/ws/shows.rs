@@ -531,6 +531,41 @@ impl WsHandler {
         Ok(())
     }
 
+    pub(super) async fn list_show_alt_names(
+        &self,
+        incoming: &mut ws::Incoming<'_>,
+        outgoing: &mut ws::Outgoing<'_>,
+    ) -> Result<()> {
+        let req = incoming
+            .read::<api::ListShowAltNamesRequest>()
+            .context("Expected a request payload")?;
+
+        let show = self
+            .db
+            .show_by_id(Some(self.user.id), req.id)
+            .await?
+            .context("Expected show to exist")?;
+
+        let system = xem::origin(&show.remotes);
+
+        let names = self
+            .db
+            .xem_names(req.id)
+            .await?
+            .iter()
+            .map(|n| api::ShowAltName {
+                season: n.season.map(|season| api::LinkedSeason {
+                    system: system.clone(),
+                    season,
+                }),
+                name: n.to_api(),
+            })
+            .collect();
+
+        outgoing.write(api::ShowAltNames { names });
+        Ok(())
+    }
+
     pub(super) async fn set_show_air_date_filters(
         &self,
         incoming: &mut ws::Incoming<'_>,

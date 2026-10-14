@@ -14,6 +14,12 @@ under the season of that numbering they belong to, such as **TheTVDB
 Season 2**; which seasons those are follows the show's [episode
 numbering](numberings). The show's own titles are left out of its list.
 
+Each name has its language beside it and its source, such as **XEM**,
+after it. XEM gives most languages as country codes, so track reads `us`
+as English and `jp` as Japanese; hovering the language shows the code the
+source gave. A name whose source gives no language, or a code track can't
+place, reads **Unknown language**.
+
 ## Where they come from
 
 The names are fetched with the show's XEM mappings when it syncs, as long as

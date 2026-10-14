@@ -1484,7 +1484,9 @@ async fn xem_entries_and_names() -> Result<()> {
 
     let alt = |name: &str| api::AltName {
         name: name.to_owned(),
-        language: Some("jp".to_owned()),
+        origin: api::AltNameOrigin::Xem,
+        code: Some("jp".to_owned()),
+        language: api::Language::from_iso("ja"),
     };
 
     let show_names = db.show_by_id(None, show).await?.context("show")?.alt_names;

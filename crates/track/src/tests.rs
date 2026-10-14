@@ -514,6 +514,7 @@ async fn admin_only_requests() -> Result<()> {
         api::Request::ListTasks,
         api::Request::SetShowLanguage,
         api::Request::GetShowNumbering,
+        api::Request::ListShowAltNames,
         api::Request::MarkWatched,
         api::Request::SetLogin,
         api::Request::SetEmail,

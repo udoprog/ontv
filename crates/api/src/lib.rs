@@ -35,9 +35,10 @@ pub use self::sync_kind::{SyncKind, SyncKindSet};
 
 mod numbering;
 pub use self::numbering::{
-    AltName, AltNumbering, LinkedSeason, Numbering, NumberingPref, NumberingRange, NumberingTarget,
-    RangeError, SeasonAltNames, SeasonMismatch, XEM_SYSTEMS, XemLinks, default_numberings,
-    numbering_mismatches, numbering_order, suggest_numbering, xem_system_label,
+    AltName, AltNameOrigin, AltNumbering, LinkedSeason, Numbering, NumberingPref, NumberingRange,
+    NumberingTarget, RangeError, SeasonAltNames, SeasonMismatch, XEM_SYSTEMS, XemLinks,
+    default_numberings, numbering_mismatches, numbering_order, suggest_numbering, xem_language,
+    xem_system_label,
 };
 
 mod time;
@@ -3275,6 +3276,28 @@ pub struct SetShowNumberingResponse {
 
 #[derive(Debug, Encode, Decode)]
 #[musli(crate = musli_core)]
+pub struct ListShowAltNamesRequest {
+    pub id: ShowId,
+}
+
+/// Every other name a show has, as its sources give them.
+#[derive(Debug, Clone, PartialEq, Encode, Decode)]
+#[musli(crate = musli_core)]
+pub struct ShowAltNames {
+    pub names: Vec<ShowAltName>,
+}
+
+#[derive(Debug, Clone, PartialEq, Encode, Decode)]
+#[musli(crate = musli_core)]
+pub struct ShowAltName {
+    /// The season the name is for, in the numbering its source counts
+    /// seasons in; `None` for the whole show.
+    pub season: Option<LinkedSeason>,
+    pub name: AltName,
+}
+
+#[derive(Debug, Encode, Decode)]
+#[musli(crate = musli_core)]
 pub struct GetShowNumberingRequest {
     pub id: ShowId,
 }
@@ -4095,6 +4118,12 @@ api::define! {
     impl Endpoint for GetShowNumbering {
         impl Request for GetShowNumberingRequest;
         type Response<'de> = ShowNumbering;
+    }
+
+    pub type ListShowAltNames;
+    impl Endpoint for ListShowAltNames {
+        impl Request for ListShowAltNamesRequest;
+        type Response<'de> = ShowAltNames;
     }
 
     pub type SetMovieLanguage;

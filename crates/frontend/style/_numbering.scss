@@ -646,13 +646,25 @@ $numbering-map-chrome: 120px;
     }
 }
 
-// The Other names modal (ui/names_modal.rs) keeps its short language codes
-// beside the names on phones.
+// The Other names modal (ui/names_modal.rs) keeps its languages beside the
+// names on phones.
 .names-modal .translation-rows {
     @include g.on-mobile {
         grid-template-columns: max-content minmax(0, 1fr);
         row-gap: v.$gap-sm;
     }
+}
+
+// A name's source, after the name.
+.alt-name-origin.logo {
+    height: 16px;
+    margin-inline-start: v.$padding-md;
+    vertical-align: text-bottom;
+}
+
+// A name whose source gives no language, or one that names none.
+.names-modal .translation-language.unknown {
+    font-style: italic;
 }
 
 // The Other names modal's intro line, with its help mark beside the text.

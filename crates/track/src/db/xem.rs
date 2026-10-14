@@ -126,7 +126,7 @@ impl InnerRead {
 }
 
 impl Database {
-    #[cfg(test)]
+    /// Every XEM name the show has, the show's before its seasons'.
     pub(crate) async fn xem_names(&self, show_id: ShowId) -> Result<Vec<Name>> {
         let mut s = self.inner.clone().shared().await?;
         spawn_blocking(move || s.xem_names(show_id)).await?

@@ -36,6 +36,17 @@ pub(crate) struct Name {
     pub(crate) name: String,
 }
 
+impl Name {
+    pub(crate) fn to_api(&self) -> api::AltName {
+        api::AltName {
+            name: self.name.clone(),
+            origin: api::AltNameOrigin::Xem,
+            code: self.language.clone(),
+            language: self.language.as_deref().and_then(api::xem_language),
+        }
+    }
+}
+
 /// Where a show's episode `season`/`episode` sits in XEM: TheTVDB's same code
 /// when TheTVDB provides the episodes (`base`) or the show has no manual
 /// `numbering`, otherwise the range covering it, if any.
@@ -154,10 +165,7 @@ pub(crate) fn names_for<'a>(
         .iter()
         .filter(|n| seasons.contains(&n.season))
         .filter(|n| seen.insert(n.name.to_lowercase()))
-        .map(|n| api::AltName {
-            name: n.name.clone(),
-            language: n.language.clone(),
-        })
+        .map(Name::to_api)
         .collect()
 }
 
@@ -1034,7 +1042,8 @@ pub(crate) mod tests {
         let show = names_for(&names, &[None], ["oshi no ko mein star"]);
         assert_eq!(show.len(), 1);
         assert_eq!(show[0].name, "Oshi no Ko (My Star)");
-        assert_eq!(show[0].language.as_deref(), Some("us"));
+        assert_eq!(show[0].code.as_deref(), Some("us"));
+        assert_eq!(show[0].language, Some(api::Language::ENG));
 
         let season = names_for(&names, &[Some(3)], []);
         let season = season.iter().map(|n| n.name.as_str()).collect::<Vec<_>>();

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use musli_core::{Decode, Encode};
 
-use crate::XemSystemEpisodes;
+use crate::{Language, XemSystemEpisodes};
 
 /// XEM's numbering systems a range can target, as XEM names them, with their
 /// labels.
@@ -458,13 +458,82 @@ pub struct LinkedSeason {
     pub season: u32,
 }
 
-/// An alternative name from XEM, with XEM's language code (`us`, `jp`, ...)
-/// when it has one.
+/// Where an alternative name comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
+#[musli(crate = musli_core)]
+pub enum AltNameOrigin {
+    Xem,
+}
+
+impl AltNameOrigin {
+    /// The source's label, such as `XEM`.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Xem => "XEM",
+        }
+    }
+
+    /// The source's id, as used for its logo.
+    pub fn as_id(&self) -> &'static str {
+        match self {
+            Self::Xem => "xem",
+        }
+    }
+}
+
+/// An alternative name, with the language code its source gives it (XEM's are
+/// mostly country codes: `us`, `jp`, ...) and the language that code stands
+/// for when it is known.
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 #[musli(crate = musli_core)]
 pub struct AltName {
     pub name: String,
-    pub language: Option<String>,
+    pub origin: AltNameOrigin,
+    pub code: Option<String>,
+    pub language: Option<Language>,
+}
+
+/// The language an XEM language code stands for. XEM mostly uses country
+/// codes (`us`, `jp`, `se`), so a code is read as a country first: its only
+/// language, the one whose ISO 639-1 code is the same (`fi`, `no`), or the one
+/// flagged by that country (`il`); then as an ISO 639-1 code (`he`, `ja`).
+///
+/// ```
+/// use api::{Language, xem_language};
+///
+/// let name = |code| xem_language(code).and_then(|l| l.to_iso()).map(|l| l.name);
+/// assert_eq!(name("us"), Some("English"));
+/// assert_eq!(name("jp"), Some("Japanese"));
+/// assert_eq!(name("se"), Some("Swedish"));
+/// assert_eq!(name("de"), Some("German"));
+/// assert_eq!(name("he"), Some("Hebrew"));
+/// assert_eq!(xem_language("zz"), None);
+/// assert_eq!(xem_language(""), None);
+/// ```
+pub fn xem_language(code: &str) -> Option<Language> {
+    let code = code.trim().to_ascii_lowercase();
+
+    if code.len() != 2 {
+        return None;
+    }
+
+    let country = code.to_ascii_uppercase();
+    let candidates = locales::iter()
+        .filter(|l| l.country == country)
+        .filter_map(|l| iso639::by_id(l.language))
+        .collect::<Vec<_>>();
+
+    let found = match candidates.as_slice() {
+        [one] => Some(*one),
+        many => many
+            .iter()
+            .find(|l| l.part1 == Some(code.as_str()))
+            .or_else(|| many.iter().find(|l| l.flag == Some(country.as_str())))
+            .copied(),
+    };
+
+    let found = found.or_else(|| iso639::by_part1(&code))?;
+    Language::from_iso(found.id)
 }
 
 /// The XEM names of a season of another numbering that a season covers.
