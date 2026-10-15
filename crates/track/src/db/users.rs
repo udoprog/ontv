@@ -134,7 +134,7 @@ impl Database {
     }
 
     /// Creates the administrator `root` with the password `root`, as fresh
-    /// databases had before watchword.
+    /// databases had before yew-auth.
     pub(crate) async fn test_root(&self) -> Result<UserId> {
         self.test_user("root", None, Role::Admin, Some(ROOT_HASH))
             .await
