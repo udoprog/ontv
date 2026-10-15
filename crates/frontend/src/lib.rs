@@ -6,6 +6,7 @@ mod background;
 mod error;
 mod flags;
 mod help;
+mod l10n;
 mod page;
 mod root;
 mod router;

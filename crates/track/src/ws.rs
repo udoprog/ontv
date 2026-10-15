@@ -7,6 +7,7 @@ use std::time::Duration;
 use anyhow::{Context as _, Error, Result};
 use auth::Auth;
 use auth::axum08::SignedIn;
+use auth::musliweb04::Connection;
 use axum::extract::State;
 use axum::extract::WebSocketUpgrade;
 use musli_web::axum08;
@@ -81,6 +82,8 @@ pub(super) struct WsHandler {
     pub(super) delay: Option<RandomDelay>,
     pub(super) auth: Auth,
     pub(super) user: Arc<AuthUser>,
+    /// Answers watchword's account and admin requests on this socket.
+    pub(super) conn: Connection,
 }
 
 /// The signed-in user of a socket.
@@ -482,7 +485,9 @@ impl WsHandler {
                 self.reset_image_selection(incoming, outgoing).await?
             }
             api::Request::Unknown(id) => {
-                anyhow::bail!("Unknown request id: {id:?}");
+                if !self.conn.handle(id, incoming, outgoing).await? {
+                    anyhow::bail!("Unknown request id: {id:?}");
+                }
             }
         }
 
@@ -556,6 +561,8 @@ pub(super) async fn ws_handler(
     signed_in: SignedIn,
     ws: WebSocketUpgrade,
 ) -> axum::response::Response {
+    let conn = Connection::new(state.auth.clone(), &signed_in);
+
     ws.on_upgrade(move |socket| async move {
         let user = Arc::new(AuthUser::from(&signed_in));
 
@@ -569,12 +576,14 @@ pub(super) async fn ws_handler(
             delay: state.delay,
             auth: state.auth.clone(),
             user: user.clone(),
+            conn: conn.clone(),
         };
 
         let mut subscribe = state.broadcast.subscribe();
         // Ends the socket with its session: signed out, revoked, deleted or
         // expired, here or in another process.
         let guard = state.auth.guard(&signed_in.user, &signed_in.session);
+        let mut auth_events = state.auth.events();
 
         let connect =
             axum08::server(socket, handler).with_channel_allocator(state.channels.clone());
@@ -630,6 +639,25 @@ pub(super) async fn ws_handler(
                     if let Err(error) = server.broadcast(event) {
                         tracing::error!("Broadcast Error: {error}");
                         break;
+                    }
+                }
+                event = auth_events.recv() => {
+                    let update = match event {
+                        Ok(event) => conn.update(&event).await,
+                        // The page fetches again what it shows.
+                        Err(broadcast::error::RecvError::Lagged(_)) => conn.lagged().await,
+                        Err(broadcast::error::RecvError::Closed) => break,
+                    };
+
+                    match update {
+                        Ok(Some(update)) => {
+                            if let Err(error) = server.broadcast(update) {
+                                tracing::error!("Broadcast Error: {error}");
+                                break;
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(error) => tracing::error!("Filtering an auth event: {error}"),
                     }
                 }
                 result = server.run() => {

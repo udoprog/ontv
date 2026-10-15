@@ -111,6 +111,10 @@ impl Component for App {
             .on_error(link.callback(Msg::WsError))
             .build();
 
+        // watchword's account and admin requests, and its live updates, share
+        // the socket.
+        auth.set_socket(Some(ws.handle().clone()));
+
         let _setup = SetupChannel::new(ws.handle().clone(), link.callback(Msg::Channel));
 
         let (ws_state, _state_listener) = ws.handle().on_state_change(link.callback(Msg::WsState));

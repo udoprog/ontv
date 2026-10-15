@@ -10,7 +10,7 @@ rand = ["dep:rand"]
 yew = ["dep:yew", "dep:implicit-clone", "koine/yew023"]
 
 [dependencies]
-auth = { package = "watchword", version = "0.1", features = ["musli01"] }
+auth = { package = "watchword", version = "0.2", features = ["musli01"] }
 koine = { version = "0.1", features = ["musli01", "serde"] }
 
 base64 = "0.22.1"

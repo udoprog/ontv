@@ -16,7 +16,7 @@ required-features = ["import"]
 
 [dependencies]
 api = { path = "../api", features = ["rand", "sqll"] }
-auth = { package = "watchword", version = "0.1", features = ["axum08", "cloudflare", "sqll014"] }
+auth = { package = "watchword", version = "0.2", features = ["axum08", "cloudflare", "musliweb04", "sqll014"] }
 
 anyhow = "1.0.104"
 axum = "0.8.9"

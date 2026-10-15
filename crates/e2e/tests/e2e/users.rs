@@ -184,6 +184,32 @@ pub async fn revokes_links_and_deletes(driver: &mut TestDriver, _: &mut Track) -
     Ok(())
 }
 
+/// The open users list follows a user added elsewhere, from the live updates
+/// on the app's socket, without reloading.
+pub async fn follows_users_added_elsewhere(driver: &mut TestDriver, _: &mut Track) -> Result<()> {
+    open_users(driver).await?;
+    driver.wait_count(".auth-user", 1).await?;
+
+    let status = driver
+        .webdriver()
+        .execute_async(
+            "const done = arguments[arguments.length - 1];
+            fetch('/api/auth/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ login: 'carol', email: null, role: 'regular' }),
+            }).then(r => done(r.status));",
+            Vec::new(),
+        )
+        .await?
+        .convert::<u16>()?;
+    ensure!(status == 200, "adding carol answered {status}");
+
+    driver.find_one_by("[title='Edit carol']").await?;
+    driver.wait_count(".auth-user", 2).await?;
+    Ok(())
+}
+
 async fn open_users(driver: &TestDriver) -> Result<()> {
     driver
         .find_one_by(".toolbar-item[title=Users]")
