@@ -1,5 +1,5 @@
 //! Signing in, sessions, registration links and request authorization through
-//! yew-auth as track wires it up, against a server on a fresh database with
+//! watchword as track wires it up, against a server on a fresh database with
 //! root.
 
 use std::net::{IpAddr, SocketAddr};

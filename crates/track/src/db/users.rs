@@ -73,7 +73,7 @@ impl AsMut<auth::sqll::Write> for InnerWrite {
     }
 }
 
-/// The store yew-auth keeps users, sessions and links in, sharing the
+/// The store watchword keeps users, sessions and links in, sharing the
 /// database's connections.
 pub(crate) type AuthStore = SqllStore<InnerRead, InnerWrite>;
 
@@ -134,7 +134,7 @@ impl Database {
     }
 
     /// Creates the administrator `root` with the password `root`, as fresh
-    /// databases had before yew-auth.
+    /// databases had before watchword.
     pub(crate) async fn test_root(&self) -> Result<UserId> {
         self.test_user("root", None, Role::Admin, Some(ROOT_HASH))
             .await

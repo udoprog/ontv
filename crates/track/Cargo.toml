@@ -16,7 +16,7 @@ required-features = ["import"]
 
 [dependencies]
 api = { path = "../api", features = ["rand", "sqll"] }
-auth = { package = "yew-auth", path = "../../../yew-auth", features = ["axum", "cloudflare", "sqll"] }
+auth = { package = "watchword", path = "../../../watchword", features = ["axum", "cloudflare", "sqll"] }
 
 anyhow = "1.0.104"
 axum = "0.8.9"

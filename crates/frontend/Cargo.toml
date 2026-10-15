@@ -8,7 +8,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 api = { path = "../api", features = ["js", "yew"] }
-auth = { package = "yew-auth", path = "../../../yew-auth", features = ["yew"] }
+auth = { package = "watchword", path = "../../../watchword", features = ["yew"] }
 iso639 = { path = "../iso639" }
 iso3166 = { path = "../iso3166" }
 locales = { path = "../locales" }

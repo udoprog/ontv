@@ -529,7 +529,7 @@ CREATE TABLE
         text TEXT NOT NULL,
         UNIQUE (credit_id, language, kind)
     );
--- The tables of yew-auth's SqllStore. A user has a unique login, a unique
+-- The tables of watchword's SqllStore. A user has a unique login, a unique
 -- normalized email, or both. `role` is 'admin' or 'regular'; `access` is
 -- 'pending', 'active' or 'revoked'; `method` is 'password' or 'google'. A fresh
 -- database has no users: the server creates the first admin with a
