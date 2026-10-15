@@ -3,17 +3,30 @@ use musli_web::ws;
 
 use super::WsHandler;
 
+/// The most people one list request returns.
+const MAX_PERSONS_PAGE: usize = 100;
+
 impl WsHandler {
     pub(super) async fn list_persons(
         &self,
         incoming: &mut ws::Incoming<'_>,
         outgoing: &mut ws::Outgoing<'_>,
     ) -> Result<()> {
-        incoming
+        let req = incoming
             .read::<api::ListPersonsRequest>()
             .context("Expected a request payload")?;
-        let persons = self.db.list_persons(self.user.id).await?;
-        outgoing.write(api::ListPersonsResponse { persons });
+        let response = self
+            .db
+            .list_persons(
+                self.user.id,
+                req.filter,
+                req.sort,
+                req.desc,
+                req.offset,
+                req.limit.min(MAX_PERSONS_PAGE),
+            )
+            .await?;
+        outgoing.write(response);
         Ok(())
     }
 

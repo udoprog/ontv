@@ -462,6 +462,8 @@ CREATE TABLE
 
 CREATE INDEX idx_show_credits_show ON show_credits (show_id);
 
+CREATE INDEX idx_show_credits_person ON show_credits (person_id);
+
 -- XEM's numbering map for a show: one row per system in each map/all entry.
 -- `entry` is the entry's index in map/all, `system` is XEM's name verbatim
 -- (tvdb, scene, anidb, ...), and `part` is 1 for a double episode's second
@@ -502,6 +504,8 @@ CREATE TABLE
     );
 
 CREATE INDEX idx_movie_credits_movie ON movie_credits (movie_id);
+
+CREATE INDEX idx_movie_credits_person ON movie_credits (person_id);
 
 -- Per-language character (kind=Character), job (kind=Job) and department
 -- (kind=Department) of a credit. Strings a remote returns untranslated are

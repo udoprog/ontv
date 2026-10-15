@@ -266,9 +266,106 @@ async fn list_persons_resolves_names_in_the_persons_language() -> Result<()> {
     )?;
 
     let root = db.test_root().await?;
-    let persons = db.list_persons(root).await?;
+    let persons = db
+        .list_persons(root, String::new(), api::PersonSort::Name, false, 0, 10)
+        .await?
+        .persons;
     assert_eq!(persons.len(), 1);
     assert_eq!(persons[0].name.title(), Some("Ada Lovelace"));
+    Ok(())
+}
+
+/// The people list filters on any name, orders by the name a card shows or by
+/// credit count, and returns one page at a time.
+#[tokio::test]
+async fn list_persons_filters_sorts_and_pages() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("test.db");
+    let db = Database::open(&path, OpenMode::Bulk, 1)?;
+
+    let en_us = "en-US".parse::<api::Locale>()?.to_u64() as i64;
+    let fra = "fra".parse::<api::Locale>()?.to_u64() as i64;
+    let und = api::Locale::UNKNOWN.to_u64() as i64;
+
+    // 1 "ada Lovelace" (1 credit), 2 "Bob Marley" over its unknown-language
+    // "Bobby" (3), 3 "Carl" (2), 4 nameless (0), 5 "Annie" with a French "Zed" (5).
+    let c = OpenOptions::new().read_write().no_mutex().open(&path)?;
+    c.execute(format!(
+        "INSERT INTO people (id, default_language) VALUES (1, {en_us}), (2, {en_us}), (3, {en_us}), (4, {en_us}), (5, {en_us});
+         INSERT INTO person_strings (person_id, language, kind, text) VALUES
+            (1, {und}, 1, 'ada Lovelace'),
+            (2, {und}, 1, 'Bobby'),
+            (2, {en_us}, 1, 'Bob Marley'),
+            (3, {und}, 1, 'Carl'),
+            (5, {fra}, 1, 'Zed'),
+            (5, {und}, 1, 'Annie');
+         INSERT INTO shows (id) VALUES (1);
+         INSERT INTO movies (id) VALUES (1);
+         INSERT INTO show_credits (show_id, person_id, credit_type) VALUES
+            (1, 1, 0), (1, 2, 0), (1, 2, 1), (1, 3, 0), (1, 5, 0), (1, 5, 1), (1, 5, 1);
+         INSERT INTO movie_credits (movie_id, person_id, credit_type) VALUES
+            (1, 2, 0), (1, 3, 0), (1, 5, 0), (1, 5, 1);"
+    ))?;
+
+    let root = db.test_root().await?;
+
+    let list = async |filter: &str, sort, desc, offset, limit| -> Result<(Vec<u64>, bool)> {
+        let page = db
+            .list_persons(root, filter.to_owned(), sort, desc, offset, limit)
+            .await?;
+        let ids = page.persons.iter().map(|p| p.id.get()).collect();
+        Ok((ids, page.has_more))
+    };
+
+    use api::PersonSort::{Credits, Name};
+
+    assert_eq!(
+        list("", Name, false, 0, 10).await?,
+        (vec![1, 5, 2, 3, 4], false)
+    );
+    assert_eq!(
+        list("", Name, true, 0, 10).await?,
+        (vec![3, 2, 5, 1, 4], false)
+    );
+    assert_eq!(
+        list("", Credits, true, 0, 10).await?,
+        (vec![5, 2, 3, 1, 4], false)
+    );
+    assert_eq!(
+        list("", Credits, false, 0, 10).await?,
+        (vec![4, 1, 3, 2, 5], false)
+    );
+
+    assert_eq!(list("", Name, false, 0, 2).await?, (vec![1, 5], true));
+    assert_eq!(list("", Name, false, 2, 2).await?, (vec![2, 3], true));
+    assert_eq!(list("", Name, false, 4, 2).await?, (vec![4], false));
+    assert_eq!(list("", Name, false, 5, 2).await?, (vec![], false));
+
+    assert_eq!(list("ANN", Name, false, 0, 10).await?, (vec![5], false));
+    assert_eq!(list("zed", Name, false, 0, 10).await?, (vec![5], false));
+    assert_eq!(list("bobby", Credits, true, 0, 10).await?, (vec![2], false));
+    assert_eq!(
+        list("l", Credits, true, 0, 10).await?,
+        (vec![2, 3, 1], false)
+    );
+
+    let page = db
+        .list_persons(root, String::new(), Name, false, 0, 10)
+        .await?
+        .persons;
+    let names: Vec<_> = page.iter().map(|p| p.name.title_or_any()).collect();
+    assert_eq!(
+        names,
+        [
+            Some("ada Lovelace"),
+            Some("Annie"),
+            Some("Bob Marley"),
+            Some("Carl"),
+            None
+        ]
+    );
+    let credits: Vec<_> = page.iter().map(|p| p.credit_count).collect();
+    assert_eq!(credits, [1, 5, 3, 2, 0]);
     Ok(())
 }
 

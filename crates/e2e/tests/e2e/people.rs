@@ -32,9 +32,9 @@ pub async fn lists_people_by_credits(driver: &mut TestDriver, _: &mut Track) -> 
     driver.wait_texts("[title='Sort by']", ["Name"]).await
 }
 
-/// While the people load, the page shows neither a count nor pages of an
+/// While the people load, the page shows neither people nor pages of an
 /// empty list.
-pub async fn shows_no_count_while_loading(driver: &mut TestDriver, _: &mut Track) -> Result<()> {
+pub async fn shows_nothing_while_loading(driver: &mut TestDriver, _: &mut Track) -> Result<()> {
     driver.wait_texts(".site-title", ["Track"]).await?;
     driver.delay_websocket_sends(2000).await?;
 
@@ -46,8 +46,8 @@ pub async fn shows_no_count_while_loading(driver: &mut TestDriver, _: &mut Track
 
     driver.find_one_by("#page .icon.arrow-path.spin").await?;
     ensure!(
-        driver.count("#page .list-count").await? == 0,
-        "a count shows before the people load"
+        driver.count("#page .person-card").await? == 0,
+        "people show before they load"
     );
     ensure!(
         driver.count("#page pagination").await? == 0,
@@ -55,7 +55,83 @@ pub async fn shows_no_count_while_loading(driver: &mut TestDriver, _: &mut Track
     );
 
     driver.stop_delaying_websocket_sends().await?;
-    driver.wait_texts("#page .list-count", ["2 people"]).await
+    driver
+        .wait_texts(".person-name", ["Greta Garbo", "Ada Lovelace"])
+        .await
+}
+
+/// The people list loads a page at a time, offers the next page only while
+/// there is one, and filtering starts over from the first page.
+pub async fn pages_and_filters_people(driver: &mut TestDriver, _: &mut Track) -> Result<()> {
+    driver
+        .find_one_by(".toolbar-item[title=People]")
+        .await?
+        .click()
+        .await?;
+
+    // Most credited first; the uncredited tie, last added first.
+    driver.wait_count(".person-grid .person-card", 24).await?;
+    driver
+        .wait_texts(
+            ".person-card:nth-child(-n+3) .person-name",
+            ["Greta Garbo", "Extra 30", "Extra 29"],
+        )
+        .await?;
+    ensure!(
+        driver.count("#page pagination [title='Page 3']").await? == 0,
+        "a page past the next one is offered"
+    );
+
+    driver
+        .find_first("#page pagination [title='Page 2']")
+        .await?
+        .click()
+        .await?;
+    driver.wait_count(".person-grid .person-card", 8).await?;
+    driver
+        .wait_texts(
+            ".person-card:is(:first-child, :last-child) .person-name",
+            ["Extra 07", "Ada Lovelace"],
+        )
+        .await?;
+    ensure!(
+        driver.count("#page pagination [title='Page 3']").await? == 0,
+        "a page past the last one is offered"
+    );
+
+    driver
+        .find_one_by("input[aria-label='Filter people']")
+        .await?
+        .send_keys("EXTRA 2")
+        .await?;
+    // Counts first: names read while the list is replaced go stale.
+    driver.wait_count(".person-grid .person-card", 10).await?;
+    driver
+        .wait_texts(
+            ".person-name",
+            [
+                "Extra 29", "Extra 28", "Extra 27", "Extra 26", "Extra 25", "Extra 24", "Extra 23",
+                "Extra 22", "Extra 21", "Extra 20",
+            ],
+        )
+        .await?;
+    ensure!(
+        driver.count("#page pagination [title='Page 2']").await? == 0,
+        "one page of matches offers a second"
+    );
+
+    driver
+        .find_one_by("[title='Clear filter']")
+        .await?
+        .click()
+        .await?;
+    driver
+        .find_one_by("input[aria-label='Filter people']")
+        .await?
+        .send_keys("garbo")
+        .await?;
+    driver.wait_count(".person-grid .person-card", 1).await?;
+    driver.wait_texts(".person-name", ["Greta Garbo"]).await
 }
 
 /// People without a photo show a silhouette, on the list and in a show's

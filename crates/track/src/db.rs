@@ -139,16 +139,6 @@ struct PersonListRow {
     default_language: api::Locale,
 }
 
-/// A person's best-ranked profile image, carrying the person id for bulk grouping.
-#[derive(Row)]
-struct PersonProfileRow {
-    person_id: PersonId,
-    source: ImageSource,
-    path: String,
-    width: u32,
-    height: u32,
-}
-
 /// A single person's best-ranked profile image (single-person lookup).
 #[derive(Row)]
 struct ProfileRow {
@@ -888,19 +878,47 @@ pub(crate) struct InnerRead {
     person_profile: TypedStatement<(PersonId,), ProfileRow>,
     #[sql = "SELECT id, slug, source, value, enabled, priority, sync_kinds, cache FROM person_remotes WHERE person_id = ? ORDER BY priority, id"]
     list_person_remotes: TypedStatement<(PersonId,), RemoteRow>,
-    // people list (bulk, grouped in Rust like shows())
-    #[sql = "SELECT id, default_language FROM people"]
-    list_people: TypedStatement<(), PersonListRow>,
-    // Names (kind=Title) and departments (kind=Department).
-    #[sql = "SELECT person_id, language, kind, text FROM person_strings WHERE kind IN (1, 5) ORDER BY person_id"]
-    list_all_person_names: TypedStatement<(), (PersonId, api::Locale, api::StringKind, String)>,
-    #[sql = "SELECT person_id, source, path, width, height FROM person_image_candidates"]
-    #[sql = "WHERE kind = 5 ORDER BY person_id, rank, id"]
-    list_all_person_profiles: TypedStatement<(), PersonProfileRow>,
-    #[sql = "SELECT person_id, COUNT(*) AS n FROM"]
-    #[sql = "  (SELECT person_id FROM show_credits UNION ALL SELECT person_id FROM movie_credits)"]
-    #[sql = "GROUP BY person_id"]
-    list_person_credit_counts: TypedStatement<(), (PersonId, u32)>,
+    // A page of the people list: ?1 the user's display locale, ?2 the unknown
+    // locale, ?3 the filter, ?4 descending, ?5 limit, ?6 offset. The name key
+    // is the name Translations::title_or_any resolves when the person's names
+    // are inserted in id order (see list_person_list_strings).
+    //
+    // `LIMIT ? + 0` rather than `LIMIT ?`: sqlite re-prepares a statement whose
+    // plan depends on a bare bound LIMIT, which fails with MISUSE on the pool's
+    // statements once their connection handle has been closed.
+    #[sql = "WITH named AS MATERIALIZED ("]
+    #[sql = "  SELECT p.id, p.default_language,"]
+    #[sql = "    (SELECT n.text FROM person_strings n WHERE n.person_id = p.id AND n.kind = 1"]
+    #[sql = "      ORDER BY n.language = p.loc DESC,"]
+    #[sql = "        ((n.language & 4294967295) = (p.loc & 4294967295) AND (p.loc & 4294967295) != 0) DESC,"]
+    #[sql = "        n.language = ?2 DESC,"]
+    #[sql = "        CASE WHEN (n.language & 4294967295) = (p.loc & 4294967295) THEN -n.id ELSE n.id END"]
+    #[sql = "      LIMIT 1) AS name"]
+    #[sql = "  FROM (SELECT id, default_language, CASE WHEN (?1 & 4294967295) = 0 THEN default_language ELSE ?1 END AS loc FROM people) p"]
+    #[sql = "  WHERE ?3 = '' OR EXISTS (SELECT 1 FROM person_strings f WHERE f.person_id = p.id AND f.kind = 1 AND instr(lower(f.text), lower(?3)) > 0))"]
+    #[sql = "SELECT id, default_language FROM named"]
+    #[sql = "ORDER BY name IS NULL,"]
+    #[sql = "  CASE WHEN NOT ?4 THEN lower(name) END ASC, CASE WHEN ?4 THEN lower(name) END DESC,"]
+    #[sql = "  CASE WHEN NOT ?4 THEN id END ASC, id DESC"]
+    #[sql = "LIMIT ?5 + 0 OFFSET ?6"]
+    list_persons_by_name:
+        TypedStatement<(api::Locale, api::Locale, String, bool, i64, i64), PersonListRow>,
+    // ?1 the filter, ?2 descending, ?3 limit, ?4 offset; `+ 0` as above.
+    #[sql = "WITH counted AS MATERIALIZED ("]
+    #[sql = "  SELECT p.id, p.default_language,"]
+    #[sql = "    (SELECT COUNT(*) FROM show_credits c WHERE c.person_id = p.id) + (SELECT COUNT(*) FROM movie_credits c WHERE c.person_id = p.id) AS n"]
+    #[sql = "  FROM people p"]
+    #[sql = "  WHERE ?1 = '' OR EXISTS (SELECT 1 FROM person_strings f WHERE f.person_id = p.id AND f.kind = 1 AND instr(lower(f.text), lower(?1)) > 0))"]
+    #[sql = "SELECT id, default_language FROM counted"]
+    #[sql = "ORDER BY CASE WHEN NOT ?2 THEN n END ASC, CASE WHEN ?2 THEN n END DESC,"]
+    #[sql = "  CASE WHEN NOT ?2 THEN id END ASC, id DESC"]
+    #[sql = "LIMIT ?3 + 0 OFFSET ?4"]
+    list_persons_by_credits: TypedStatement<(String, bool, i64, i64), PersonListRow>,
+    // A list entry's names (kind=Title) and departments (kind=Department).
+    #[sql = "SELECT language, kind, text FROM person_strings WHERE person_id = ? AND kind IN (1, 5) ORDER BY id"]
+    list_person_list_strings: TypedStatement<(PersonId,), (api::Locale, api::StringKind, String)>,
+    #[sql = "SELECT (SELECT COUNT(*) FROM show_credits WHERE person_id = ?1) + (SELECT COUNT(*) FROM movie_credits WHERE person_id = ?1)"]
+    person_credit_count: TypedStatement<(PersonId,), u32>,
     // a person's filmography (shows + movies they are credited on)
     #[sql = "SELECT c.id, c.show_id AS owner_id, s.default_language AS owner_language, c.credit_type, c.sort_order, c.episode_count, s.first_air AS date,"]
     #[sql = "  (SELECT i.source FROM show_images si JOIN show_image_candidates i ON i.id = si.image_id WHERE si.show_id = c.show_id AND si.kind = 1) AS poster_source,"]
@@ -4782,67 +4800,96 @@ impl Database {
         result.await
     }
 
-    /// The people list view: name, profile, department and total credit count.
-    pub(crate) async fn list_persons(&self, user: UserId) -> Result<Vec<api::PersonItem>> {
+    /// A page of the people list view: name, profile, department and total
+    /// credit count of the people matching `filter`, in the requested order.
+    pub(crate) async fn list_persons(
+        &self,
+        user: UserId,
+        filter: String,
+        sort: api::PersonSort,
+        desc: bool,
+        offset: usize,
+        limit: usize,
+    ) -> Result<api::ListPersonsResponse> {
         let mut s = self.inner.clone().shared().await?;
 
         let result = spawn_blocking(move || {
             let config = s.user_language(user)?;
-            let mut out: Vec<api::PersonItem> = Vec::new();
-            let mut id_to_idx: HashMap<PersonId, usize> = HashMap::new();
+            // One more than the page tells whether another page follows.
+            let fetch = i64::try_from(limit.saturating_add(1)).unwrap_or(i64::MAX);
+            let offset = i64::try_from(offset).unwrap_or(i64::MAX);
 
-            let mut stmt = s.list_people.query()?;
-            while let Some(r) = stmt.next()? {
-                id_to_idx.insert(r.id, out.len());
-                let locale = config.or(r.default_language);
-                out.push(api::PersonItem {
-                    id: r.id,
-                    name: api::Translations::new(locale),
-                    profile: None,
-                    department: api::Translations::new(locale),
-                    credit_count: 0,
-                });
+            let mut rows = Vec::new();
+
+            match sort {
+                api::PersonSort::Name => {
+                    let mut stmt = s.list_persons_by_name.bind((
+                        config,
+                        api::Locale::UNKNOWN,
+                        filter.as_str(),
+                        desc,
+                        fetch,
+                        offset,
+                    ))?;
+
+                    while let Some(r) = stmt.next()? {
+                        rows.push(r);
+                    }
+
+                    stmt.reset()?;
+                }
+                api::PersonSort::Credits => {
+                    let mut stmt =
+                        s.list_persons_by_credits
+                            .bind((filter.as_str(), desc, fetch, offset))?;
+
+                    while let Some(r) = stmt.next()? {
+                        rows.push(r);
+                    }
+
+                    stmt.reset()?;
+                }
             }
-            stmt.reset()?;
 
-            let mut stmt = s.list_all_person_names.query()?;
-            while let Some((person_id, language, kind, text)) = stmt.next()? {
-                if let Some(&i) = id_to_idx.get(&person_id)
-                    && let Some(o) = out.get_mut(i)
-                {
+            let has_more = rows.len() > limit;
+            rows.truncate(limit);
+
+            let mut persons = Vec::with_capacity(rows.len());
+
+            for r in rows {
+                let locale = config.or(r.default_language);
+                let mut name = api::Translations::new(locale);
+                let mut department = api::Translations::new(locale);
+
+                let mut stmt = s.list_person_list_strings.bind((r.id,))?;
+
+                while let Some((language, kind, text)) = stmt.next()? {
                     match kind {
-                        api::StringKind::Department => o.department.insert(kind, language, &text),
-                        _ => o.name.insert(kind, language, &text),
+                        api::StringKind::Department => department.insert(kind, language, &text),
+                        _ => name.insert(kind, language, &text),
                     }
                 }
-            }
-            stmt.reset()?;
 
-            // Rows are ordered by (person_id, rank, id): the first per person wins.
-            let mut stmt = s.list_all_person_profiles.query()?;
-            while let Some(r) = stmt.next()? {
-                if let Some(&i) = id_to_idx.get(&r.person_id)
-                    && let Some(o) = out.get_mut(i)
-                    && o.profile.is_none()
-                {
-                    o.profile = Some(api::Image::new_with_dims(
-                        r.source, &r.path, r.width, r.height,
-                    ));
-                }
-            }
-            stmt.reset()?;
+                stmt.reset()?;
 
-            let mut stmt = s.list_person_credit_counts.query()?;
-            while let Some((person_id, n)) = stmt.next()? {
-                if let Some(&i) = id_to_idx.get(&person_id)
-                    && let Some(o) = out.get_mut(i)
-                {
-                    o.credit_count = n;
-                }
-            }
-            stmt.reset()?;
+                let profile = s
+                    .person_profile
+                    .bind((r.id,))?
+                    .first()?
+                    .map(|p| api::Image::new_with_dims(p.source, &p.path, p.width, p.height));
 
-            Ok(out)
+                let credit_count = s.person_credit_count.bind((r.id,))?.first()?.unwrap_or(0);
+
+                persons.push(api::PersonItem {
+                    id: r.id,
+                    name,
+                    profile,
+                    department,
+                    credit_count,
+                });
+            }
+
+            Ok(api::ListPersonsResponse { persons, has_more })
         });
 
         result.await?

@@ -2558,14 +2558,33 @@ pub struct ListCreditsResponse {
     pub credits: Vec<Credit>,
 }
 
+/// What the people list is ordered by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
+#[musli(crate = musli_core)]
+pub enum PersonSort {
+    /// The name the list shows, people without one last either way.
+    Name,
+    Credits,
+}
+
+/// One page of the people list.
 #[derive(Debug, Encode, Decode)]
 #[musli(crate = musli_core)]
-pub struct ListPersonsRequest;
+pub struct ListPersonsRequest {
+    /// Matched case-insensitively as a substring of any of a person's names.
+    pub filter: String,
+    pub sort: PersonSort,
+    pub desc: bool,
+    pub offset: usize,
+    pub limit: usize,
+}
 
 #[derive(Debug, Encode, Decode)]
 #[musli(crate = musli_core)]
 pub struct ListPersonsResponse {
     pub persons: Vec<PersonItem>,
+    /// Whether more people match past this page.
+    pub has_more: bool,
 }
 
 #[derive(Debug, Encode, Decode)]

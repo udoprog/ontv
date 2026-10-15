@@ -48,6 +48,8 @@ const CROWDED: &str = include_str!("crowded.sql");
 const MOVIE: &str = include_str!("movie.sql");
 /// More cast for the seeded show than its page shows, with `(cast)`.
 const CAST: &str = include_str!("cast.sql");
+/// Thirty people on top of [`SEED`], with `(crowd)`.
+const CROWD: &str = include_str!("crowd.sql");
 /// Specials and a second season for the seeded show, with `(seasons)`.
 const SEASONS: &str = include_str!("seasons.sql");
 /// A show airing tomorrow, with `(upcoming)`.
@@ -81,6 +83,8 @@ struct Setup {
     crowded: bool,
     /// Start with `seed.sql` and the movie in `movie.sql`.
     movie: bool,
+    /// Start with `seed.sql` and the people in `crowd.sql`.
+    crowd: bool,
     /// Start with `seed.sql` and the extra seasons in `seasons.sql`.
     seasons: bool,
     /// Start with `seed.sql` and the extra cast in `cast.sql`.
@@ -168,6 +172,7 @@ impl Fixture for Track {
             || setup.crowded
             || setup.movie
             || setup.seasons
+            || setup.crowd
             || setup.cast
             || setup.upcoming
             || setup.untracked
@@ -198,6 +203,10 @@ impl Fixture for Track {
 
             if setup.movie {
                 c.execute(MOVIE).context("adding the movie")?;
+            }
+
+            if setup.crowd {
+                c.execute(CROWD).context("adding the people")?;
             }
 
             if setup.seasons {
@@ -476,7 +485,7 @@ yew_e2e::harness! {
     media::{shows_a_poster_grid(seeded), partly_watched_shows_are_marked(seeded), toggle_marks_are_icon_sized, sort_stays_readable_at_tablet_width, reversing_keeps_the_cards(crowded), lists_tracked_items_by_default(untracked), filters_by_next_episode(next, movie), marks_the_next_episode_of_picked_shows(next), picked_items_track_and_untrack(next, movie), phone_pick_control_is_round(seeded)},
     movie::{puts_the_cast_beside_the_poster(movie), phone_release_line_stays_together(movie), phones_show_the_backdrop_once(movie, movie_backdrop)},
     navigation::{phone_menu_rows_align, opens_every_page, tab_shows_a_focus_ring, navigation_is_links(seeded), pages_have_landmarks_and_one_heading, page_scrolls_the_window, toolbar_icons_are_small, app_bar_items_have_room, errors_show_as_a_card, every_button_has_a_title(seeded)},
-    people::{lists_people_by_credits(seeded), shows_no_count_while_loading(seeded), shows_a_silhouette_without_a_photo(seeded), phone_person_page_keeps_the_photo_shape(seeded), known_for_lists_each_title_once(seeded), edits_a_persons_remotes(seeded)},
+    people::{lists_people_by_credits(seeded), shows_nothing_while_loading(seeded), pages_and_filters_people(crowd), shows_a_silhouette_without_a_photo(seeded), phone_person_page_keeps_the_photo_shape(seeded), known_for_lists_each_title_once(seeded), edits_a_persons_remotes(seeded)},
     queue::{lists_tasks_in_columns, empty_filters_say_what_is_missing, keeps_rows_in_place(seeded), follows_the_next_task(crowded), shows_failed_tasks(seeded), shows_sync_progress(slow_tmdb), phone_shows_sync_progress(slow_tmdb)},
     search::{focuses_the_input, says_what_it_searches, help_mark_sits_beside_its_text},
     settings::{reorders_sync_sources, reorders_xem_lookup, shows_and_hides_numberings, theme_applies_live, theme_is_remembered, adds_languages_and_rules, switches_work_from_the_keyboard, fields_follow_the_theme, settings_are_labelled_rows, tab_completes_the_time_zone, configures_cloudflare_access, warns_about_trusting_only_the_email_header, phones_list_the_settings_pages},

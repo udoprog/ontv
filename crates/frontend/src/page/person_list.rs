@@ -1,3 +1,4 @@
+use gloo::timers::callback::Timeout;
 use musli_web::web03::prelude::*;
 use yew::prelude::*;
 
@@ -12,13 +13,15 @@ const SORTS: &[(&str, &str)] = &[("name", "Name"), ("credits", "Credits")];
 
 const PAGE_SIZE: usize = 24;
 
+/// How long the filter waits for typing to pause before asking for people.
+const FILTER_DELAY_MS: u32 = 250;
+
 pub(crate) struct PersonList {
     channel: ws::Channel,
+    /// The people on the current page.
     persons: Vec<api::PersonItem>,
-    /// Indices into `persons` for the current filter in the active sort order.
-    /// Maintained on every input change so `view` neither reallocates nor
-    /// re-sorts per render.
-    order: Vec<usize>,
+    /// Whether more people match past the current page.
+    has_more: bool,
     filter: String,
     page: usize,
     sort: PersonSort,
@@ -27,7 +30,11 @@ pub(crate) struct PersonList {
     router: Router,
     _setup: SetupChannel,
     _broadcast: ws::Listener,
+    /// The request for the current page; replacing it drops the answer to an
+    /// earlier one.
     list_req: ws::Request,
+    /// Holds back loading while the filter is being typed.
+    filter_delay: Option<Timeout>,
     /// Whether the list has arrived, so an empty list is not shown as zero
     /// people while it loads.
     loaded: bool,
@@ -36,6 +43,7 @@ pub(crate) struct PersonList {
 pub(crate) enum Msg {
     Channel(Result<ws::Channel, ws::Error>),
     AppBroadcast(Result<ws::Packet<api::AppBroadcast>, ws::Error>),
+    Load,
     Loaded(Result<ws::Packet<api::ListPersons>, ws::Error>),
     Filter(String),
     SetSort(PersonSort),
@@ -77,7 +85,7 @@ impl Component for PersonList {
         Self {
             channel: ws::Channel::default(),
             persons: Vec::new(),
-            order: Vec::new(),
+            has_more: false,
             filter: ctx.props().filter.clone(),
             page: ctx.props().page,
             sort: ctx.props().sort,
@@ -87,6 +95,7 @@ impl Component for PersonList {
             _setup,
             _broadcast,
             list_req: ws::Request::default(),
+            filter_delay: None,
             loaded: false,
         }
     }
@@ -109,13 +118,16 @@ impl Component for PersonList {
         self.sort = props.sort;
         self.desc = props.desc;
 
-        // Only the order-affecting inputs warrant a rebuild; a bare page change
-        // (e.g. from pagination) leaves the order untouched.
-        if old_props.filter != props.filter
+        if old_props.page != props.page
             || old_props.sort != props.sort
             || old_props.desc != props.desc
         {
-            self.rebuild_order();
+            self.load(ctx);
+        } else if old_props.filter != props.filter {
+            let link = ctx.link().clone();
+            self.filter_delay = Some(Timeout::new(FILTER_DELAY_MS, move || {
+                link.send_message(Msg::Load)
+            }));
         }
 
         true
@@ -134,11 +146,9 @@ impl Component for PersonList {
     fn view(&self, ctx: &Context<Self>) -> Html {
         let link = ctx.link();
 
-        let total = self.order.len();
-        let total_pages = total.div_ceil(PAGE_SIZE).max(1);
-        let page = self.page.min(total_pages - 1);
-
-        let persons = self.ordered().skip(page * PAGE_SIZE).take(PAGE_SIZE);
+        // Only the pages up to the next one are known.
+        let page = self.page;
+        let total_pages = page + 1 + usize::from(self.has_more);
 
         let on_filter = link.callback(|e: InputEvent| {
             let input: web_sys::HtmlInputElement = e.target_unchecked_into();
@@ -185,8 +195,6 @@ impl Component for PersonList {
                     </div>
 
                     if self.loaded {
-                        <span class="list-count">{if total == 1 { "1 person".to_owned() } else { format!("{total} people") }}</span>
-
                         <PaginationButtons {page} {total_pages} on_page={link.callback(Msg::SetPage)} />
                     }
                 </div>
@@ -195,13 +203,13 @@ impl Component for PersonList {
                     <div class="row center">
                         <span class="item-inline-more"><span class="icon arrow-path spin" aria-hidden="true" /></span>
                     </div>
-                } else if persons.len() == 0 {
+                } else if self.persons.is_empty() {
                     <div class="row center">
                         <span class="item-inline-more">{"Nothing to show."}</span>
                     </div>
                 } else {
                     <div class="person-grid">
-                        { for persons.into_iter().map(|p| self.view_card(p)) }
+                        { for self.persons.iter().map(|p| self.view_card(p)) }
                     </div>
 
                     <div class="row desktop-align-end">
@@ -223,8 +231,8 @@ impl PersonList {
                     self.load(ctx);
                 } else {
                     self.persons.clear();
+                    self.has_more = false;
                     self.loaded = false;
-                    self.rebuild_order();
                 }
 
                 Ok(true)
@@ -250,33 +258,34 @@ impl PersonList {
 
                 Ok(false)
             }
+            Msg::Load => {
+                self.load(ctx);
+                Ok(true)
+            }
             Msg::Loaded(result) => {
-                self.persons = result
+                let response = result
                     .context(Message::LoadingPersons)?
                     .decode()
-                    .context(Message::LoadingPersons)?
-                    .persons;
+                    .context(Message::LoadingPersons)?;
+                self.persons = response.persons;
+                self.has_more = response.has_more;
                 self.loaded = true;
-                self.rebuild_order();
                 Ok(true)
             }
             Msg::Filter(filter) => {
                 self.filter = filter;
                 self.page = 0;
-                self.rebuild_order();
                 self.emit_navigate();
                 Ok(true)
             }
             Msg::SetSort(sort) => {
                 self.sort = sort;
                 self.desc = sort.default_desc();
-                self.rebuild_order();
                 self.emit_navigate();
                 Ok(true)
             }
             Msg::ToggleDir => {
                 self.desc = !self.desc;
-                self.rebuild_order();
                 self.emit_navigate();
                 Ok(true)
             }
@@ -286,59 +295,6 @@ impl PersonList {
                 Ok(true)
             }
         }
-    }
-
-    /// Rebuild `order` for the current filter and active sort. Called whenever
-    /// `persons` or any ordering input changes.
-    fn rebuild_order(&mut self) {
-        let filter = self.filter.to_lowercase();
-
-        self.order.clear();
-        self.order.extend(
-            self.persons
-                .iter()
-                .enumerate()
-                .filter(|(_, p)| {
-                    filter.is_empty()
-                        || p.name
-                            .texts(api::StringKind::Title)
-                            .any(|t| t.to_lowercase().contains(&filter))
-                })
-                .map(|(i, _)| i),
-        );
-
-        match self.sort {
-            PersonSort::Name => {
-                // People without any name go last whichever way names sort.
-                self.order.sort_by_cached_key(|&i| {
-                    let name = display_name(&self.persons[i]);
-                    (name.is_none(), name.map(str::to_lowercase))
-                });
-
-                if self.desc {
-                    let named = self
-                        .order
-                        .iter()
-                        .take_while(|&&i| display_name(&self.persons[i]).is_some())
-                        .count();
-
-                    self.order[..named].reverse();
-                }
-            }
-            PersonSort::Credits => {
-                self.order.sort_by_key(|&i| self.persons[i].credit_count);
-
-                if self.desc {
-                    self.order.reverse();
-                }
-            }
-        }
-    }
-
-    /// People matching the current filter, ordered by the active sort, as
-    /// maintained in `order`.
-    fn ordered(&self) -> impl ExactSizeIterator<Item = &api::PersonItem> {
-        self.order.iter().map(|&i| &self.persons[i])
     }
 
     fn emit_navigate(&self) {
@@ -351,6 +307,8 @@ impl PersonList {
     }
 
     fn load(&mut self, ctx: &Context<Self>) {
+        self.filter_delay = None;
+
         if self.channel.id() == ws::ChannelId::NONE {
             return;
         }
@@ -358,7 +316,16 @@ impl PersonList {
         self.list_req = self
             .channel
             .request()
-            .body(api::ListPersonsRequest)
+            .body(api::ListPersonsRequest {
+                filter: self.filter.clone(),
+                sort: match self.sort {
+                    PersonSort::Name => api::PersonSort::Name,
+                    PersonSort::Credits => api::PersonSort::Credits,
+                },
+                desc: self.desc,
+                offset: self.page.saturating_mul(PAGE_SIZE),
+                limit: PAGE_SIZE,
+            })
             .on_packet(ctx.link().callback(Msg::Loaded))
             .send();
     }
