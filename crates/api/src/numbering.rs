@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, HashMap};
 
 use musli_core::{Decode, Encode};
@@ -494,9 +495,9 @@ pub struct AltName {
 }
 
 /// The language an XEM language code stands for. XEM mostly uses country
-/// codes (`us`, `jp`, `se`), so a code is read as a country first: its only
-/// language, the one whose ISO 639-1 code is the same (`fi`, `no`), or the one
-/// flagged by that country (`il`); then as an ISO 639-1 code (`he`, `ja`).
+/// codes (`us`, `jp`, `se`), so a code is read as a country first: of the
+/// languages with a locale there, the ones flagged by that country, then the
+/// one with the most locales; then as an ISO 639-1 code (`he`, `ja`).
 ///
 /// ```
 /// use api::{Language, xem_language};
@@ -518,19 +519,15 @@ pub fn xem_language(code: &str) -> Option<Language> {
     }
 
     let country = code.to_ascii_uppercase();
-    let candidates = koine::locale::iter()
-        .filter(|l| l.country == country)
-        .filter_map(|l| koine::language::by_id(l.language))
-        .collect::<Vec<_>>();
+    let locales = koine::locale::iter().filter(|l| l.country == country);
 
-    let found = match candidates.as_slice() {
-        [one] => Some(*one),
-        many => many
-            .iter()
-            .find(|l| l.part1 == Some(code.as_str()))
-            .or_else(|| many.iter().find(|l| l.flag == Some(country.as_str())))
-            .copied(),
-    };
+    let found = locales
+        .filter_map(|l| koine::language::by_id(l.language))
+        .min_by_key(|l| {
+            let flagged = l.flag == Some(country.as_str());
+            let spread = koine::locale::iter().filter(|o| o.language == l.id).count();
+            (!flagged, Reverse(spread))
+        });
 
     let found = found.or_else(|| koine::language::by_part1(&code))?;
     Language::from_iso(found.id)
