@@ -10,7 +10,7 @@ rand = ["dep:rand"]
 yew = ["dep:yew", "dep:implicit-clone"]
 
 [dependencies]
-auth = { package = "watchword", path = "../../../watchword", features = ["musli"] }
+auth = { package = "watchword", version = "0.1", features = ["musli01"] }
 iso639 = { version = "0.0.0", path = "../iso639" }
 iso3166 = { version = "0.0.0", path = "../iso3166" }
 locales = { version = "0.0.0", path = "../locales" }

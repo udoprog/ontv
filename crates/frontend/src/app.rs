@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use api::{TimeInfo, TimeZone, Timestamp};
-use auth::yew::AuthContext;
+use auth::yew023::AuthContext;
 use gloo::events::EventListener;
 use gloo::timers::callback::{Interval, Timeout};
 use musli_web::web03::prelude::*;

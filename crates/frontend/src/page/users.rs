@@ -1,4 +1,4 @@
-use auth::yew::{AdminUsers, use_auth};
+use auth::yew023::{AdminUsers, use_auth};
 use yew::prelude::*;
 
 use super::account::use_page_title;

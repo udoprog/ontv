@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Error, Result};
 use auth::Auth;
-use auth::axum::SignedIn;
+use auth::axum08::SignedIn;
 use axum::extract::State;
 use axum::extract::WebSocketUpgrade;
 use musli_web::axum08;
@@ -574,7 +574,7 @@ pub(super) async fn ws_handler(
         let mut subscribe = state.broadcast.subscribe();
         // Ends the socket with its session: signed out, revoked, deleted or
         // expired, here or in another process.
-        let guard = state.auth.guard(&signed_in);
+        let guard = state.auth.guard(&signed_in.user, &signed_in.session);
 
         let connect =
             axum08::server(socket, handler).with_channel_allocator(state.channels.clone());

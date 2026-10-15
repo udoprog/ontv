@@ -1,4 +1,4 @@
-use auth::yew::AccountPanel;
+use auth::yew023::AccountPanel;
 use yew::prelude::*;
 
 use crate::background::Background;

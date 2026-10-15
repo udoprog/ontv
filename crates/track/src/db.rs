@@ -780,7 +780,7 @@ pub(crate) struct InnerRead {
     #[sql(statements)]
     users: users::Read,
     #[sql(statements)]
-    auth: auth::sqll::Read,
+    auth: auth::sqll014::Read,
     #[sql(statements)]
     xem: xem::Read,
 
@@ -1366,7 +1366,7 @@ pub(crate) struct InnerWrite {
     #[sql(statements)]
     read: InnerRead,
     #[sql(statements)]
-    auth_write: auth::sqll::Write,
+    auth_write: auth::sqll014::Write,
     #[sql(statements)]
     xem_write: xem::Write,
 

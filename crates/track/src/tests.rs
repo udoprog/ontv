@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use auth::Role;
-use auth::axum::SignedIn;
+use auth::axum08::SignedIn;
 use musli_web::ws::Channels;
 use reqwest::StatusCode;
 use reqwest::header::{CONNECTION, COOKIE, HeaderMap, HeaderValue, SET_COOKIE, UPGRADE};
@@ -598,7 +598,7 @@ async fn users_register_through_links() -> Result<()> {
 }
 
 /// Whether the socket's session ends within half a second.
-async fn ended(guard: &auth::axum::SessionGuard) -> bool {
+async fn ended(guard: &auth::SessionGuard) -> bool {
     tokio::time::timeout(Duration::from_millis(500), guard.ended())
         .await
         .is_ok()
@@ -614,8 +614,10 @@ async fn ending_sessions_ends_their_sockets() -> Result<()> {
 
     let current = server.login("alice", "root").await?;
     let other = server.login("alice", "root").await?;
-    let current_socket = server.state.auth.guard(&server.signed_in(&current).await?);
-    let other_socket = server.state.auth.guard(&server.signed_in(&other).await?);
+    let signed_in = server.signed_in(&current).await?;
+    let current_socket = server.state.auth.guard(&signed_in.user, &signed_in.session);
+    let signed_in = server.signed_in(&other).await?;
+    let other_socket = server.state.auth.guard(&signed_in.user, &signed_in.session);
 
     let change = server
         .post(

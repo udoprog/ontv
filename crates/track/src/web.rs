@@ -47,7 +47,7 @@ pub(crate) fn router(state: AppState, dist: Option<&Path>) -> Router {
             "/api/image/{source}/{*path}",
             get(crate::proxy::image_handler),
         )
-        .merge(auth::axum::routes());
+        .merge(auth::axum08::routes());
 
     // Unknown paths get index.html so client-side routes load.
     let app = match dist {

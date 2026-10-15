@@ -1,4 +1,4 @@
-use auth::yew::CloudflareSettings;
+use auth::yew023::CloudflareSettings;
 use musli_web::web03::prelude::*;
 use yew::prelude::*;
 

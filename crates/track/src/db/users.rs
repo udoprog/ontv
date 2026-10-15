@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use api::UserId;
 use auth::Role;
-use auth::sqll::SqllStore;
+use auth::sqll014::SqllStore;
 use sqll::{Row, Statements, TypedStatement};
 use tokio::task::spawn_blocking;
 
@@ -61,14 +61,14 @@ impl Read {
     }
 }
 
-impl AsMut<auth::sqll::Read> for InnerRead {
-    fn as_mut(&mut self) -> &mut auth::sqll::Read {
+impl AsMut<auth::sqll014::Read> for InnerRead {
+    fn as_mut(&mut self) -> &mut auth::sqll014::Read {
         &mut self.auth
     }
 }
 
-impl AsMut<auth::sqll::Write> for InnerWrite {
-    fn as_mut(&mut self) -> &mut auth::sqll::Write {
+impl AsMut<auth::sqll014::Write> for InnerWrite {
+    fn as_mut(&mut self) -> &mut auth::sqll014::Write {
         &mut self.auth_write
     }
 }

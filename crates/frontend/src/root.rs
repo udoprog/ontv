@@ -1,4 +1,4 @@
-use auth::yew::AuthProvider;
+use auth::yew023::AuthProvider;
 use yew::prelude::*;
 
 use crate::app::App;

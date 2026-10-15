@@ -26,7 +26,7 @@ where
     C: yew::Component,
 {
     ctx.link()
-        .context::<auth::yew::AuthContext>(yew::Callback::noop())
+        .context::<auth::yew023::AuthContext>(yew::Callback::noop())
         .is_some_and(|(auth, _)| auth.is_admin())
 }
 
