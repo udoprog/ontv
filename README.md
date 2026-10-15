@@ -49,6 +49,11 @@ By default the server listens on `127.0.0.1:3000`, stores its state in
 `track.db`, and caches images in `image-cache`. See `--help` for how to
 change this.
 
+On first start, with no users, the server logs a registration link for the
+administrator `root`. Open it to choose a password and sign in.
+`--bootstrap-admin` names the administrator by another login, or by an
+email.
+
 Once it is running, go to `Settings` and configure your API keys for
 TheTVDB and TheMovieDB. Unfortunately I cannot help you with this.
 
@@ -138,8 +143,8 @@ This will take a while, so go get a ☕.
 Most of the data in the database can be recovered by syncing it again from
 the remotes. What can't be recovered is the users, the remotes of each show and
 movie, what each user tracks, their preferences and their watch history, so
-those are what the backup covers. Passwords, sessions and login links are not
-exported, so a restored user needs a new login link to sign in.
+those are what the backup covers. Passwords, sessions and registration links
+are not exported, so a restored user needs a new registration link to sign in.
 
 ```text
 $ track export --output backup.jsonl

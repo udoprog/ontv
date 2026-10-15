@@ -16,13 +16,11 @@ required-features = ["import"]
 
 [dependencies]
 api = { path = "../api", features = ["rand", "sqll"] }
-auth = { path = "../auth" }
+auth = { package = "yew-auth", path = "../../../yew-auth", features = ["axum", "cloudflare", "sqll"] }
 
 anyhow = "1.0.104"
 axum = "0.8.9"
-base64 = "0.22.1"
 bytes = "1.12.1"
-cookie = "0.18.1"
 clap = { version = "4.6.7", features = ["derive", "env"] }
 lru = "0.18.5"
 mime_guess = { version = "2.0.5", default-features = false, optional = true }
@@ -45,3 +43,6 @@ serde_yaml = { version = "0.9.34", optional = true }
 uuid = { version = "1.26.1", default-features = false, optional = true, features = ["serde"] }
 leaky-bucket = "1.1.2"
 rand = { version = "0.10.3", default-features = false }
+
+[dev-dependencies]
+cookie = "0.18.1"

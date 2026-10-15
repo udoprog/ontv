@@ -2217,7 +2217,9 @@ pub struct Config {
     pub xem_lookup: Vec<RemoteSource>,
     /// The numberings episodes show besides their own ("Other numberings").
     pub numberings: Vec<NumberingPref>,
-    pub cloudflare_access: CloudflareAccess,
+    /// Signing users in through Cloudflare Access: a verified email signs in
+    /// the existing user with that email.
+    pub cloudflare_access: auth::CloudflareConfig,
 }
 
 /// The part of the system configuration every signed-in user sees.
@@ -2243,34 +2245,6 @@ impl SiteConfig {
     }
 }
 
-/// Signing users in through Cloudflare Access: a verified email logs in the
-/// existing user with that email.
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
-#[musli(crate = musli_core)]
-pub struct CloudflareAccess {
-    pub enabled: bool,
-    /// The team's host, such as `example.cloudflareaccess.com`.
-    pub team_domain: String,
-    /// The Access application's audience (AUD) tag.
-    pub audience: String,
-    /// Accept the email header that Access sets.
-    pub trust_email_header: bool,
-    /// Require and verify the Access JWT.
-    pub verify_jwt: bool,
-}
-
-impl Default for CloudflareAccess {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            team_domain: String::new(),
-            audience: String::new(),
-            trust_email_header: false,
-            verify_jwt: true,
-        }
-    }
-}
-
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -2289,7 +2263,10 @@ impl Default for Config {
             ],
             xem_lookup: RemoteSource::XEM_LOOKUP.to_vec(),
             numberings: default_numberings(),
-            cloudflare_access: CloudflareAccess::default(),
+            cloudflare_access: auth::CloudflareConfig {
+                verify_jwt: true,
+                ..auth::CloudflareConfig::default()
+            },
         }
     }
 }
@@ -2325,29 +2302,6 @@ fn sync_kinds_for(kinds: &[SourceSyncKinds], source: RemoteSource) -> SyncKindSe
 #[derive(Debug, Encode, Decode)]
 #[musli(crate = musli_core)]
 pub struct Empty;
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, serde::Serialize, serde::Deserialize,
-)]
-#[musli(crate = musli_core)]
-#[serde(rename_all = "lowercase")]
-pub enum UserRole {
-    Admin,
-    Regular,
-}
-
-#[derive(Debug, Clone, PartialEq, Encode, Decode, serde::Serialize, serde::Deserialize)]
-#[musli(crate = musli_core)]
-pub struct User {
-    pub id: UserId,
-    pub login: String,
-    pub email: Option<String>,
-    pub role: UserRole,
-    /// Whether the user has a password; one without can only sign in through a
-    /// login link or Cloudflare Access.
-    pub has_password: bool,
-    pub created_at: Timestamp,
-}
 
 #[derive(Debug, Clone, Encode, Decode)]
 #[musli(crate = musli_core)]
@@ -3494,102 +3448,6 @@ pub struct SetPreferencesRequest {
     pub preferences: Preferences,
 }
 
-#[derive(Debug, Encode, Decode)]
-#[musli(crate = musli_core)]
-pub struct ListUsersRequest;
-
-#[derive(Debug, Encode, Decode)]
-#[musli(crate = musli_core)]
-pub struct ListUsersResponse {
-    pub users: Vec<User>,
-    /// The users with an unused, unexpired login link.
-    pub login_links: Vec<LoginLink>,
-}
-
-/// A user's pending login link; its token is only shown when it is generated.
-#[derive(Debug, Clone, PartialEq, Encode, Decode)]
-#[musli(crate = musli_core)]
-pub struct LoginLink {
-    pub user_id: UserId,
-    pub expires_at: Timestamp,
-}
-
-#[derive(Debug, Encode, Decode)]
-#[musli(crate = musli_core)]
-pub struct CreateUserRequest {
-    pub login: String,
-    pub email: Option<String>,
-    pub role: UserRole,
-}
-
-#[derive(Debug, Encode, Decode)]
-#[musli(crate = musli_core)]
-pub struct UserResponse {
-    pub user: User,
-}
-
-#[derive(Debug, Encode, Decode)]
-#[musli(crate = musli_core)]
-pub struct SetUserRoleRequest {
-    pub user_id: UserId,
-    pub role: UserRole,
-}
-
-#[derive(Debug, Encode, Decode)]
-#[musli(crate = musli_core)]
-pub struct DeleteUserRequest {
-    pub user_id: UserId,
-}
-
-/// Creates a single-use login link for a user, invalidating any earlier one.
-#[derive(Debug, Encode, Decode)]
-#[musli(crate = musli_core)]
-pub struct GenerateLoginTokenRequest {
-    pub user_id: UserId,
-}
-
-#[derive(Debug, Encode, Decode)]
-#[musli(crate = musli_core)]
-pub struct GenerateLoginTokenResponse {
-    /// Redeemed at `/register/{token}`.
-    pub token: String,
-    pub expires_at: Timestamp,
-}
-
-/// Invalidates a user's unused login link.
-#[derive(Debug, Encode, Decode)]
-#[musli(crate = musli_core)]
-pub struct RevokeLoginTokenRequest {
-    pub user_id: UserId,
-}
-
-/// Signs a user out everywhere: ends their sessions and closes their sockets.
-#[derive(Debug, Encode, Decode)]
-#[musli(crate = musli_core)]
-pub struct RevokeUserAccessRequest {
-    pub user_id: UserId,
-}
-
-#[derive(Debug, Encode, Decode)]
-#[musli(crate = musli_core)]
-pub struct SetLoginRequest {
-    pub login: String,
-}
-
-#[derive(Debug, Encode, Decode)]
-#[musli(crate = musli_core)]
-pub struct SetEmailRequest {
-    pub email: Option<String>,
-}
-
-#[derive(Debug, Encode, Decode)]
-#[musli(crate = musli_core)]
-pub struct SetPasswordRequest {
-    /// Ignored when the user has no password yet.
-    pub old_password: String,
-    pub new_password: String,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
 #[musli(crate = musli_core)]
 pub enum PendingKind {
@@ -4290,66 +4148,6 @@ api::define! {
     pub type ResetImageSelection;
     impl Endpoint for ResetImageSelection {
         impl Request for ResetImageSelectionRequest;
-        type Response<'de> = Empty;
-    }
-
-    pub type ListUsers;
-    impl Endpoint for ListUsers {
-        impl Request for ListUsersRequest;
-        type Response<'de> = ListUsersResponse;
-    }
-
-    pub type CreateUser;
-    impl Endpoint for CreateUser {
-        impl Request for CreateUserRequest;
-        type Response<'de> = UserResponse;
-    }
-
-    pub type SetUserRole;
-    impl Endpoint for SetUserRole {
-        impl Request for SetUserRoleRequest;
-        type Response<'de> = UserResponse;
-    }
-
-    pub type DeleteUser;
-    impl Endpoint for DeleteUser {
-        impl Request for DeleteUserRequest;
-        type Response<'de> = Empty;
-    }
-
-    pub type GenerateLoginToken;
-    impl Endpoint for GenerateLoginToken {
-        impl Request for GenerateLoginTokenRequest;
-        type Response<'de> = GenerateLoginTokenResponse;
-    }
-
-    pub type RevokeLoginToken;
-    impl Endpoint for RevokeLoginToken {
-        impl Request for RevokeLoginTokenRequest;
-        type Response<'de> = Empty;
-    }
-
-    pub type RevokeUserAccess;
-    impl Endpoint for RevokeUserAccess {
-        impl Request for RevokeUserAccessRequest;
-        type Response<'de> = Empty;
-    }
-
-    pub type SetLogin;
-    impl Endpoint for SetLogin {
-        impl Request for SetLoginRequest;
-        type Response<'de> = UserResponse;
-    }
-
-    pub type SetEmail;
-    impl Endpoint for SetEmail {
-        impl Request for SetEmailRequest;
-        type Response<'de> = UserResponse;
-    }
-
-    pub type SetPassword;
-    impl Endpoint for SetPassword {
-        impl Request for SetPasswordRequest;
         type Response<'de> = Empty;
     }
 

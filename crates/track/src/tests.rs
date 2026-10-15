@@ -1,11 +1,14 @@
-//! Signing in, sessions, login links and request authorization, against a
-//! server on a fresh database.
+//! Signing in, sessions, registration links and request authorization through
+//! yew-auth as track wires it up, against a server on a fresh database with
+//! root.
 
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
-use api::Timestamp;
+use auth::Role;
+use auth::axum::SignedIn;
 use musli_web::ws::Channels;
 use reqwest::StatusCode;
 use reqwest::header::{CONNECTION, COOKIE, HeaderMap, HeaderValue, SET_COOKIE, UPGRADE};
@@ -16,14 +19,16 @@ use tokio::sync::{Notify, broadcast};
 
 use crate::app_broadcast::Broadcaster;
 use crate::cache::ImageCache;
+use crate::db::users::ROOT_HASH;
 use crate::db::{Database, OpenMode};
-use crate::identity::{Auth, AuthUser, Revoke, SESSION_COOKIE};
 use crate::pending::PendingSystem;
 use crate::remote::RemoteClients;
 use crate::shutdown::Shutdown;
 use crate::task_queue::TaskQueue;
 use crate::web::{self, AppState};
-use crate::ws::{Refused, WsHandler, session_valid};
+use crate::ws::{AuthUser, Refused, WsHandler};
+
+const SESSION_COOKIE: &str = "track_session";
 
 struct Server {
     url: String,
@@ -41,9 +46,10 @@ impl Server {
         let dir = tempfile::tempdir()?;
         let db = Database::open(dir.path().join("track.db"), OpenMode::Bulk, 1)?;
         db.save_config(&config).await?;
+        db.test_root().await?;
 
         let http = reqwest::Client::new();
-        let key = db.session_key().await?;
+        let auth = crate::entry::build_auth(&db, &config, trusted_proxies).await?;
         let (tx, _) = broadcast::channel(16);
 
         let state = AppState {
@@ -52,12 +58,12 @@ impl Server {
             channels: Channels::default(),
             cache: ImageCache::new(dir.path().join("image-cache")),
             queue: TaskQueue::new(),
-            remote: RemoteClients::new(http.clone(), http.clone()),
+            remote: RemoteClients::new(http.clone(), http),
             pending: PendingSystem::new(db),
             config_changed: Arc::new(Notify::new()),
             delay: None,
             shutdown: Shutdown::new(),
-            auth: Auth::new(key, http, &config, trusted_proxies),
+            auth,
         };
 
         let listener = TcpListener::bind("127.0.0.1:0").await?;
@@ -118,7 +124,18 @@ impl Server {
         Ok(response.cookie.expect("login sets the session cookie"))
     }
 
-    fn handler(&self, user: AuthUser) -> WsHandler {
+    /// The signed-in user and session of a session cookie.
+    async fn signed_in(&self, cookie: &str) -> Result<SignedIn> {
+        let id = self
+            .state
+            .auth
+            .session_id(&cookie_header(cookie))
+            .expect("a signed session cookie");
+        let (user, session) = self.state.auth.session(&id).await?.expect("a live session");
+        Ok(SignedIn { user, session })
+    }
+
+    fn handler(&self, user: &SignedIn) -> WsHandler {
         let state = &self.state;
 
         WsHandler {
@@ -130,18 +147,16 @@ impl Server {
             config_changed: state.config_changed.clone(),
             delay: None,
             auth: state.auth.clone(),
-            user: Arc::new(user),
+            user: Arc::new(AuthUser::from(user)),
         }
     }
 
+    /// Creates an active regular user whose password is `root`.
     async fn create_user(&self, login: &str, email: Option<&str>) -> Result<api::UserId> {
-        let user = self
-            .state
+        self.state
             .db
-            .create_user(login, email, auth::UserRole::Regular, Timestamp::now())
-            .await?
-            .expect("login and email are free");
-        Ok(user.id)
+            .test_user(login, email, Role::Regular, Some(ROOT_HASH))
+            .await
     }
 }
 
@@ -199,6 +214,28 @@ fn refusal(error: anyhow::Error) -> Refused {
         .unwrap_or_else(|| panic!("expected a refusal, got {error:#}"))
 }
 
+fn cloudflare(enabled: bool, trust_email_header: bool, verify_jwt: bool) -> api::Config {
+    api::Config {
+        cloudflare_access: auth::CloudflareConfig {
+            enabled,
+            team_domain: "example.cloudflareaccess.com".to_owned(),
+            audience: "aud".to_owned(),
+            trust_email_header,
+            verify_jwt,
+        },
+        ..api::Config::default()
+    }
+}
+
+fn email(email: &'static str) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        auth::cloudflare::EMAIL_HEADER,
+        HeaderValue::from_static(email),
+    );
+    headers
+}
+
 #[tokio::test]
 async fn login_and_logout() -> Result<()> {
     let server = Server::start(api::Config::default()).await?;
@@ -223,17 +260,11 @@ async fn login_and_logout() -> Result<()> {
 #[tokio::test]
 async fn login_by_email() -> Result<()> {
     let server = Server::start(api::Config::default()).await?;
-    let id = server
+    server
         .create_user("alice", Some("alice@example.com"))
         .await?;
-    let hash = auth::hash_password("alice password")?;
-    server
-        .state
-        .db
-        .set_user_password_hash(id, &hash, None)
-        .await?;
 
-    let cookie = server.login("Alice@Example.com", "alice password").await?;
+    let cookie = server.login("Alice@Example.com", "root").await?;
     let me = server.me(&cookie).await?;
     assert_eq!(me.body.unwrap()["login"], "alice");
     Ok(())
@@ -256,7 +287,11 @@ async fn bad_password() -> Result<()> {
     }
 
     // A user without a password cannot sign in with one.
-    server.create_user("bob", None).await?;
+    server
+        .state
+        .db
+        .test_user("bob", None, Role::Regular, None)
+        .await?;
     let response = server
         .post(
             "/api/auth/login",
@@ -306,6 +341,7 @@ async fn session_cookie_is_secure_behind_https() -> Result<()> {
         assert_eq!(response.status(), StatusCode::OK);
         let cookies = set_cookies(&response);
         assert_eq!(cookies.len(), 1);
+        assert_eq!(cookies[0].name(), SESSION_COOKIE);
         assert_eq!(cookies[0].secure(), secure, "{proto:?}");
 
         let mut req = server
@@ -327,14 +363,6 @@ async fn session_cookie_is_secure_behind_https() -> Result<()> {
         assert_eq!(cleared[0].secure(), secure, "{proto:?}");
     }
 
-    let root = server
-        .state
-        .db
-        .user_by_login_or_email("root")
-        .await?
-        .unwrap();
-    let hash = root.password_hash.as_deref().unwrap();
-    assert!(!format!("{root:?}").contains(hash));
     Ok(())
 }
 
@@ -425,6 +453,9 @@ async fn unauthenticated_requests_are_rejected() -> Result<()> {
     let me = server.get("/api/auth/me", HeaderMap::new()).await?;
     assert_eq!(me.status, StatusCode::UNAUTHORIZED);
 
+    let users = server.get("/api/auth/users", HeaderMap::new()).await?;
+    assert_eq!(users.status, StatusCode::UNAUTHORIZED);
+
     // The SPA stays public.
     let index = server.get("/", HeaderMap::new()).await?;
     assert_ne!(index.status, StatusCode::UNAUTHORIZED);
@@ -441,17 +472,13 @@ async fn unauthenticated_requests_are_rejected() -> Result<()> {
 async fn admin_only_requests() -> Result<()> {
     let server = Server::start(api::Config::default()).await?;
     let root = server
-        .state
-        .db
-        .user_by_login_or_email("root")
-        .await?
-        .unwrap();
-    let alice = server.create_user("alice", None).await?;
+        .signed_in(&server.login("root", "root").await?)
+        .await?;
+    server.create_user("alice", None).await?;
+    let alice = server.login("alice", "root").await?;
+    let alice_user = server.signed_in(&alice).await?;
 
-    let regular = server.handler(AuthUser {
-        id: alice,
-        session: None,
-    });
+    let regular = server.handler(&alice_user);
 
     for id in [
         api::Request::GetSystemConfig,
@@ -459,13 +486,6 @@ async fn admin_only_requests() -> Result<()> {
         api::Request::RemoveShow,
         api::Request::RemoveMovie,
         api::Request::DeletePerson,
-        api::Request::ListUsers,
-        api::Request::CreateUser,
-        api::Request::SetUserRole,
-        api::Request::DeleteUser,
-        api::Request::GenerateLoginToken,
-        api::Request::RevokeLoginToken,
-        api::Request::RevokeUserAccess,
         api::Request::AddShowRemote,
         api::Request::RemoveShowRemote,
         api::Request::UpdateShowRemote,
@@ -516,226 +536,130 @@ async fn admin_only_requests() -> Result<()> {
         api::Request::GetShowNumbering,
         api::Request::ListShowAltNames,
         api::Request::MarkWatched,
-        api::Request::SetLogin,
-        api::Request::SetEmail,
-        api::Request::SetPassword,
     ] {
         regular.authorize(id).await?;
     }
 
-    let admin = server.handler(AuthUser {
-        id: root.id,
-        session: None,
-    });
+    let users = server.get("/api/auth/users", cookie_header(&alice)).await?;
+    assert_eq!(users.status, StatusCode::FORBIDDEN);
+
+    let admin = server.handler(&root);
     admin.authorize(api::Request::SetSystemConfig).await?;
-    admin.authorize(api::Request::ListUsers).await?;
 
     // A role change applies to open sockets.
     server
         .state
-        .db
-        .set_user_role(alice, auth::UserRole::Admin)
+        .auth
+        .set_role(&root.user, alice_user.user.id, Role::Admin)
         .await?;
-    regular.authorize(api::Request::ListUsers).await?;
+    regular.authorize(api::Request::SetSystemConfig).await?;
     Ok(())
 }
 
+/// An administrator adds a user, whose registration link signs them in once.
 #[tokio::test]
-async fn login_token_is_single_use() -> Result<()> {
+async fn users_register_through_links() -> Result<()> {
     let server = Server::start(api::Config::default()).await?;
-    let db = &server.state.db;
-    let alice = server
-        .create_user("alice", Some("alice@example.com"))
+    let root = server.login("root", "root").await?;
+
+    let created = server
+        .post(
+            "/api/auth/users",
+            json!({"login": "alice", "email": "alice@example.com", "role": "regular"}),
+            Some(&root),
+        )
         .await?;
-    let expires = Timestamp::from_jiff(auth::login_token_expiry(Timestamp::now().into_jiff()));
+    assert_eq!(created.status, StatusCode::OK);
+    let token = created.body.unwrap()["link"]["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let path = format!("/api/auth/register/{token}");
 
-    db.create_login_token("first", alice, expires).await?;
-    // A newer link replaces the unused one.
-    db.create_login_token("second", alice, expires).await?;
-
-    let pending = db.pending_login_links(Timestamp::now()).await?;
-    assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].user_id, alice);
-
-    let first = server.get("/api/register/first", HeaderMap::new()).await?;
-    assert_eq!(first.status, StatusCode::NOT_FOUND);
-
-    let info = server.get("/api/register/second", HeaderMap::new()).await?;
+    let info = server.get(&path, HeaderMap::new()).await?;
     assert_eq!(info.status, StatusCode::OK);
     let info = info.body.unwrap();
     assert_eq!(info["login"], "alice");
     assert_eq!(info["email"], "alice@example.com");
 
-    let weak = server
-        .post("/api/register/second", json!({"password": "short"}), None)
-        .await?;
-    assert_eq!(weak.status, StatusCode::BAD_REQUEST);
-
     let register = server
-        .post(
-            "/api/register/second",
-            json!({"password": "new password"}),
-            None,
-        )
+        .post(&path, json!({"password": "new password"}), None)
         .await?;
     assert_eq!(register.status, StatusCode::OK);
     let cookie = register.cookie.expect("registering signs in");
     assert_eq!(server.me(&cookie).await?.body.unwrap()["login"], "alice");
 
     let again = server
-        .post(
-            "/api/register/second",
-            json!({"password": "other password"}),
-            None,
-        )
+        .post(&path, json!({"password": "other password"}), None)
         .await?;
     assert_eq!(again.status, StatusCode::GONE);
-    assert_eq!(
-        server
-            .get("/api/register/second", HeaderMap::new())
-            .await?
-            .status,
-        StatusCode::GONE
-    );
 
-    assert!(db.pending_login_links(Timestamp::now()).await?.is_empty());
-
-    server.login("alice", "new password").await?;
     Ok(())
 }
 
-#[tokio::test]
-async fn password_change_ends_other_sessions() -> Result<()> {
-    let server = Server::start(api::Config::default()).await?;
-    let db = &server.state.db;
-    let root = db.user_by_login_or_email("root").await?.unwrap();
-
-    let current = server.login("root", "root").await?;
-    let other = server.login("root", "root").await?;
-    let current_id = server.state.auth.session_id(&cookie_header(&current));
-    let other_id = server.state.auth.session_id(&cookie_header(&other));
-
-    let hash = auth::hash_password("new password")?;
-    db.set_user_password_hash(root.id, &hash, current_id.as_deref())
-        .await?;
-
-    assert_eq!(server.me(&current).await?.status, StatusCode::OK);
-    assert_eq!(server.me(&other).await?.status, StatusCode::UNAUTHORIZED);
-
-    let socket = |session: &Option<String>| AuthUser {
-        id: root.id,
-        session: session.clone(),
-    };
-
-    // Open sockets of the ended session close on the revocation, or on their
-    // next check if they missed it.
-    let revoke = Revoke::OtherSessions {
-        user: root.id,
-        keep: current_id.clone(),
-    };
-    assert!(!revoke.applies_to(&socket(&current_id)));
-    assert!(revoke.applies_to(&socket(&other_id)));
-    assert!(session_valid(db, &socket(&current_id)).await);
-    assert!(!session_valid(db, &socket(&other_id)).await);
-    Ok(())
+/// Whether the socket's session ends within half a second.
+async fn ended(guard: &auth::axum::SessionGuard) -> bool {
+    tokio::time::timeout(Duration::from_millis(500), guard.ended())
+        .await
+        .is_ok()
 }
 
+/// Ending a session, here signing out everywhere and changing the password,
+/// ends the sockets of the sessions it ends and no others.
 #[tokio::test]
-async fn login_link_ends_existing_sessions() -> Result<()> {
+async fn ending_sessions_ends_their_sockets() -> Result<()> {
     let server = Server::start(api::Config::default()).await?;
-    let db = &server.state.db;
-    let alice = server.create_user("alice", None).await?;
-    let hash = auth::hash_password("old password")?;
-    db.set_user_password_hash(alice, &hash, None).await?;
-    let old = server.login("alice", "old password").await?;
+    let root = server.login("root", "root").await?;
+    server.create_user("alice", None).await?;
 
-    let expires = Timestamp::from_jiff(auth::login_token_expiry(Timestamp::now().into_jiff()));
-    db.create_login_token("reset", alice, expires).await?;
+    let current = server.login("alice", "root").await?;
+    let other = server.login("alice", "root").await?;
+    let current_socket = server.state.auth.guard(&server.signed_in(&current).await?);
+    let other_socket = server.state.auth.guard(&server.signed_in(&other).await?);
 
-    let register = server
+    let change = server
         .post(
-            "/api/register/reset",
-            json!({"password": "new password"}),
-            None,
+            "/api/auth/account/password",
+            json!({"old_password": "root", "new_password": "new password"}),
+            Some(&current),
         )
         .await?;
-    assert_eq!(register.status, StatusCode::OK);
-    let new = register.cookie.expect("registering signs in");
-
-    assert_eq!(server.me(&old).await?.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(server.me(&new).await?.status, StatusCode::OK);
-    Ok(())
-}
-
-#[tokio::test]
-async fn login_token_expires() -> Result<()> {
-    let server = Server::start(api::Config::default()).await?;
-    let alice = server.create_user("alice", None).await?;
-    let expired =
-        Timestamp::from_jiff(Timestamp::now().into_jiff() - jiff::SignedDuration::from_secs(1));
-
-    server
-        .state
-        .db
-        .create_login_token("old", alice, expired)
-        .await?;
-
+    assert_eq!(change.status, StatusCode::OK);
     assert!(
-        server
-            .state
-            .db
-            .pending_login_links(Timestamp::now())
-            .await?
-            .is_empty()
+        ended(&other_socket).await,
+        "the other session's socket ends"
     );
+    assert!(!ended(&current_socket).await, "this session's socket stays");
 
-    let info = server.get("/api/register/old", HeaderMap::new()).await?;
-    assert_eq!(info.status, StatusCode::GONE);
-
-    let register = server
+    let alice = server.signed_in(&current).await?.user.id;
+    let sign_out = server
         .post(
-            "/api/register/old",
-            json!({"password": "new password"}),
-            None,
+            &format!("/api/auth/users/{alice}/sign-out"),
+            json!({}),
+            Some(&root),
         )
         .await?;
-    assert_eq!(register.status, StatusCode::GONE);
-    assert!(register.cookie.is_none());
+    assert_eq!(sign_out.status, StatusCode::NO_CONTENT);
+    assert!(
+        ended(&current_socket).await,
+        "signing out everywhere ends it"
+    );
+    assert_eq!(server.me(&current).await?.status, StatusCode::UNAUTHORIZED);
     Ok(())
 }
 
 #[tokio::test]
 async fn cloudflare_matches_email_only() -> Result<()> {
-    let config = api::Config {
-        cloudflare_access: api::CloudflareAccess {
-            enabled: true,
-            team_domain: "example.cloudflareaccess.com".to_owned(),
-            audience: "aud".to_owned(),
-            trust_email_header: true,
-            verify_jwt: false,
-        },
-        ..api::Config::default()
-    };
-
-    let server = Server::start(config).await?;
+    let server = Server::start(cloudflare(true, true, false)).await?;
     server
         .create_user("alice", Some("alice@example.com"))
         .await?;
 
-    let email = |email: &'static str| {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            auth::cloudflare::EMAIL_HEADER,
-            HeaderValue::from_static(email),
-        );
-        headers
-    };
-
-    let available = server
-        .get("/api/auth/cloudflare", email("Alice@Example.com"))
+    let config = server
+        .get("/api/auth/config", email("Alice@Example.com"))
         .await?;
-    assert_eq!(available.body, Some(json!(true)));
-    assert!(available.cookie.is_none());
+    assert_eq!(config.body.unwrap()["cloudflare"], true);
+    assert!(config.cookie.is_none());
     assert_eq!(
         server
             .get("/api/auth/me", email("alice@example.com"))
@@ -756,8 +680,8 @@ async fn cloudflare_matches_email_only() -> Result<()> {
         email("alice"),
         email("carol@example.com"),
     ] {
-        let available = server.get("/api/auth/cloudflare", headers.clone()).await?;
-        assert_eq!(available.body, Some(json!(false)));
+        let config = server.get("/api/auth/config", headers.clone()).await?;
+        assert_eq!(config.body.unwrap()["cloudflare"], false);
         let login = Response::from(
             server
                 .client
@@ -791,6 +715,7 @@ async fn cloudflare_matches_email_only() -> Result<()> {
         StatusCode::SWITCHING_PROTOCOLS
     );
 
+    // A session cookie wins over the Access header.
     let root = server.login("root", "root").await?;
     let mut headers = email("alice@example.com");
     headers.extend(cookie_header(&root));
@@ -812,50 +737,23 @@ async fn cloudflare_matches_email_only() -> Result<()> {
         server.get("/api/auth/me", headers).await?.status,
         StatusCode::UNAUTHORIZED
     );
-    assert_eq!(
-        server
-            .get("/api/auth/cloudflare", email("alice@example.com"))
-            .await?
-            .body,
-        Some(json!(true))
-    );
-    assert_eq!(server.state.db.list_users().await?.len(), 2);
     Ok(())
 }
 
 #[tokio::test]
 async fn cloudflare_rejects_disabled_and_invalid_credentials() -> Result<()> {
     for enabled in [false, true] {
-        let server = Server::start(api::Config {
-            cloudflare_access: api::CloudflareAccess {
-                enabled,
-                team_domain: "example.cloudflareaccess.com".to_owned(),
-                audience: "aud".to_owned(),
-                trust_email_header: true,
-                verify_jwt: true,
-            },
-            ..api::Config::default()
-        })
-        .await?;
+        let server = Server::start(cloudflare(enabled, true, true)).await?;
         server
             .create_user("alice", Some("alice@example.com"))
             .await?;
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            auth::cloudflare::EMAIL_HEADER,
-            HeaderValue::from_static("alice@example.com"),
-        );
+        let mut headers = email("alice@example.com");
         headers.insert(
             auth::cloudflare::JWT_HEADER,
             HeaderValue::from_static("a.b.c"),
         );
-        assert_eq!(
-            server
-                .get("/api/auth/cloudflare", headers.clone())
-                .await?
-                .body,
-            Some(json!(false))
-        );
+        let config = server.get("/api/auth/config", headers.clone()).await?;
+        assert_eq!(config.body.unwrap()["cloudflare"], false);
         let response = Response::from(
             server
                 .client
@@ -872,92 +770,6 @@ async fn cloudflare_rejects_disabled_and_invalid_credentials() -> Result<()> {
             StatusCode::UNAUTHORIZED
         );
     }
-    Ok(())
-}
-
-/// Loading the sign-in page with Cloudflare Access credentials warns why they
-/// did not sign anyone in, once per minute; a plain signed-out request warns
-/// about nothing.
-#[tokio::test]
-async fn access_failures_are_logged() -> Result<()> {
-    let cookie = |value: &'static str| {
-        let mut headers = HeaderMap::new();
-        headers.insert(COOKIE, HeaderValue::from_static(value));
-        headers
-    };
-
-    // Disabled: the credentials are ignored, and the log says so.
-    let server = Server::start(api::Config::default()).await?;
-
-    let me = server.get("/api/auth/cloudflare", HeaderMap::new()).await?;
-    assert_eq!(me.body, Some(json!(false)));
-    assert!(server.state.auth.warnings().is_empty());
-
-    for _ in 0..2 {
-        let me = server
-            .get("/api/auth/cloudflare", cookie("CF_Authorization=a.b.c"))
-            .await?;
-        assert_eq!(me.body, Some(json!(false)));
-    }
-
-    let warnings = server.state.auth.warnings();
-    assert_eq!(warnings.len(), 1, "{warnings:?}");
-    assert!(warnings[0].contains("sign-in is disabled in Settings"));
-
-    // Enabled: a token that does not verify, and an email no one has.
-    let server = Server::start(api::Config {
-        cloudflare_access: api::CloudflareAccess {
-            enabled: true,
-            team_domain: "example.cloudflareaccess.com".to_owned(),
-            audience: "aud".to_owned(),
-            trust_email_header: true,
-            verify_jwt: false,
-        },
-        ..api::Config::default()
-    })
-    .await?;
-
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        auth::cloudflare::EMAIL_HEADER,
-        HeaderValue::from_static("carol@example.com"),
-    );
-    server.get("/api/auth/cloudflare", headers).await?;
-    assert!(
-        server
-            .state
-            .auth
-            .warnings()
-            .iter()
-            .any(|w| w.contains("no user has the email carol@example.com")),
-        "{:?}",
-        server.state.auth.warnings()
-    );
-
-    let server = Server::start(api::Config {
-        cloudflare_access: api::CloudflareAccess {
-            enabled: true,
-            team_domain: "example.cloudflareaccess.com".to_owned(),
-            audience: "aud".to_owned(),
-            trust_email_header: false,
-            verify_jwt: true,
-        },
-        ..api::Config::default()
-    })
-    .await?;
-    server
-        .get("/api/auth/cloudflare", cookie("CF_Authorization=a.b.c"))
-        .await?;
-    assert!(
-        server
-            .state
-            .auth
-            .warnings()
-            .iter()
-            .any(|w| w.contains("Cloudflare Access sign-in failed: malformed Access JWT")),
-        "{:?}",
-        server.state.auth.warnings()
-    );
     Ok(())
 }
 

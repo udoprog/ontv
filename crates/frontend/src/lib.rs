@@ -5,7 +5,6 @@ mod app;
 mod background;
 mod error;
 mod help;
-mod http;
 mod page;
 mod root;
 mod router;
@@ -27,8 +26,8 @@ where
     C: yew::Component,
 {
     ctx.link()
-        .context::<api::User>(yew::Callback::noop())
-        .is_some_and(|(user, _)| user.role == api::UserRole::Admin)
+        .context::<auth::yew::AuthContext>(yew::Callback::noop())
+        .is_some_and(|(auth, _)| auth.is_admin())
 }
 
 #[wasm_bindgen(start)]

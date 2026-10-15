@@ -5,6 +5,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context as _, Error, Result};
+use auth::Auth;
+use auth::axum::SignedIn;
 use axum::extract::State;
 use axum::extract::WebSocketUpgrade;
 use musli_web::axum08;
@@ -14,8 +16,6 @@ use tokio::time;
 
 use crate::app_broadcast::{Audience, Broadcaster};
 use crate::db::Database;
-use crate::db::users::{Conflict, UserRecord};
-use crate::identity::{Auth, AuthUser};
 use crate::pending::PendingSystem;
 use crate::remote::RemoteClients;
 use crate::task_queue::TaskQueue;
@@ -29,7 +29,6 @@ mod remotes;
 mod settings;
 mod shows;
 mod tasks;
-mod users;
 mod watched;
 
 /// An artificial random delay applied to every websocket request, used to
@@ -84,44 +83,38 @@ pub(super) struct WsHandler {
     pub(super) user: Arc<AuthUser>,
 }
 
+/// The signed-in user of a socket.
+#[derive(Debug, Clone)]
+pub(crate) struct AuthUser {
+    pub(crate) id: api::UserId,
+    /// The session the socket was opened with.
+    pub(crate) session: String,
+}
+
+impl From<&SignedIn> for AuthUser {
+    fn from(signed_in: &SignedIn) -> Self {
+        Self {
+            id: api::UserId::new(signed_in.user.id.0),
+            session: signed_in.session.id.clone(),
+        }
+    }
+}
+
 /// A request refused for a reason the user can act on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Refused {
     NotAdmin,
-    OwnAccount,
-    NoSuchUser,
-    EmptyLogin,
-    LoginTaken,
-    EmailTaken,
-    WrongPassword,
-    WeakPassword(&'static str),
 }
 
 impl std::fmt::Display for Refused {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Refused::NotAdmin => f.write_str("Only administrators can do this."),
-            Refused::OwnAccount => f.write_str("You cannot do this to your own account."),
-            Refused::NoSuchUser => f.write_str("No such user."),
-            Refused::EmptyLogin => f.write_str("The login cannot be empty."),
-            Refused::LoginTaken => f.write_str("That login is already in use."),
-            Refused::EmailTaken => f.write_str("That email is already in use."),
-            Refused::WrongPassword => f.write_str("The current password is incorrect."),
-            Refused::WeakPassword(message) => f.write_str(message),
         }
     }
 }
 
 impl std::error::Error for Refused {}
-
-impl From<Conflict> for Refused {
-    fn from(conflict: Conflict) -> Self {
-        match conflict {
-            Conflict::Login => Refused::LoginTaken,
-            Conflict::Email => Refused::EmailTaken,
-        }
-    }
-}
 
 /// Requests only administrators may make.
 fn requires_admin(id: api::Request) -> bool {
@@ -132,13 +125,6 @@ fn requires_admin(id: api::Request) -> bool {
             | api::Request::RemoveShow
             | api::Request::RemoveMovie
             | api::Request::DeletePerson
-            | api::Request::ListUsers
-            | api::Request::CreateUser
-            | api::Request::SetUserRole
-            | api::Request::DeleteUser
-            | api::Request::GenerateLoginToken
-            | api::Request::RevokeLoginToken
-            | api::Request::RevokeUserAccess
             | api::Request::AddShowRemote
             | api::Request::RemoveShowRemote
             | api::Request::UpdateShowRemote
@@ -174,28 +160,6 @@ fn requires_admin(id: api::Request) -> bool {
             | api::Request::RemoveTask
             | api::Request::BumpTask
     )
-}
-
-fn parse_login(login: &str) -> Result<String, Refused> {
-    let login = login.trim();
-
-    if login.is_empty() {
-        return Err(Refused::EmptyLogin);
-    }
-
-    Ok(login.to_owned())
-}
-
-/// A normalized email, with a blank one meaning none.
-fn parse_email(email: Option<&str>) -> Option<String> {
-    email.map(auth::normalize_email).filter(|e| !e.is_empty())
-}
-
-fn role_from_api(role: api::UserRole) -> auth::UserRole {
-    match role {
-        api::UserRole::Admin => auth::UserRole::Admin,
-        api::UserRole::Regular => auth::UserRole::Regular,
-    }
 }
 
 impl ws::Handler for WsHandler {
@@ -360,25 +324,10 @@ impl WsHandler {
             .await
     }
 
-    /// The current user as stored now, so role changes apply to open sockets.
-    async fn current_user(&self) -> Result<UserRecord> {
-        let user = self.db.user_by_id(self.user.id).await?;
-        Ok(user.ok_or(Refused::NoSuchUser)?)
-    }
-
     /// Refuses admin-only requests from anyone else.
     pub(crate) async fn authorize(&self, id: api::Request) -> Result<()> {
-        if requires_admin(id) && self.current_user().await?.role != auth::UserRole::Admin {
+        if requires_admin(id) && !is_admin(&self.auth, &self.user.session).await {
             return Err(Refused::NotAdmin.into());
-        }
-
-        Ok(())
-    }
-
-    /// Refuses to act on the current user's own account.
-    fn not_self(&self, user_id: api::UserId) -> Result<(), Refused> {
-        if user_id == self.user.id {
-            return Err(Refused::OwnAccount);
         }
 
         Ok(())
@@ -531,18 +480,6 @@ impl WsHandler {
             api::Request::ResetImageSelection => {
                 self.reset_image_selection(incoming, outgoing).await?
             }
-            api::Request::ListUsers => self.list_users(incoming, outgoing).await?,
-            api::Request::CreateUser => self.create_user(incoming, outgoing).await?,
-            api::Request::SetUserRole => self.set_user_role(incoming, outgoing).await?,
-            api::Request::DeleteUser => self.delete_user(incoming, outgoing).await?,
-            api::Request::GenerateLoginToken => {
-                self.generate_login_token(incoming, outgoing).await?
-            }
-            api::Request::RevokeLoginToken => self.revoke_login_token(incoming, outgoing).await?,
-            api::Request::RevokeUserAccess => self.revoke_user_access(incoming, outgoing).await?,
-            api::Request::SetLogin => self.set_login(incoming, outgoing).await?,
-            api::Request::SetEmail => self.set_email(incoming, outgoing).await?,
-            api::Request::SetPassword => self.set_password(incoming, outgoing).await?,
             api::Request::Unknown(id) => {
                 anyhow::bail!("Unknown request id: {id:?}");
             }
@@ -552,12 +489,13 @@ impl WsHandler {
     }
 }
 
-/// Whether the user is an administrator now; a lookup failure counts as not.
-async fn is_admin(db: &Database, user: api::UserId) -> bool {
-    match db.user_by_id(user).await {
-        Ok(user) => user.is_some_and(|u| u.role == auth::UserRole::Admin),
+/// Whether the user of a session is an administrator now; a session that has
+/// ended or a lookup failure counts as not.
+async fn is_admin(auth: &Auth, session: &str) -> bool {
+    match auth.session(session).await {
+        Ok(found) => found.is_some_and(|(user, _)| user.is_admin()),
         Err(error) => {
-            tracing::error!("Looking up user {user}: {error:#}");
+            tracing::error!("Looking up session: {error:#}");
             false
         }
     }
@@ -611,33 +549,14 @@ fn resync() -> api::AppEvent {
     }
 }
 
-/// How often an open socket checks that its session is still valid.
-const SESSION_CHECK_INTERVAL: Duration = Duration::from_secs(5 * 60);
-
-/// Whether the socket's session still exists, is unexpired and belongs to its
-/// user. A lookup failure counts as not.
-pub(crate) async fn session_valid(db: &Database, user: &AuthUser) -> bool {
-    let Some(session) = &user.session else {
-        return true;
-    };
-
-    match db.session_user(session, api::Timestamp::now()).await {
-        Ok(found) => found.is_some_and(|u| u.id == user.id),
-        Err(error) => {
-            tracing::error!("Checking session: {error:#}");
-            false
-        }
-    }
-}
-
 /// Upgrades only signed-in users; others get 401 before the upgrade.
 pub(super) async fn ws_handler(
     State(state): State<AppState>,
-    user: AuthUser,
+    signed_in: SignedIn,
     ws: WebSocketUpgrade,
 ) -> axum::response::Response {
     ws.on_upgrade(move |socket| async move {
-        let user = Arc::new(user);
+        let user = Arc::new(AuthUser::from(&signed_in));
 
         let handler = WsHandler {
             db: state.db.clone(),
@@ -652,11 +571,9 @@ pub(super) async fn ws_handler(
         };
 
         let mut subscribe = state.broadcast.subscribe();
-        let mut revocations = state.auth.subscribe_revocations();
-        let mut session_check = time::interval_at(
-            time::Instant::now() + SESSION_CHECK_INTERVAL,
-            SESSION_CHECK_INTERVAL,
-        );
+        // Ends the socket with its session: signed out, revoked, deleted or
+        // expired, here or in another process.
+        let guard = state.auth.guard(&signed_in);
 
         let connect =
             axum08::server(socket, handler).with_channel_allocator(state.channels.clone());
@@ -690,7 +607,7 @@ pub(super) async fn ws_handler(
                     };
 
                     let admin = msg.audience == Audience::Admins
-                        && is_admin(&state.db, user.id).await;
+                        && is_admin(&state.auth, &user.session).await;
 
                     if !msg.reaches(user.id, admin) {
                         continue;
@@ -723,24 +640,7 @@ pub(super) async fn ws_handler(
                     }
                     break;
                 }
-                revoke = revocations.recv() => {
-                    match revoke {
-                        Ok(revoke) if revoke.applies_to(&user) => break,
-                        Ok(_) => continue,
-                        // A dropped revocation may have been for this socket.
-                        Err(broadcast::error::RecvError::Lagged(_)) => {
-                            if !session_valid(&state.db, &user).await {
-                                break;
-                            }
-                        }
-                        Err(_) => break,
-                    }
-                }
-                _ = session_check.tick() => {
-                    if !session_valid(&state.db, &user).await {
-                        break;
-                    }
-                }
+                _ = guard.ended() => break,
                 // Upgraded connections outlive the server's graceful shutdown.
                 _ = state.shutdown.cancelled() => break,
             }

@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use api::{TimeInfo, TimeZone, Timestamp};
+use auth::yew::AuthContext;
 use gloo::events::EventListener;
 use gloo::timers::callback::{Interval, Timeout};
 use musli_web::web03::prelude::*;
@@ -9,7 +10,6 @@ use yew::prelude::*;
 use crate::active_tasks::ActiveTasksProvider;
 use crate::background::{Background, BackgroundState, UndoWatched};
 use crate::error::{CustomContext, Error, Message, RcError};
-use crate::http::{self, HttpError};
 use crate::page::{
     Account, Dashboard, MediaList, MovieDetail, PersonDetail, PersonList, Queue, Search, Settings,
     ShowDetail, Users,
@@ -23,16 +23,10 @@ use crate::ui::{
     TopLanguages,
 };
 
-#[derive(Properties, PartialEq)]
-pub(super) struct Props {
-    pub(super) user: api::User,
-    pub(super) on_user_changed: Callback<api::User>,
-    pub(super) on_sign_out: Callback<()>,
-    /// The server no longer accepts the session.
-    pub(super) on_session_ended: Callback<()>,
-}
-
 pub(super) struct App {
+    /// The signed-in user, from the enclosing `AuthProvider`.
+    auth: AuthContext,
+    _auth_listener: ContextHandle<AuthContext>,
     channel: ws::Channel,
     ws: ws::Service,
     /// Connection state of the websocket, surfaced in the toolbar.
@@ -68,8 +62,6 @@ pub(super) struct App {
     _tick_minute_interval: Interval,
     _history_listener: EventListener,
     onclearerror: Callback<()>,
-    /// Whether the session is being checked after losing the websocket.
-    checking_session: bool,
     /// Keys the page, so a resync remounts it and it reloads everything.
     generation: u32,
 }
@@ -97,7 +89,7 @@ pub(super) enum Msg {
     Undo,
     DismissUndo,
     UndoDone(Result<ws::Packet<api::UndoWatched>, ws::Error>),
-    SessionChecked(Result<api::User, HttpError>),
+    AuthChanged(AuthContext),
 }
 
 /// How long the undo toast stays up.
@@ -105,10 +97,14 @@ const UNDO_TIMEOUT_MS: u32 = 8_000;
 
 impl Component for App {
     type Message = Msg;
-    type Properties = Props;
+    type Properties = ();
 
     fn create(ctx: &Context<Self>) -> Self {
         let link = ctx.link();
+
+        let (auth, _auth_listener) = link
+            .context::<AuthContext>(link.callback(Msg::AuthChanged))
+            .expect("Expected AuthContext in context");
 
         let ws = ws::connect(ws::Connect::location("/ws"))
             .close_before_unload()
@@ -154,6 +150,8 @@ impl Component for App {
         );
 
         Self {
+            auth,
+            _auth_listener,
             channel: ws::Channel::default(),
             ws,
             ws_state,
@@ -180,7 +178,6 @@ impl Component for App {
             _undo_req: ws::Request::default(),
             _tick_minute_interval,
             onclearerror,
-            checking_session: false,
             generation: 0,
         }
     }
@@ -215,7 +212,6 @@ impl Component for App {
                 <ContextProvider<Background> context={self.background.clone()}>
                 <ContextProvider<OutlineControl> context={self.outline_control.clone()}>
                 <ContextProvider<HelpControl> context={self.help_control.clone()}>
-                <ContextProvider<api::User> context={ctx.props().user.clone()}>
                 <ActiveTasksProvider>
                     <div id="application">
                         if let Some(ref error) = self.error {
@@ -224,11 +220,11 @@ impl Component for App {
                             </div>
                         }
 
-                        <Toolbar site_title={self.site_title.clone()} connected={self.ws_state.is_open()} section={Section::of(&self.router_state.route)} login={ctx.props().user.login.clone()} admin={ctx.props().user.role == api::UserRole::Admin} />
+                        <Toolbar site_title={self.site_title.clone()} connected={self.ws_state.is_open()} section={Section::of(&self.router_state.route)} name={self.auth.user.name().to_owned()} admin={self.auth.is_admin()} />
 
                         <main id="content">
                             <div id="page" key={self.generation}>
-                                { self.view_page(ctx) }
+                                { self.view_page() }
                             </div>
 
                             <Outline entries={self.outline_entries.clone()} />
@@ -256,7 +252,6 @@ impl Component for App {
                         </div>
                     </div>
                 </ActiveTasksProvider>
-                </ContextProvider<api::User>>
                 </ContextProvider<HelpControl>>
                 </ContextProvider<OutlineControl>>
                 </ContextProvider<Background>>
@@ -307,7 +302,7 @@ impl App {
                 self.ws_state = state;
 
                 if !state.is_open() {
-                    self.check_session(ctx);
+                    self.auth.check_session();
                 }
 
                 Ok(true)
@@ -343,7 +338,7 @@ impl App {
             Msg::TickTime => {
                 // A refused upgrade only shows as a socket that never opens.
                 if !self.ws_state.is_open() {
-                    self.check_session(ctx);
+                    self.auth.check_session();
                 }
 
                 self.time = TimeInfo::new(self.time.tz().clone(), Timestamp::now());
@@ -459,26 +454,11 @@ impl App {
                 result.context(Message::UndoingWatched)?;
                 Ok(false)
             }
-            Msg::SessionChecked(result) => {
-                self.checking_session = false;
-
-                if let Err(HttpError::Unauthorized) = result {
-                    ctx.props().on_session_ended.emit(());
-                }
-
-                Ok(false)
+            Msg::AuthChanged(auth) => {
+                self.auth = auth;
+                Ok(true)
             }
         }
-    }
-
-    fn check_session(&mut self, ctx: &Context<Self>) {
-        if self.checking_session {
-            return;
-        }
-
-        self.checking_session = true;
-        ctx.link()
-            .send_future(async { Msg::SessionChecked(http::me().await) });
     }
 
     /// Apply the user's theme and time zone. Returns whether the time zone
@@ -532,7 +512,7 @@ impl App {
         TimeZone::system()
     }
 
-    fn view_page(&self, ctx: &Context<Self>) -> Html {
+    fn view_page(&self) -> Html {
         match self.router_state.route {
             Route::Dashboard(ref q) => {
                 html! { <Dashboard page={q.page} week={q.week} week_start={q.week_start} range={q.range} view={q.view} selection={q.selection} /> }
@@ -561,14 +541,12 @@ impl App {
                 <Search selection={q.selection} filter={q.filter.clone()} />
             },
             Route::Settings(page) => {
-                let admin = ctx.props().user.role == api::UserRole::Admin;
+                let admin = self.auth.is_admin();
                 html! { <Settings {admin} {page} /> }
             }
             Route::Users => {
-                let user = &ctx.props().user;
-
-                if user.role == api::UserRole::Admin {
-                    html! { <Users me={user.id} /> }
+                if self.auth.is_admin() {
+                    html! { <Users /> }
                 } else {
                     html! {
                         <>
@@ -578,13 +556,7 @@ impl App {
                     }
                 }
             }
-            Route::Account => {
-                let props = ctx.props();
-
-                html! {
-                    <Account user={props.user.clone()} on_user_changed={props.on_user_changed.clone()} on_sign_out={props.on_sign_out.clone()} />
-                }
-            }
+            Route::Account => html! { <Account /> },
         }
     }
 }
@@ -623,8 +595,8 @@ struct ToolbarProps {
     /// Whether the websocket is currently connected.
     connected: bool,
     section: Section,
-    /// The signed-in user's login, naming the account link.
-    login: AttrValue,
+    /// The signed-in user's name, naming the account link.
+    name: AttrValue,
     /// Whether the signed-in user is an administrator, who alone sees the
     /// users.
     admin: bool,
@@ -718,7 +690,7 @@ fn Toolbar(props: &ToolbarProps) -> Html {
 
                 <Link to={Route::Account} class={classes!("toolbar-item", "has-text", (props.section == Section::Account).then_some("active"))} title="Account" current={props.section == Section::Account} onclick={close_menu.clone()}>
                     <span class="icon user-circle" aria-hidden="true" />
-                    <span>{props.login.clone()}</span>
+                    <span>{props.name.clone()}</span>
                 </Link>
             </nav>
         </header>

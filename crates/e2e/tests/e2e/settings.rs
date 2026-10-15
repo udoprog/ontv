@@ -124,7 +124,11 @@ pub async fn configures_cloudflare_access(driver: &mut TestDriver, _: &mut Track
     open_page(driver, "Cloudflare Access").await?;
 
     // The page says where the values come from.
-    let intro = driver.find_one_by(".settings-intro").await?.text().await?;
+    let intro = driver
+        .find_one_by(".auth-instructions")
+        .await?
+        .text()
+        .await?;
     for needle in [
         "Access → Applications",
         "cloudflareaccess.com",
@@ -137,25 +141,21 @@ pub async fn configures_cloudflare_access(driver: &mut TestDriver, _: &mut Track
         );
     }
 
-    let enabled = "[role='switch'][title='Sign in through Access']";
-    driver.find_one_by(enabled).await?.click().await?;
+    driver.snapshot("cloudflare-settings").await?;
+    let enabled = checkbox(driver, "Sign in through Access").await?;
+    enabled.click().await?;
 
-    let domain = driver.find_one_by("input[title='Team domain']").await?;
+    let domain = driver.find_one_by("#auth-cloudflare-team-domain").await?;
     domain.send_keys("team.cloudflareaccess.com").await?;
     domain.send_keys(ENTER).await?;
 
-    let audience = driver.find_one_by("input[title='Audience']").await?;
+    let audience = driver.find_one_by("#auth-cloudflare-audience").await?;
     audience.send_keys("aud-tag").await?;
     audience.send_keys(ENTER).await?;
 
     driver
-        .wait_until("the switch to turn on", async || {
-            Ok(driver
-                .find_one_by(enabled)
-                .await?
-                .attr("aria-checked")
-                .await?
-                == "true")
+        .wait_until("the checkbox to turn on", async || {
+            Ok(checked(driver, "Sign in through Access").await?)
         })
         .await?;
 
@@ -163,16 +163,11 @@ pub async fn configures_cloudflare_access(driver: &mut TestDriver, _: &mut Track
 
     driver
         .wait_until("the Access settings to come back", async || {
-            let domain = driver.find_one_by("input[title='Team domain']").await?;
-            let audience = driver.find_one_by("input[title='Audience']").await?;
-            let on = driver
-                .find_one_by(enabled)
-                .await?
-                .attr("aria-checked")
-                .await?;
+            let domain = driver.find_one_by("#auth-cloudflare-team-domain").await?;
+            let audience = driver.find_one_by("#auth-cloudflare-audience").await?;
             Ok(domain.value().await? == "team.cloudflareaccess.com"
                 && audience.value().await? == "aud-tag"
-                && on == "true")
+                && checked(driver, "Sign in through Access").await?)
         })
         .await
 }
@@ -187,7 +182,7 @@ pub async fn warns_about_trusting_only_the_email_header(
 
     let warning = async || -> Result<Option<String>> {
         match driver
-            .find_all(By::Css(".settings .field-error"))
+            .find_all(By::Css(".auth-cloudflare-settings .auth-error"))
             .await?
             .first()
         {
@@ -196,19 +191,12 @@ pub async fn warns_about_trusting_only_the_email_header(
         }
     };
 
-    let switch = async |title: &str, on: bool| -> Result<()> {
-        let selector = format!("[role='switch'][title='{title}']");
-        driver.find_one_by(&selector).await?.click().await?;
-        let want = if on { "true" } else { "false" };
+    let switch = async |label: &str, on: bool| -> Result<()> {
+        checkbox(driver, label).await?.click().await?;
 
         driver
-            .wait_until("the switch to flip", async || {
-                Ok(driver
-                    .find_one_by(&selector)
-                    .await?
-                    .attr("aria-checked")
-                    .await?
-                    == want)
+            .wait_until("the checkbox to flip", async || {
+                Ok(checked(driver, label).await? == on)
             })
             .await
     };
@@ -230,6 +218,23 @@ pub async fn warns_about_trusting_only_the_email_header(
     driver
         .wait_until("the warning to go", async || Ok(warning().await?.is_none()))
         .await
+}
+
+/// The checkbox of the Cloudflare Access setting labelled `label`.
+async fn checkbox(driver: &TestDriver, label: &str) -> Result<TestElement> {
+    for field in driver.find_all(By::Css(".auth-toggle label")).await? {
+        if field.text().await?.trim() == label {
+            if let Some(input) = field.find_all(By::Css("input")).await?.into_iter().next() {
+                return Ok(input);
+            }
+        }
+    }
+
+    bail!("no checkbox labelled {label:?}")
+}
+
+async fn checked(driver: &TestDriver, label: &str) -> Result<bool> {
+    Ok(checkbox(driver, label).await?.prop("checked").await? == "true")
 }
 
 /// Every setting is a labelled row, and across all sections the controls

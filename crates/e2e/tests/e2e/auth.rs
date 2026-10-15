@@ -7,7 +7,7 @@ use super::{LOGIN_LINK, Track};
 const ENTER: &str = "\u{E007}";
 
 pub async fn cloudflare_requires_a_click(driver: &mut TestDriver, _: &mut Track) -> Result<()> {
-    let selector = "button[title='Login using Cloudflare']";
+    let selector = "button.auth-cloudflare";
     driver.find_one_by(selector).await?;
     for (width, name) in [(1280, "cloudflare-wide"), (390, "cloudflare-phone")] {
         driver.set_window_size(width, 900).await?;
@@ -29,7 +29,7 @@ pub async fn cloudflare_requires_a_click(driver: &mut TestDriver, _: &mut Track)
     );
     driver.reload().await?;
     driver.find_one_by(selector).await?;
-    driver.find_one_by("input[title='Password']").await?;
+    driver.find_one_by("#auth-password").await?;
     driver.find_one_by(selector).await?.click().await?;
     driver
         .wait_texts(".toolbar-item[title=Account]", ["root"])
@@ -39,11 +39,7 @@ pub async fn cloudflare_requires_a_click(driver: &mut TestDriver, _: &mut Track)
         .wait_texts(".toolbar-item[title=Account]", ["root"])
         .await?;
     open_account(driver).await?;
-    driver
-        .find_one_by("[title='Sign out']")
-        .await?
-        .click()
-        .await?;
+    driver.find_one_by(".auth-sign-out").await?.click().await?;
     driver.find_one_by(selector).await?;
     driver.reload().await?;
     driver.find_one_by(selector).await?;
@@ -53,7 +49,7 @@ pub async fn cloudflare_requires_a_click(driver: &mut TestDriver, _: &mut Track)
     );
     fill_sign_in(driver, "root", "wrong").await?;
     driver
-        .wait_texts(".auth-card .field-error", ["Wrong login or password."])
+        .wait_texts(".auth-card .auth-error", ["Wrong login or password."])
         .await?;
     ensure!(
         driver.count("#toolbar").await? == 0,
@@ -64,9 +60,9 @@ pub async fn cloudflare_requires_a_click(driver: &mut TestDriver, _: &mut Track)
 }
 
 pub async fn cloudflare_is_unavailable(driver: &mut TestDriver, _: &mut Track) -> Result<()> {
-    driver.find_one_by("input[title='Login or email']").await?;
+    driver.find_one_by("#auth-login").await?;
     let available = driver.webdriver().execute_async(
-        "const done = arguments[arguments.length - 1]; fetch('/api/auth/cloudflare').then(r => r.json()).then(done);",
+        "const done = arguments[arguments.length - 1]; fetch('/api/auth/config').then(r => r.json()).then(c => done(c.cloudflare));",
         Vec::new(),
     ).await?;
     ensure!(
@@ -74,10 +70,7 @@ pub async fn cloudflare_is_unavailable(driver: &mut TestDriver, _: &mut Track) -
         "Cloudflare unexpectedly available"
     );
     ensure!(
-        driver
-            .count("button[title='Login using Cloudflare']")
-            .await?
-            == 0,
+        driver.count("button.auth-cloudflare").await? == 0,
         "unavailable Cloudflare button shown"
     );
     Ok(())
@@ -98,7 +91,7 @@ pub async fn rejects_a_wrong_password(driver: &mut TestDriver, _: &mut Track) ->
     fill_sign_in(driver, "root", "wrong").await?;
 
     driver
-        .wait_texts(".auth-card .field-error", ["Wrong login or password."])
+        .wait_texts(".auth-card .auth-error", ["Wrong login or password."])
         .await?;
 
     ensure!(
@@ -114,15 +107,11 @@ pub async fn signs_out(driver: &mut TestDriver, _: &mut Track) -> Result<()> {
     sign_in(driver, "root", "root").await?;
     open_account(driver).await?;
 
-    driver
-        .find_one_by("[title='Sign out']")
-        .await?
-        .click()
-        .await?;
-    driver.find_one_by("input[title='Login or email']").await?;
+    driver.find_one_by(".auth-sign-out").await?.click().await?;
+    driver.find_one_by("#auth-login").await?;
 
     driver.reload().await?;
-    driver.find_one_by("input[title='Login or email']").await?;
+    driver.find_one_by("#auth-login").await?;
     ensure!(
         driver.count("#toolbar").await? == 0,
         "the app opened again after signing out"
@@ -130,29 +119,24 @@ pub async fn signs_out(driver: &mut TestDriver, _: &mut Track) -> Result<()> {
     Ok(())
 }
 
-/// A login link names its account, lets the user choose a password and signs
-/// them in; used once, it says it can no longer be used.
+/// A registration link names its account, lets the user choose a password and
+/// signs them in; used once, it says it can no longer be used.
 pub async fn registers_with_a_login_link(driver: &mut TestDriver, track: &mut Track) -> Result<()> {
     let link = format!("{}/register/{LOGIN_LINK}", track.url());
     driver.webdriver().goto(&link).await?;
 
     driver
-        .wait_texts("[data-test=register-login]", ["alice"])
-        .await?;
-    driver
-        .wait_texts("[data-test=register-email]", ["alice@example.com"])
+        .wait_texts(".auth-card .auth-value", ["alice", "alice@example.com"])
         .await?;
 
-    let password = driver.find_one_by("input[title='Password']").await?;
+    let password = driver.find_one_by("#auth-password").await?;
     password.send_keys("correct horse").await?;
-    let confirm = driver
-        .find_one_by("input[title='Confirm password']")
-        .await?;
+    let confirm = driver.find_one_by("#auth-confirm").await?;
     confirm.send_keys("correct hose").await?;
     confirm.send_keys(ENTER).await?;
 
     driver
-        .wait_texts(".auth-card .field-error", ["The passwords do not match."])
+        .wait_texts(".auth-card .auth-error", ["The passwords do not match."])
         .await?;
 
     confirm.clear().await?;
@@ -169,8 +153,8 @@ pub async fn registers_with_a_login_link(driver: &mut TestDriver, track: &mut Tr
     driver.webdriver().goto(&link).await?;
     driver
         .wait_texts(
-            ".auth-card .field-error",
-            ["This login link has already been used or has expired. Ask an administrator for a new one."],
+            ".auth-card .auth-error",
+            ["This link has already been used or has expired. Ask an administrator for a new one."],
         )
         .await?;
     Ok(())
@@ -185,31 +169,27 @@ pub async fn changes_the_password(driver: &mut TestDriver, _: &mut Track) -> Res
     change_password(driver, "nope", "new password", "new password").await?;
     driver
         .wait_texts(
-            "form:has([title='Change password']) .field-error",
-            ["Server error: The current password is incorrect."],
+            ".auth-password .auth-error",
+            ["The current password is incorrect."],
         )
         .await?;
 
     change_password(driver, "root", "new password", "new password").await?;
     driver
         .wait_texts(
-            "form:has([title='Change password']) .field-ok",
-            ["Password changed."],
+            ".auth-password .auth-notice",
+            ["Password changed. Your other sessions were signed out."],
         )
         .await?;
 
-    driver
-        .find_one_by("[title='Sign out']")
-        .await?
-        .click()
-        .await?;
+    driver.find_one_by(".auth-sign-out").await?.click().await?;
 
     fill_sign_in(driver, "root", "root").await?;
     driver
-        .wait_texts(".auth-card .field-error", ["Wrong login or password."])
+        .wait_texts(".auth-card .auth-error", ["Wrong login or password."])
         .await?;
 
-    let password = driver.find_one_by("input[title='Password']").await?;
+    let password = driver.find_one_by("#auth-password").await?;
     password.clear().await?;
     password.send_keys("new password").await?;
     password.send_keys(ENTER).await?;
@@ -223,10 +203,11 @@ pub async fn changes_the_password(driver: &mut TestDriver, _: &mut Track) -> Res
 pub async fn changes_the_login(driver: &mut TestDriver, _: &mut Track) -> Result<()> {
     open_account(driver).await?;
     driver
-        .wait_texts("[data-test=account-role]", ["Administrator"])
+        .wait_texts(".auth-details .auth-value", ["Administrator", "Password"])
         .await?;
+    driver.snapshot("account").await?;
 
-    let login = driver.find_one_by("input[title='Login']").await?;
+    let login = driver.find_one_by("#auth-account-login").await?;
     login.clear().await?;
     login.send_keys("admin").await?;
     login.send_keys(ENTER).await?;
@@ -235,20 +216,17 @@ pub async fn changes_the_login(driver: &mut TestDriver, _: &mut Track) -> Result
         .wait_texts(".toolbar-item[title=Account]", ["admin"])
         .await?;
     driver
-        .wait_texts(
-            "form:has([title='Save login']) .field-ok",
-            ["Login changed."],
-        )
+        .wait_texts(".auth-profile .auth-notice", ["Saved."])
         .await?;
     Ok(())
 }
 
 async fn fill_sign_in(driver: &TestDriver, login: &str, password: &str) -> Result<()> {
-    let field = driver.find_one_by("input[title='Login or email']").await?;
+    let field = driver.find_one_by("#auth-login").await?;
     field.clear().await?;
     field.send_keys(login).await?;
 
-    let field = driver.find_one_by("input[title='Password']").await?;
+    let field = driver.find_one_by("#auth-password").await?;
     field.clear().await?;
     field.send_keys(password).await?;
     field.send_keys(ENTER).await?;
@@ -273,20 +251,18 @@ async fn open_account(driver: &TestDriver) -> Result<()> {
 }
 
 async fn change_password(driver: &TestDriver, old: &str, new: &str, confirm: &str) -> Result<()> {
-    for (title, value) in [
-        ("Current password", old),
-        ("New password", new),
-        ("Confirm new password", confirm),
+    for (id, value) in [
+        ("auth-old-password", old),
+        ("auth-new-password", new),
+        ("auth-confirm-password", confirm),
     ] {
-        let field = driver
-            .find_one_by(&format!("input[title='{title}']"))
-            .await?;
+        let field = driver.find_one_by(&format!("#{id}")).await?;
         field.clear().await?;
         field.send_keys(value).await?;
     }
 
     driver
-        .find_one_by("[title='Change password']")
+        .find_one_by(".auth-password .auth-submit")
         .await?
         .click()
         .await?;

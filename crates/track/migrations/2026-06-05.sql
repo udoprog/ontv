@@ -525,15 +525,21 @@ CREATE TABLE
         text TEXT NOT NULL,
         UNIQUE (credit_id, language, kind)
     );
--- Roles are 'admin' or 'regular'. A user without a password signs in through a
--- login link or Cloudflare Access.
+-- The tables of yew-auth's SqllStore. A user has a unique login, a unique
+-- normalized email, or both. `role` is 'admin' or 'regular'; `access` is
+-- 'pending', 'active' or 'revoked'; `method` is 'password' or 'google'. A fresh
+-- database has no users: the server creates the first admin with a
+-- registration link (`--bootstrap-admin`).
 CREATE TABLE
     users (
         id INTEGER PRIMARY KEY,
-        login TEXT NOT NULL UNIQUE,
+        login TEXT UNIQUE,
         email TEXT UNIQUE,
         role TEXT NOT NULL,
+        access TEXT NOT NULL DEFAULT 'pending',
+        method TEXT NOT NULL DEFAULT 'password',
         password_hash TEXT,
+        google_sub TEXT UNIQUE,
         created_at INTEGER NOT NULL
     );
 
@@ -547,23 +553,14 @@ CREATE TABLE
 
 CREATE INDEX idx_sessions_user ON sessions (user_id);
 
+-- Registration and reset links. `kind` is 'registration' or 'reset'.
 CREATE TABLE
-    login_tokens (
+    auth_tokens (
         id TEXT PRIMARY KEY,
         user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
         expires_at INTEGER NOT NULL,
-        used_at INTEGER
+        used_at INTEGER,
+        kind TEXT NOT NULL DEFAULT 'reset'
     );
 
-CREATE INDEX idx_login_tokens_user ON login_tokens (user_id);
-
--- The administrator "root" with the password "root".
-INSERT INTO
-    users (login, role, password_hash, created_at)
-VALUES
-    (
-        'root',
-        'admin',
-        '$2y$12$jxThPHsK8E/RT.IrJcuNfO6Deoc5a7DkfUZ0cLhM2TZsbPT0MvIwO',
-        CAST(unixepoch ('subsec') * 1000 AS INTEGER)
-    );
+CREATE INDEX idx_auth_tokens_user ON auth_tokens (user_id);

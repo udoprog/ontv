@@ -777,6 +777,8 @@ pub(crate) struct InnerRead {
     #[sql(statements)]
     users: users::Read,
     #[sql(statements)]
+    auth: auth::sqll::Read,
+    #[sql(statements)]
     xem: xem::Read,
 
     // shows
@@ -1180,13 +1182,13 @@ pub(crate) struct InnerRead {
     list_schedule_movies: TypedStatement<(UserId, Timestamp, Timestamp), ScheduleMovieRow>,
 
     // all watched + existence checks (backup export/import)
-    #[sql = "SELECT w.id, u.login, w.timestamp, w.show_id, w.season, w.episode FROM watched_episodes w"]
+    #[sql = "SELECT w.id, coalesce(u.login, u.email) AS login, w.timestamp, w.show_id, w.season, w.episode FROM watched_episodes w"]
     #[sql = "JOIN users u ON u.id = w.user_id"]
-    #[sql = "ORDER BY u.login, w.show_id, w.season, w.episode, w.id"]
+    #[sql = "ORDER BY login, w.show_id, w.season, w.episode, w.id"]
     list_all_watched_episodes: TypedStatement<(), AllWatchedEpisodeRow>,
-    #[sql = "SELECT w.id, u.login, w.timestamp, w.movie_id FROM watched_movies w"]
+    #[sql = "SELECT w.id, coalesce(u.login, u.email) AS login, w.timestamp, w.movie_id FROM watched_movies w"]
     #[sql = "JOIN users u ON u.id = w.user_id"]
-    #[sql = "ORDER BY u.login, w.movie_id, w.id"]
+    #[sql = "ORDER BY login, w.movie_id, w.id"]
     list_all_watched_movies: TypedStatement<(), AllWatchedMovieRow>,
     #[sql = "SELECT 1 FROM watched_episodes WHERE id = ? LIMIT 1"]
     watched_episode_exists: TypedStatement<(WatchedId,), (i64,)>,
@@ -1200,20 +1202,20 @@ pub(crate) struct InnerRead {
     show_remote_exists: TypedStatement<(RemoteId, ShowId, RemoteSource, RemoteValue), (i64,)>,
     #[sql = "SELECT 1 FROM movie_remotes WHERE id = ? OR (movie_id = ? AND source = ? AND value = ?) LIMIT 1"]
     movie_remote_exists: TypedStatement<(RemoteId, MovieId, RemoteSource, RemoteValue), (i64,)>,
-    #[sql = "SELECT u.login, t.show_id FROM user_tracked_shows t"]
-    #[sql = "JOIN users u ON u.id = t.user_id ORDER BY u.login, t.show_id"]
+    #[sql = "SELECT coalesce(u.login, u.email), t.show_id FROM user_tracked_shows t"]
+    #[sql = "JOIN users u ON u.id = t.user_id ORDER BY 1, t.show_id"]
     list_all_tracked_shows: TypedStatement<(), (String, ShowId)>,
-    #[sql = "SELECT u.login, t.movie_id FROM user_tracked_movies t"]
-    #[sql = "JOIN users u ON u.id = t.user_id ORDER BY u.login, t.movie_id"]
+    #[sql = "SELECT coalesce(u.login, u.email), t.movie_id FROM user_tracked_movies t"]
+    #[sql = "JOIN users u ON u.id = t.user_id ORDER BY 1, t.movie_id"]
     list_all_tracked_movies: TypedStatement<(), (String, MovieId)>,
-    #[sql = "SELECT u.login, c.key, c.value FROM user_config c"]
-    #[sql = "JOIN users u ON u.id = c.user_id ORDER BY u.login, c.key"]
+    #[sql = "SELECT coalesce(u.login, u.email), c.key, c.value FROM user_config c"]
+    #[sql = "JOIN users u ON u.id = c.user_id ORDER BY 1, c.key"]
     list_all_user_config: TypedStatement<(), (String, String, String)>,
-    #[sql = "SELECT u.login, c.show_id, c.key, c.value FROM user_show_config c"]
-    #[sql = "JOIN users u ON u.id = c.user_id ORDER BY u.login, c.show_id, c.key"]
+    #[sql = "SELECT coalesce(u.login, u.email), c.show_id, c.key, c.value FROM user_show_config c"]
+    #[sql = "JOIN users u ON u.id = c.user_id ORDER BY 1, c.show_id, c.key"]
     list_all_user_show_config: TypedStatement<(), (String, ShowId, String, String)>,
-    #[sql = "SELECT u.login, c.movie_id, c.key, c.value FROM user_movie_config c"]
-    #[sql = "JOIN users u ON u.id = c.user_id ORDER BY u.login, c.movie_id, c.key"]
+    #[sql = "SELECT coalesce(u.login, u.email), c.movie_id, c.key, c.value FROM user_movie_config c"]
+    #[sql = "JOIN users u ON u.id = c.user_id ORDER BY 1, c.movie_id, c.key"]
     list_all_user_movie_config: TypedStatement<(), (String, MovieId, String, String)>,
 
     // config
@@ -1313,7 +1315,7 @@ pub(crate) struct InnerWrite {
     #[sql(statements)]
     read: InnerRead,
     #[sql(statements)]
-    users_write: users::Write,
+    auth_write: auth::sqll::Write,
     #[sql(statements)]
     xem_write: xem::Write,
 
@@ -2021,7 +2023,7 @@ impl InnerRead {
             .and_then(config::decode_numberings)
             .unwrap_or(default.numberings);
 
-        let cloudflare_access = api::CloudflareAccess {
+        let cloudflare_access = auth::CloudflareConfig {
             enabled: self
                 .get_config("cloudflare_access_enabled")?
                 .is_some_and(|v| v == "true"),

@@ -32,7 +32,8 @@ impl WsHandler {
 
         self.db.save_config(&req.config).await?;
         self.remote.configure(&req.config)?;
-        self.auth.configure(&req.config);
+        self.auth
+            .set_cloudflare(Some(req.config.cloudflare_access.clone()));
 
         self.config_changed.notify_one();
 

@@ -3,7 +3,7 @@
 //! (titles, episodes, images, release dates) is reproducible by re-syncing from
 //! the remotes, so it is deliberately not exported. Neither are password hashes,
 //! sessions, login links or system config; imported users sign in through a new
-//! login link. The watch-next queue is rebuilt on import rather than exported.
+//! registration link. The watch-next queue is rebuilt on import rather than exported.
 //!
 //! The format is newline-delimited JSON: one [`BackupRow`] per line, tagged by
 //! a `type` field. Lines whose first non-whitespace character is `#` are
@@ -15,7 +15,7 @@
 //! ISO-8601 strings. Shows and movies referenced by tracking or preferences
 //! are created as placeholders for sync to fill in; remotes and watched entries
 //! are not foreign keys, so they never create one. Rows name their user by
-//! login; users come first in a backup so import can create them, and watched
+//! login, or by email for a user without one; users come first in a backup so import can create them, and watched
 //! entries from before there were users belong to root.
 
 use std::collections::HashMap;
@@ -23,11 +23,11 @@ use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result, anyhow};
+use auth::{Conflict, NewUser, Store};
 use clap::Subcommand;
 use serde::{Deserialize, Serialize};
 use tracing::Level;
 
-use crate::db::users::Conflict;
 use crate::db::{Database, OpenMode};
 
 /// (De)serialize a value via its `Display`/`FromStr` string form rather than its
@@ -118,11 +118,12 @@ enum BackupRow {
     },
     /// A user account, without credentials.
     User {
-        login: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        login: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         email: Option<String>,
         #[serde(with = "as_string")]
-        role: auth::UserRole,
+        role: auth::Role,
     },
     /// A show a user tracks.
     TrackedShow {
@@ -345,10 +346,10 @@ struct ImportReport {
     watched: ImportStats,
 }
 
-/// Resolves the users named by rows, once per login.
+/// Resolves the users named by rows, once per name.
 struct Users<'a> {
     db: &'a Database,
-    by_login: HashMap<String, api::UserId>,
+    by_name: HashMap<String, api::UserId>,
     default: Option<api::UserId>,
 }
 
@@ -356,27 +357,36 @@ impl<'a> Users<'a> {
     fn new(db: &'a Database) -> Self {
         Self {
             db,
-            by_login: HashMap::new(),
+            by_name: HashMap::new(),
             default: None,
         }
     }
 
-    /// Create a user without a password unless the login is taken. Returns
-    /// whether it was created.
+    /// Create a user without a password unless one with its name (its login,
+    /// or its email without one) exists. Returns whether it was created.
     async fn create(
         &mut self,
-        login: String,
+        login: Option<String>,
         email: Option<String>,
-        role: auth::UserRole,
+        role: auth::Role,
     ) -> Result<bool> {
-        if let Some(user) = self.db.user_by_login(&login).await? {
-            self.by_login.insert(login, user.id);
+        let email = email.as_deref().map(auth::normalize_email);
+
+        let Some(name) = login.clone().or_else(|| email.clone()) else {
+            return Err(anyhow!("A user needs a login or an email"));
+        };
+
+        if let Some(id) = self.find(&name).await? {
+            self.by_name.insert(name, id);
             return Ok(false);
         }
 
+        let new = NewUser { login, email, role };
+
         let user = self
             .db
-            .create_user(&login, email.as_deref(), role, api::Timestamp::now())
+            .auth_store()
+            .create_user(&new, jiff::Timestamp::now())
             .await?
             .map_err(|conflict| {
                 let field = match conflict {
@@ -384,15 +394,27 @@ impl<'a> Users<'a> {
                     Conflict::Email => "email",
                 };
 
-                anyhow!("Cannot create the user {login:?}: its {field} is taken")
+                anyhow!("Cannot create the user {name:?}: its {field} is taken")
             })?;
 
-        self.by_login.insert(login, user.id);
+        self.by_name.insert(name, api::UserId::new(user.id.0));
         Ok(true)
     }
 
-    async fn get(&mut self, login: Option<String>) -> Result<api::UserId> {
-        let Some(login) = login else {
+    /// The user named `name`: by login, or by email.
+    async fn find(&self, name: &str) -> Result<Option<api::UserId>> {
+        let store = self.db.auth_store();
+
+        let user = match store.user_by_login(name).await? {
+            Some(user) => Some(user),
+            None => store.user_by_email(&auth::normalize_email(name)).await?,
+        };
+
+        Ok(user.map(|user| api::UserId::new(user.id.0)))
+    }
+
+    async fn get(&mut self, name: Option<String>) -> Result<api::UserId> {
+        let Some(name) = name else {
             if let Some(id) = self.default {
                 return Ok(id);
             }
@@ -402,18 +424,17 @@ impl<'a> Users<'a> {
             return Ok(id);
         };
 
-        if let Some(&id) = self.by_login.get(&login) {
+        if let Some(&id) = self.by_name.get(&name) {
             return Ok(id);
         }
 
-        let user = self
-            .db
-            .user_by_login(&login)
+        let id = self
+            .find(&name)
             .await?
-            .with_context(|| anyhow!("No user with the login {login:?}; create it first"))?;
+            .with_context(|| anyhow!("No user named {name:?}; create it first"))?;
 
-        self.by_login.insert(login, user.id);
-        Ok(user.id)
+        self.by_name.insert(name, id);
+        Ok(id)
     }
 }
 
@@ -669,9 +690,12 @@ mod tests {
 
     use crate::db::OpenMode;
 
-    fn temp_db(dir: &tempfile::TempDir, name: &str) -> Database {
+    /// A database with root, as every database the server has started on.
+    async fn temp_db(dir: &tempfile::TempDir, name: &str) -> Database {
         let path = dir.path().join(name);
-        Database::open(&path, OpenMode::Bulk, 1).unwrap()
+        let db = Database::open(&path, OpenMode::Bulk, 1).unwrap();
+        db.test_root().await.unwrap();
+        db
     }
 
     fn ts() -> api::Timestamp {
@@ -727,16 +751,14 @@ mod tests {
             .unwrap();
 
         let alice = db
-            .create_user(
+            .test_user(
                 "alice",
                 Some("alice@example.com"),
-                auth::UserRole::Regular,
-                api::Timestamp::now(),
+                auth::Role::Regular,
+                None,
             )
             .await
-            .unwrap()
-            .unwrap()
-            .id;
+            .unwrap();
         db.insert_watched_movie(alice, api::WatchedId::new(6002), ts(), movie)
             .await
             .unwrap();
@@ -774,12 +796,12 @@ mod tests {
     #[tokio::test]
     async fn round_trip_preserves_data() {
         let dir = tempfile::tempdir().unwrap();
-        let src = temp_db(&dir, "src.db");
+        let src = temp_db(&dir, "src.db").await;
         seed(&src).await;
         let exported = export_to_vec(&src).await;
 
         // Import into a fresh database; ids are inserted as-is (no FK to shows).
-        let dst = temp_db(&dir, "dst.db");
+        let dst = temp_db(&dir, "dst.db").await;
         import(&dst, exported.as_slice()).await.unwrap();
 
         // Re-exporting the destination yields a byte-identical backup.
@@ -804,16 +826,22 @@ mod tests {
         }
 
         // Users are restored without a password.
-        let alice = dst.user_by_login("alice").await.unwrap().unwrap();
+        let alice = dst
+            .auth_store()
+            .user_by_login("alice")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(alice.email.as_deref(), Some("alice@example.com"));
-        assert_eq!(alice.role, auth::UserRole::Regular);
+        assert_eq!(alice.role, auth::Role::Regular);
         assert!(alice.password_hash.is_none());
+        let alice = api::UserId::new(alice.id.0);
 
         let root = dst.default_owner().await.unwrap();
         let show = api::ShowId::new(1001);
         let movie = api::MovieId::new(2001);
         assert!(
-            dst.show_by_id(Some(alice.id), show)
+            dst.show_by_id(Some(alice), show)
                 .await
                 .unwrap()
                 .unwrap()
@@ -827,7 +855,7 @@ mod tests {
                 .tracked
         );
         assert!(
-            dst.movie_by_id(Some(alice.id), movie)
+            dst.movie_by_id(Some(alice), movie)
                 .await
                 .unwrap()
                 .unwrap()
@@ -851,11 +879,11 @@ mod tests {
     #[tokio::test]
     async fn import_rebuilds_pending() {
         let dir = tempfile::tempdir().unwrap();
-        let src = temp_db(&dir, "src.db");
+        let src = temp_db(&dir, "src.db").await;
         seed(&src).await;
         let exported = export_to_vec(&src).await;
 
-        let dst = temp_db(&dir, "dst.db");
+        let dst = temp_db(&dir, "dst.db").await;
         let show = api::ShowId::new(1001);
         let season = api::SeasonNumber::from_ordinal(1);
         let e1 = api::EpisodeId::new(11);
@@ -883,7 +911,14 @@ mod tests {
         // Root watched E1 in the backup; alice has not.
         let now = api::Timestamp::now();
         let root = dst.default_owner().await.unwrap();
-        let alice = dst.user_by_login("alice").await.unwrap().unwrap().id;
+        let alice = dst
+            .auth_store()
+            .user_by_login("alice")
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let alice = api::UserId::new(alice.0);
         assert_eq!(pending(dst.pending(root, now).await.unwrap()), [e2]);
         assert_eq!(pending(dst.pending(alice, now).await.unwrap()), [e1]);
     }
@@ -891,11 +926,11 @@ mod tests {
     #[tokio::test]
     async fn import_is_idempotent() {
         let dir = tempfile::tempdir().unwrap();
-        let src = temp_db(&dir, "src.db");
+        let src = temp_db(&dir, "src.db").await;
         seed(&src).await;
         let exported = export_to_vec(&src).await;
 
-        let dst = temp_db(&dir, "dst.db");
+        let dst = temp_db(&dir, "dst.db").await;
 
         // Root exists in every database; alice is created.
         let first = import(&dst, exported.as_slice()).await.unwrap();
@@ -919,11 +954,11 @@ mod tests {
     #[tokio::test]
     async fn import_matches_remotes_by_structure() {
         let dir = tempfile::tempdir().unwrap();
-        let src = temp_db(&dir, "src.db");
+        let src = temp_db(&dir, "src.db").await;
         seed(&src).await;
         let exported = export_to_vec(&src).await;
 
-        let dst = temp_db(&dir, "dst.db");
+        let dst = temp_db(&dir, "dst.db").await;
         let show = api::ShowId::new(1001);
         dst.create_show(show, "", None, "").await.unwrap();
         dst.add_remote(show, None, &api::Remote::tmdb(1399))
@@ -942,7 +977,7 @@ mod tests {
     #[tokio::test]
     async fn import_skips_comments_and_blanks() {
         let dir = tempfile::tempdir().unwrap();
-        let src = temp_db(&dir, "src.db");
+        let src = temp_db(&dir, "src.db").await;
         seed(&src).await;
         let exported = export_to_vec(&src).await;
 
@@ -954,7 +989,7 @@ mod tests {
             annotated.push_str("   # indented comment\n\n");
         }
 
-        let dst = temp_db(&dir, "dst.db");
+        let dst = temp_db(&dir, "dst.db").await;
         let report = import(&dst, annotated.as_bytes()).await.unwrap();
         assert_eq!((report.remotes.inserted, report.watched.inserted), (2, 3));
     }
@@ -962,7 +997,7 @@ mod tests {
     #[tokio::test]
     async fn watched_entries_keep_their_owner() {
         let dir = tempfile::tempdir().unwrap();
-        let src = temp_db(&dir, "src.db");
+        let src = temp_db(&dir, "src.db").await;
         seed(&src).await;
         let exported = String::from_utf8(export_to_vec(&src).await).unwrap();
         let watched = exported
@@ -975,7 +1010,7 @@ mod tests {
         assert_eq!(watched.lines().count(), 2, "{exported}");
 
         // An entry naming a missing user is refused rather than reassigned.
-        let dst = temp_db(&dir, "dst.db");
+        let dst = temp_db(&dir, "dst.db").await;
         let to_bob = watched.replace(r#""user":"root""#, r#""user":"bob""#);
         assert!(import(&dst, to_bob.as_bytes()).await.is_err());
 

@@ -1,8 +1,10 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use auth::Auth;
 use axum::Router;
-use axum::routing::{get, post};
+use axum::extract::FromRef;
+use axum::routing::get;
 use musli_web::ws::Channels;
 use tokio::sync::Notify;
 use tower_http::services::{ServeDir, ServeFile};
@@ -10,7 +12,6 @@ use tower_http::services::{ServeDir, ServeFile};
 use crate::app_broadcast::Broadcaster;
 use crate::cache::ImageCache;
 use crate::db::Database;
-use crate::identity::Auth;
 use crate::pending::PendingSystem;
 use crate::remote::RemoteClients;
 use crate::shutdown::Shutdown;
@@ -33,24 +34,20 @@ pub(crate) struct AppState {
     pub(crate) auth: Auth,
 }
 
+impl FromRef<AppState> for Auth {
+    fn from_ref(state: &AppState) -> Self {
+        state.auth.clone()
+    }
+}
+
 pub(crate) fn router(state: AppState, dist: Option<&Path>) -> Router {
     let app = Router::new()
         .route("/ws", get(crate::ws::ws_handler))
-        .route("/api/auth/login", post(crate::http::login))
-        .route(
-            "/api/auth/cloudflare",
-            get(crate::http::cloudflare_available).post(crate::http::cloudflare_login),
-        )
-        .route("/api/auth/logout", post(crate::http::logout))
-        .route("/api/auth/me", get(crate::http::me))
-        .route(
-            "/api/register/{token}",
-            get(crate::http::get_register).post(crate::http::post_register),
-        )
         .route(
             "/api/image/{source}/{*path}",
             get(crate::proxy::image_handler),
-        );
+        )
+        .merge(auth::axum::routes());
 
     // Unknown paths get index.html so client-side routes load.
     let app = match dist {

@@ -115,15 +115,22 @@ struct Setup {
     login_link: bool,
 }
 
-/// The token of the login link that `(login_link)` creates.
+/// The token of the registration link that `(login_link)` creates.
 const LOGIN_LINK: &str = "e2e-login-link";
 
-/// The user and login link for `(login_link)`, valid for a day.
+/// The administrator `root` with the password `root`, whom a fresh database no
+/// longer has: the server creates the first administrator with a link.
+const ROOT_SQL: &str = "
+    INSERT INTO users (login, role, access, password_hash, created_at)
+    VALUES ('root', 'admin', 'active', '$2y$12$jxThPHsK8E/RT.IrJcuNfO6Deoc5a7DkfUZ0cLhM2TZsbPT0MvIwO', CAST(unixepoch('subsec') * 1000 AS INTEGER));
+";
+
+/// The pending user and registration link for `(login_link)`, valid for a day.
 const LOGIN_LINK_SQL: &str = "
     INSERT INTO users (login, email, role, created_at)
     VALUES ('alice', 'alice@example.com', 'regular', CAST(unixepoch('subsec') * 1000 AS INTEGER));
-    INSERT INTO login_tokens (id, user_id, expires_at)
-    VALUES ('e2e-login-link', last_insert_rowid(), CAST((unixepoch('subsec') + 86400) * 1000 AS INTEGER));
+    INSERT INTO auth_tokens (id, user_id, kind, expires_at)
+    VALUES ('e2e-login-link', last_insert_rowid(), 'registration', CAST((unixepoch('subsec') + 86400) * 1000 AS INTEGER));
 ";
 
 /// A track server for one test.
@@ -171,7 +178,7 @@ impl Fixture for Track {
             || setup.remotes
             || setup.slow_tmdb;
 
-        if seeded || setup.login_link || setup.cloudflare {
+        {
             // The server creates the schema; the seed goes in while it is down.
             Server::start(dir.path(), yew_e2e::dist()?, None)
                 .await?
@@ -179,6 +186,7 @@ impl Fixture for Track {
                 .await?;
 
             let c = sqll::Connection::open(dir.path().join("track.db"))?;
+            c.execute(ROOT_SQL).context("adding root")?;
 
             if seeded {
                 c.execute(SEED).context("seeding the database")?;

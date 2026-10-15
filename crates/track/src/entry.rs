@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow};
+use auth::{Auth, BootstrapAdmin, CookieConfig};
 use clap::Parser;
 use musli_web::ws::Channels;
 use tokio::net::TcpListener;
@@ -17,7 +18,6 @@ use crate::app_broadcast::Broadcaster;
 use crate::background;
 use crate::cache::ImageCache;
 use crate::db::{Database, OpenMode};
-use crate::identity::Auth;
 use crate::pending::PendingSystem;
 use crate::remote::RemoteClients;
 use crate::shutdown::Shutdown;
@@ -54,6 +54,11 @@ pub struct Args {
     /// throttling failed sign-ins. Repeat for several proxies.
     #[arg(long, value_name = "IP")]
     trusted_proxy: Vec<IpAddr>,
+
+    /// The first administrator, by login or email (with an `@`), created
+    /// with a registration link logged at startup when there are no users.
+    #[arg(long, value_name = "LOGIN|EMAIL", default_value = "root")]
+    bootstrap_admin: String,
 
     /// Inject an artificial random delay into every websocket request, given as
     /// a `MIN..MAX` millisecond range, to preview loading/skeleton states on a
@@ -101,6 +106,10 @@ pub async fn server(args: Args, db: &Path, log: &[String]) -> Result<ExitCode> {
         args.delay,
         args.dist.as_deref(),
         &args.trusted_proxy,
+        Some(
+            BootstrapAdmin::new(&args.bootstrap_admin)
+                .public_url(Some(format!("http://{}", args.bind))),
+        ),
         None,
         ctrl_c,
     )
@@ -132,10 +141,31 @@ pub async fn serve(
         None,
         dist,
         &[],
+        None,
         tmdb,
         shutdown,
     )
     .await
+}
+
+/// The auth service over the database's users, with the Cloudflare Access
+/// settings of `config`.
+pub(crate) async fn build_auth(
+    db: &Database,
+    config: &api::Config,
+    trusted_proxies: &[IpAddr],
+) -> Result<Auth> {
+    let store = db.auth_store();
+    let session_key = auth::load_or_create_key(&store)
+        .await
+        .context("Loading session key")?;
+
+    Ok(Auth::builder(store, session_key)
+        .cookie(CookieConfig::new("track_session"))
+        .logins(true)
+        .trusted_proxies(trusted_proxies)
+        .cloudflare(Some(config.cloudflare_access.clone()))
+        .build())
 }
 
 async fn run(
@@ -146,6 +176,7 @@ async fn run(
     delay: Option<RandomDelay>,
     dist: Option<&Path>,
     trusted_proxies: &[IpAddr],
+    bootstrap: Option<BootstrapAdmin>,
     tmdb: Option<reqwest::Url>,
     shutdown_signal: impl Future<Output = ()>,
 ) -> Result<ExitCode> {
@@ -184,8 +215,13 @@ async fn run(
     let config = db.load_config().await.context("Loading config")?;
     remote.configure(&config)?;
 
-    let session_key = db.session_key().await.context("Loading session key")?;
-    let auth = Auth::new(session_key, http.clone(), &config, trusted_proxies);
+    let auth = build_auth(&db, &config, trusted_proxies).await?;
+
+    if let Some(bootstrap) = &bootstrap {
+        auth.bootstrap_admin(bootstrap)
+            .await
+            .context("Creating the first administrator")?;
+    }
 
     let pending = PendingSystem::new(db.clone());
     let config_changed = Arc::new(Notify::new());

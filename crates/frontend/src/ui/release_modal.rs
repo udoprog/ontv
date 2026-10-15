@@ -93,11 +93,6 @@ impl Component for ReleaseModal {
             .context::<TimeInfo>(ctx.link().callback(Msg::SetTime))
             .expect("Expected TimeInfo in context");
 
-        let (user, _) = ctx
-            .link()
-            .context::<api::User>(Callback::noop())
-            .expect("Expected the signed-in user in context");
-
         let _setup = SetupChannel::new(ws.clone(), ctx.link().callback(Msg::Channel));
         let _broadcast = ws.on_broadcast(ctx.link().callback(Msg::AppBroadcast));
 
@@ -110,7 +105,7 @@ impl Component for ReleaseModal {
             _config_req: ws::Request::default(),
             _mutate_req: ws::Request::default(),
             rows: None,
-            admin: user.role == api::UserRole::Admin,
+            admin: crate::is_admin(ctx),
             site: None,
             config: None,
             override_filters: None,

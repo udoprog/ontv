@@ -2,59 +2,50 @@ use yew_e2e::Fixture;
 use yew_e2e::prelude::*;
 
 use super::navigation::wait_heading;
-use super::show::focused_title;
 use super::{LOGIN_LINK, Track};
 
 const ENTER: &str = "\u{E007}";
 
-/// An administrator adds a user and gets a login link, which the new user
-/// opens to choose a password and sign in, as a regular user without the
+/// An administrator adds a user and gets a registration link, which the new
+/// user opens to choose a password and sign in, as a regular user without the
 /// users or the system settings.
 pub async fn creates_a_user_who_registers(driver: &mut TestDriver, _: &mut Track) -> Result<()> {
     open_users(driver).await?;
 
-    let login = driver
-        .find_one_by("input[title=\"New user's login\"]")
-        .await?;
+    driver.find_one_by(".auth-add").await?.click().await?;
+    let login = driver.find_one_by("#auth-new-login").await?;
     login.send_keys("bob").await?;
     driver
-        .find_one_by("input[title=\"New user's email\"]")
+        .find_one_by("#auth-new-email")
         .await?
         .send_keys("bob@example.com")
         .await?;
     login.send_keys(ENTER).await?;
 
-    let field = driver
-        .find_one_by("input[title='Login link for bob']")
-        .await?;
+    let field = driver.find_one_by("input[title='Link for bob']").await?;
     let url = field.value().await?;
-    ensure!(url.contains("/register/"), "the login link is {url:?}");
+    ensure!(url.contains("/register/"), "the link is {url:?}");
 
     driver
-        .wait_texts("[data-login=bob] .user-email", ["bob@example.com"])
+        .wait_until("bob to be listed as pending", async || {
+            let row = driver
+                .find_one_by(".auth-user:has([title='Edit bob'])")
+                .await?;
+            let text = row.text().await?;
+            Ok(text.contains("bob@example.com") && text.contains("Pending"))
+        })
         .await?;
-    let expiry = driver
-        .find_one_by("[data-login=bob] [data-test=user-link]")
-        .await?
-        .text()
-        .await?;
-    ensure!(
-        expiry.starts_with("Link expires"),
-        "the link cell says {expiry:?}"
-    );
 
     driver.webdriver().goto(&url).await?;
     driver
-        .wait_texts("[data-test=register-login]", ["bob"])
+        .wait_texts(".auth-card .auth-value", ["bob", "bob@example.com"])
         .await?;
     driver
-        .find_one_by("input[title='Password']")
+        .find_one_by("#auth-password")
         .await?
         .send_keys("correct horse")
         .await?;
-    let confirm = driver
-        .find_one_by("input[title='Confirm password']")
-        .await?;
+    let confirm = driver.find_one_by("#auth-confirm").await?;
     confirm.send_keys("correct horse").await?;
     confirm.send_keys(ENTER).await?;
 
@@ -70,28 +61,7 @@ pub async fn regular_users_do_not_see_users(
     driver: &mut TestDriver,
     track: &mut Track,
 ) -> Result<()> {
-    let link = format!("{}/register/{LOGIN_LINK}", track.url());
-    driver.webdriver().goto(&link).await?;
-
-    for (title, value) in [
-        ("Password", "correct horse"),
-        ("Confirm password", "correct horse"),
-    ] {
-        driver
-            .find_one_by(&format!("input[title='{title}']"))
-            .await?
-            .send_keys(value)
-            .await?;
-    }
-
-    driver
-        .find_one_by("input[title='Confirm password']")
-        .await?
-        .send_keys(ENTER)
-        .await?;
-    driver
-        .wait_texts(".toolbar-item[title=Account]", ["alice"])
-        .await?;
+    register_alice(driver, track).await?;
     hides_admin_pages(driver).await?;
 
     // Their preferences are their own to change.
@@ -122,48 +92,54 @@ pub async fn changes_a_role(driver: &mut TestDriver, _: &mut Track) -> Result<()
     open_users(driver).await?;
 
     driver
-        .wait_texts("[data-login=root] .user-role", ["Administrator"])
+        .wait_texts(".auth-me .auth-user-role", ["Administrator"])
         .await?;
     ensure!(
-        driver.count("[data-login=root] select").await? == 0,
+        driver.count(".auth-me select").await? == 0,
         "your own role can be changed"
     );
     ensure!(
-        driver
-            .count("[data-login=root] [title='Delete root']")
-            .await?
-            == 0,
+        driver.count("[title='Delete root']").await? == 0,
         "you can delete yourself"
     );
 
-    let role = driver.find_one_by("select[title='Role of alice']").await?;
-    ensure!(role.value().await? == "regular", "alice is not regular");
+    for (width, name) in [(1280, "users-wide"), (390, "users-phone")] {
+        driver.set_window_size(width, 900).await?;
+        driver.snapshot(name).await?;
+    }
+    driver.set_window_size(1280, 900).await?;
+
+    let role = ".auth-user:not(.auth-me) .auth-select";
+    ensure!(
+        driver.find_one_by(role).await?.value().await? == "regular",
+        "alice is not regular"
+    );
 
     driver
-        .find_one_by("select[title='Role of alice'] option[value=admin]")
+        .find_one_by(&format!("{role} option[value=admin]"))
         .await?
         .click()
         .await?;
     driver
-        .wait_texts("[data-login=alice] .field-ok", ["Role changed."])
+        .wait_texts(".auth-admin-users .auth-notice", ["Role changed."])
         .await?;
 
     driver.reload().await?;
     wait_heading(driver, "Users").await?;
-    let role = driver.find_one_by("select[title='Role of alice']").await?;
+    driver.find_first(".auth-user").await?;
     ensure!(
-        role.value().await? == "admin",
+        driver.find_one_by(role).await?.value().await? == "admin",
         "alice's new role was not kept"
     );
     Ok(())
 }
 
-/// A pending login link shows when it expires and can be revoked, and a user
-/// is deleted after confirming.
+/// A pending link shows when it expires and can be revoked, and a user is
+/// deleted after confirming.
 pub async fn revokes_links_and_deletes(driver: &mut TestDriver, _: &mut Track) -> Result<()> {
     open_users(driver).await?;
 
-    let cell = "[data-login=alice] [data-test=user-link]";
+    let cell = ".auth-user:not(.auth-me) .auth-link-state";
     let expiry = driver.find_one_by(cell).await?.text().await?;
     ensure!(
         expiry.starts_with("Link expires"),
@@ -171,23 +147,24 @@ pub async fn revokes_links_and_deletes(driver: &mut TestDriver, _: &mut Track) -
     );
 
     driver
-        .find_one_by("[title='Revoke login link for alice']")
+        .find_one_by("[title='Revoke the link for alice']")
         .await?
         .click()
         .await?;
-    driver.wait_texts(cell, ["No login link"]).await?;
+    driver.wait_texts(cell, ["No link"]).await?;
 
-    // From the keyboard, focus moves into the confirmation and back.
-    let delete = driver.find_one_by("[title='Delete alice']").await?;
-    delete.focus().await?;
-    delete.send_keys(ENTER).await?;
-    wait_focus(driver, "No").await?;
+    // Deleting asks first, and No keeps the user.
     driver
-        .find_one_by("[data-login=alice] [title=No]")
+        .find_one_by("[title='Delete alice']")
         .await?
-        .send_keys(ENTER)
+        .click()
         .await?;
-    wait_focus(driver, "Delete alice").await?;
+    driver
+        .find_one_by(".auth-confirm-no")
+        .await?
+        .click()
+        .await?;
+    driver.wait_count(".auth-user", 2).await?;
 
     driver
         .find_one_by("[title='Delete alice']")
@@ -195,24 +172,16 @@ pub async fn revokes_links_and_deletes(driver: &mut TestDriver, _: &mut Track) -
         .click()
         .await?;
     driver
-        .find_one_by("[data-login=alice] [title=Yes]")
+        .find_one_by(".auth-confirm-yes")
         .await?
         .click()
         .await?;
-    driver.wait_count("[data-login=alice]", 0).await?;
+    driver.wait_count(".auth-user", 1).await?;
 
     driver.reload().await?;
     wait_heading(driver, "Users").await?;
-    driver.wait_count("[data-test=user]", 1).await?;
+    driver.wait_count(".auth-user", 1).await?;
     Ok(())
-}
-
-async fn wait_focus(driver: &TestDriver, title: &str) -> Result<()> {
-    driver
-        .wait_until(format_args!("{title:?} to have focus"), async || {
-            Ok(focused_title(driver).await? == title)
-        })
-        .await
 }
 
 async fn open_users(driver: &TestDriver) -> Result<()> {
@@ -222,7 +191,7 @@ async fn open_users(driver: &TestDriver) -> Result<()> {
         .click()
         .await?;
     wait_heading(driver, "Users").await?;
-    driver.find_first("[data-test=user]").await?;
+    driver.find_first(".auth-user").await?;
     Ok(())
 }
 
@@ -426,21 +395,22 @@ async fn open_settings(driver: &TestDriver) -> Result<()> {
     Ok(())
 }
 
-/// Registers `alice` through the login link and waits until she is signed in.
+/// Registers `alice` through the registration link and waits until she is
+/// signed in.
 async fn register_alice(driver: &TestDriver, track: &Track) -> Result<()> {
     let link = format!("{}/register/{LOGIN_LINK}", track.url());
     driver.webdriver().goto(&link).await?;
 
-    for title in ["Password", "Confirm password"] {
+    for id in ["auth-password", "auth-confirm"] {
         driver
-            .find_one_by(&format!("input[title='{title}']"))
+            .find_one_by(&format!("#{id}"))
             .await?
             .send_keys("correct horse")
             .await?;
     }
 
     driver
-        .find_one_by("input[title='Confirm password']")
+        .find_one_by("#auth-confirm")
         .await?
         .send_keys(ENTER)
         .await?;
@@ -501,7 +471,7 @@ async fn hides_admin_pages(driver: &TestDriver) -> Result<()> {
         .wait_texts("#page p", ["Only administrators can manage users."])
         .await?;
     ensure!(
-        driver.count("[data-test=user]").await? == 0,
+        driver.count(".auth-user").await? == 0,
         "a regular user sees the users"
     );
     Ok(())

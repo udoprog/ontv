@@ -326,7 +326,15 @@ pub async fn import() -> Result<()> {
     let db = Database::open(&args.db, OpenMode::Bulk, 1)
         .with_context(|| anyhow!("Opening database at {}", args.db.display()))?;
 
-    // The legacy data had a single user; it all belongs to root.
+    // The legacy data had a single user; it all belongs to root, who a fresh
+    // database creates with a registration link, as the server would.
+    let store = db.auth_store();
+    let key = auth::load_or_create_key(&store).await?;
+    let auth = auth::Auth::builder(store, key).build();
+
+    auth.bootstrap_admin(&auth::BootstrapAdmin::login("root"))
+        .await?;
+
     let owner = db.default_owner().await?;
 
     // Maps from old UUID → new SQLite rowid

@@ -1,4 +1,5 @@
 use super::*;
+use auth::Store as _;
 
 #[test]
 fn migrations_apply_on_fresh_db() {
@@ -139,7 +140,7 @@ async fn episodes_needing_air_sync_respects_window_and_interval() {
     let now = Timestamp::now();
     let hours = |h: i64| now.saturating_add(api::Duration::from_hours(h));
 
-    let root = db.default_owner().await.unwrap();
+    let root = db.test_root().await.unwrap();
     let show = api::ShowId::new(1);
     db.create_show(show, "", None, "").await.unwrap();
     db.set_show_tracked(root, show, true).await.unwrap();
@@ -212,7 +213,7 @@ async fn skip_pending_episode_uses_next_air_date() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(dir.path().join("test.db"), OpenMode::Bulk, 1).unwrap();
 
-    let root = db.default_owner().await.unwrap();
+    let root = db.test_root().await.unwrap();
     let show = api::ShowId::new(1);
     db.create_show(show, "", None, "").await.unwrap();
     db.set_show_tracked(root, show, true).await.unwrap();
@@ -264,7 +265,7 @@ async fn list_persons_resolves_names_in_the_persons_language() -> Result<()> {
          VALUES (1, 6148257917992593152, 1, 'Ada Lovelace');",
     )?;
 
-    let root = db.default_owner().await?;
+    let root = db.test_root().await?;
     let persons = db.list_persons(root).await?;
     assert_eq!(persons.len(), 1);
     assert_eq!(persons[0].name.title(), Some("Ada Lovelace"));
@@ -293,12 +294,10 @@ async fn tracking_watch_history_and_pending_are_per_user() -> Result<()> {
     let dir = tempfile::tempdir()?;
     let db = Database::open(dir.path().join("test.db"), OpenMode::Bulk, 1)?;
 
-    let root = db.default_owner().await?;
+    let root = db.test_root().await?;
     let alice = db
-        .create_user("alice", None, auth::UserRole::Regular, Timestamp::now())
-        .await?
-        .expect("alice is free")
-        .id;
+        .test_user("alice", None, auth::Role::Regular, None)
+        .await?;
 
     let show = api::ShowId::new(1);
     let movie = api::MovieId::new(2);
@@ -392,7 +391,9 @@ async fn tracking_watch_history_and_pending_are_per_user() -> Result<()> {
     assert_eq!(pending_episodes(db.pending(root, now).await?), [e2]);
 
     // Deleting alice removes her rows and leaves root's.
-    db.delete_user(alice).await?;
+    db.auth_store()
+        .delete_user(auth::UserId(alice.get()))
+        .await?;
     let c = OpenOptions::new()
         .read_write()
         .no_mutex()
@@ -418,7 +419,7 @@ async fn preferences_default_on_missing_rows() -> Result<()> {
     let dir = tempfile::tempdir()?;
     let path = dir.path().join("test.db");
     let db = Database::open(&path, OpenMode::Bulk, 1)?;
-    let root = db.default_owner().await?;
+    let root = db.test_root().await?;
 
     assert_eq!(
         db.load_preferences(root).await?,
@@ -457,12 +458,10 @@ async fn show_and_movie_preferences_are_per_user() -> Result<()> {
     let path = dir.path().join("test.db");
     let db = Database::open(&path, OpenMode::Bulk, 1)?;
 
-    let root = db.default_owner().await?;
+    let root = db.test_root().await?;
     let alice = db
-        .create_user("alice", None, auth::UserRole::Regular, Timestamp::now())
-        .await?
-        .expect("alice is free")
-        .id;
+        .test_user("alice", None, auth::Role::Regular, None)
+        .await?;
 
     let show = api::ShowId::new(1);
     let movie = api::MovieId::new(2);
@@ -561,7 +560,7 @@ async fn finish_season(
     let db = Database::open(dir.path().join("test.db"), OpenMode::Bulk, 1)?;
     let pending = crate::pending::PendingSystem::new(db.clone());
 
-    let root = db.default_owner().await?;
+    let root = db.test_root().await?;
     db.create_show(show, "", None, "").await?;
     db.set_show_tracked(root, show, true).await?;
 
@@ -656,7 +655,7 @@ async fn next_episode_follows_the_most_recent_watch_in_scope() -> Result<()> {
     let dir = tempfile::tempdir()?;
     let db = Database::open(dir.path().join("test.db"), OpenMode::Bulk, 1)?;
 
-    let root = db.default_owner().await?;
+    let root = db.test_root().await?;
     let show = api::ShowId::new(1);
     db.create_show(show, "", None, "").await?;
 
@@ -755,6 +754,9 @@ async fn next_episode_follows_the_most_recent_watch_in_scope() -> Result<()> {
 
 /// The base schema of databases created before users, frozen.
 const BEFORE_USERS_SCHEMA: &str = include_str!("testdata/2026-06-05-before-users.sql");
+
+/// The base schema of databases created before yew-auth, frozen.
+const BEFORE_YEW_AUTH_SCHEMA: &str = include_str!("testdata/2026-06-05-before-yew-auth.sql");
 
 /// The base schema of databases created before strings of unknown language,
 /// frozen.
@@ -1317,7 +1319,7 @@ fn date_round_trips_through_yyyymmdd_integer() -> Result<()> {
 async fn schedule_groups_by_local_day_and_respects_window() -> Result<()> {
     let dir = tempfile::tempdir()?;
     let db = Database::open(dir.path().join("test.db"), OpenMode::Bulk, 1)?;
-    let root = db.default_owner().await?;
+    let root = db.test_root().await?;
 
     let tracked = api::ShowId::new(1);
     let untracked = api::ShowId::new(2);
@@ -1702,6 +1704,158 @@ async fn xem_entries_and_names() -> Result<()> {
             vec![season(linked("anidb", 3), "Sousou no Frieren 2nd Season")],
             vec![],
         ]
+    );
+    Ok(())
+}
+
+/// A database created before yew-auth, with every migration up to then
+/// recorded as applied, root (from its base schema), and alice, who has no
+/// password, an unused login link, a used one, tracking and watch history.
+fn before_yew_auth_db(path: &Path) -> Result<sqll::Connection> {
+    let c = OpenOptions::new()
+        .read_write()
+        .create()
+        .no_mutex()
+        .open(path)?;
+
+    c.execute(BEFORE_YEW_AUTH_SCHEMA)?;
+    c.execute(MIGRATIONS_INIT)?;
+    c.execute(
+        "INSERT INTO migrations (id, applied_at) VALUES
+            ('2026-06-05.sql', '2026-06-05T00:00:00Z'),
+            ('2026-10-01-users.sql', '2026-10-01T00:00:00Z'),
+            ('2026-10-01-watch-history-per-user.sql', '2026-10-01T00:00:00Z'),
+            ('2026-10-02-user-preferences.sql', '2026-10-02T00:00:00Z'),
+            ('2026-10-08-xem-numbering.sql', '2026-10-08T00:00:00Z'),
+            ('2026-10-08-xem.sql', '2026-10-08T00:00:00Z'),
+            ('2026-10-15-unknown-language-strings.sql', '2026-10-15T00:00:00Z');
+        INSERT INTO users (id, login, email, role, created_at)
+            VALUES (2, 'alice', 'alice@example.com', 'regular', 1000);
+        INSERT INTO shows (id) VALUES (1);
+        INSERT INTO user_tracked_shows (user_id, show_id) VALUES (2, 1);
+        INSERT INTO watched_episodes (id, user_id, timestamp, show_id, season, episode)
+            VALUES (10, 2, 5, 1, 1, 1);
+        INSERT INTO user_config (user_id, key, value) VALUES (2, 'theme', '\"light\"');
+        INSERT INTO sessions (id, user_id, created_at, expires_at)
+            VALUES ('root-session', 1, 0, 32503680000000);
+        INSERT INTO login_tokens (id, user_id, expires_at, used_at) VALUES
+            ('alice-link', 2, 32503680000000, NULL),
+            ('used-link', 2, 32503680000000, 2000);",
+    )?;
+    Ok(c)
+}
+
+/// A database from before yew-auth migrates to exactly the schema a fresh one
+/// gets, keeping its users, now active, with their passwords, sessions and
+/// per-user rows; login links become reset links. A fresh database has no
+/// users until the server creates the first administrator.
+#[tokio::test]
+async fn migrations_move_users_onto_yew_auth() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let old = dir.path().join("old.db");
+    let fresh = dir.path().join("fresh.db");
+
+    drop(before_yew_auth_db(&old)?);
+    drop(Database::open(&fresh, OpenMode::Bulk, 1)?);
+    let db = Database::open(&old, OpenMode::Normal, 1)?;
+
+    {
+        let old = OpenOptions::new().read_write().no_mutex().open(&old)?;
+        let fresh = OpenOptions::new().read_write().no_mutex().open(&fresh)?;
+
+        assert_eq!(schema(&old)?, schema(&fresh)?);
+        assert_eq!(
+            texts(&old, "SELECT id FROM migrations ORDER BY id")?,
+            texts(&fresh, "SELECT id FROM migrations ORDER BY id")?
+        );
+        assert_eq!(
+            texts(&fresh, "SELECT login FROM users")?,
+            Vec::<String>::new()
+        );
+
+        assert_eq!(
+            texts(
+                &old,
+                "SELECT id || ' ' || login || ' ' || coalesce(email, '-') || ' ' || role || ' ' || access || ' ' || method || ' ' || (password_hash IS NOT NULL) FROM users ORDER BY id"
+            )?,
+            [
+                "1 root - admin active password 1",
+                "2 alice alice@example.com regular active password 0"
+            ]
+        );
+
+        // The rebuild of users cascaded into none of the tables referencing it.
+        for (table, count) in [
+            ("user_tracked_shows", 1),
+            ("watched_episodes", 1),
+            ("user_config", 1),
+            ("sessions", 1),
+            ("auth_tokens", 2),
+        ] {
+            assert_eq!(
+                texts(&old, &format!("SELECT CAST(COUNT(*) AS TEXT) FROM {table}"))?,
+                [count.to_string()],
+                "{table}"
+            );
+        }
+
+        assert_eq!(
+            texts(
+                &old,
+                "SELECT id || ' ' || kind || ' ' || coalesce(used_at, '-') FROM auth_tokens ORDER BY id"
+            )?,
+            ["alice-link reset -", "used-link reset 2000"]
+        );
+    }
+
+    let auth = crate::entry::build_auth(&db, &Config::default(), &[]).await?;
+
+    let (root, _) = auth
+        .session("root-session")
+        .await?
+        .context("root's session")?;
+    assert_eq!(root.login.as_deref(), Some("root"));
+    let request = auth::LoginRequest {
+        login: "root".to_owned(),
+        password: "root".to_owned(),
+    };
+    auth.sign_in_password([127, 0, 0, 1].into(), &request)
+        .await?;
+
+    let alice = auth.register_info("alice-link").await?;
+    assert_eq!(alice.login.as_deref(), Some("alice"));
+    assert!(auth.register_info("used-link").await.is_err());
+    Ok(())
+}
+
+/// The migration refuses to run with foreign keys on, where rebuilding users
+/// would cascade into every table referencing it, and changes nothing.
+#[test]
+fn yew_auth_migration_needs_foreign_keys_off() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("old.db");
+
+    let c = before_yew_auth_db(&path)?;
+    c.execute("PRAGMA foreign_keys = ON")?;
+    assert!(do_migrations(&c).is_err());
+
+    assert_eq!(
+        texts(&c, "SELECT CAST(COUNT(*) AS TEXT) FROM user_tracked_shows")?,
+        ["1"]
+    );
+    assert_eq!(
+        texts(
+            &c,
+            "SELECT name FROM sqlite_master WHERE name = 'login_tokens'"
+        )?,
+        ["login_tokens"]
+    );
+    assert_eq!(
+        texts(
+            &c,
+            "SELECT id FROM migrations WHERE id = '2026-10-15-yew-auth.sql'"
+        )?,
+        Vec::<String>::new()
     );
     Ok(())
 }
