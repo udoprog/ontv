@@ -895,10 +895,6 @@ pub(crate) struct InnerRead {
     // locale, ?3 the filter, ?4 descending, ?5 limit, ?6 offset. The name key
     // is the name Translations::title_or_any resolves when the person's names
     // are inserted in id order (see list_person_list_strings).
-    //
-    // `LIMIT ? + 0` rather than `LIMIT ?`: sqlite re-prepares a statement whose
-    // plan depends on a bare bound LIMIT, which fails with MISUSE on the pool's
-    // statements once their connection handle has been closed.
     #[sql = "WITH named AS MATERIALIZED ("]
     #[sql = "  SELECT p.id, p.default_language,"]
     #[sql = "    (SELECT n.text FROM person_strings n WHERE n.person_id = p.id AND n.kind = 1"]
@@ -913,10 +909,10 @@ pub(crate) struct InnerRead {
     #[sql = "ORDER BY name IS NULL,"]
     #[sql = "  CASE WHEN NOT ?4 THEN lower(name) END ASC, CASE WHEN ?4 THEN lower(name) END DESC,"]
     #[sql = "  CASE WHEN NOT ?4 THEN id END ASC, id DESC"]
-    #[sql = "LIMIT ?5 + 0 OFFSET ?6"]
+    #[sql = "LIMIT ?5 OFFSET ?6"]
     list_persons_by_name:
         TypedStatement<(api::Locale, api::Locale, String, bool, i64, i64), PersonListRow>,
-    // ?1 the filter, ?2 descending, ?3 limit, ?4 offset; `+ 0` as above.
+    // ?1 the filter, ?2 descending, ?3 limit, ?4 offset.
     #[sql = "WITH counted AS MATERIALIZED ("]
     #[sql = "  SELECT p.id, p.default_language,"]
     #[sql = "    (SELECT COUNT(*) FROM show_credits c WHERE c.person_id = p.id) + (SELECT COUNT(*) FROM movie_credits c WHERE c.person_id = p.id) AS n"]
@@ -925,7 +921,7 @@ pub(crate) struct InnerRead {
     #[sql = "SELECT id, default_language FROM counted"]
     #[sql = "ORDER BY CASE WHEN NOT ?2 THEN n END ASC, CASE WHEN ?2 THEN n END DESC,"]
     #[sql = "  CASE WHEN NOT ?2 THEN id END ASC, id DESC"]
-    #[sql = "LIMIT ?3 + 0 OFFSET ?4"]
+    #[sql = "LIMIT ?3 OFFSET ?4"]
     list_persons_by_credits: TypedStatement<(String, bool, i64, i64), PersonListRow>,
     // A list entry's names (kind=Title) and departments (kind=Department).
     #[sql = "SELECT language, kind, text FROM person_strings WHERE person_id = ? AND kind IN (1, 5) ORDER BY id"]
