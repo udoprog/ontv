@@ -139,6 +139,19 @@ struct PersonListRow {
     default_language: api::Locale,
 }
 
+/// One watch in the history, an episode (`show_id`) or a movie (`movie_id`),
+/// numbered by its group.
+#[derive(Row)]
+struct HistoryRow {
+    grp: i64,
+    id: WatchedId,
+    timestamp: Timestamp,
+    show_id: Option<ShowId>,
+    movie_id: Option<MovieId>,
+    season: Option<SeasonNumber>,
+    episode: Option<u32>,
+}
+
 /// A single person's best-ranked profile image (single-person lookup).
 #[derive(Row)]
 struct ProfileRow {
@@ -919,6 +932,30 @@ pub(crate) struct InnerRead {
     list_person_list_strings: TypedStatement<(PersonId,), (api::Locale, api::StringKind, String)>,
     #[sql = "SELECT (SELECT COUNT(*) FROM show_credits WHERE person_id = ?1) + (SELECT COUNT(*) FROM movie_credits WHERE person_id = ?1)"]
     person_credit_count: TypedStatement<(PersonId,), u32>,
+    // The watch history, newest first, in groups numbered from 1: a watch
+    // joins the group of the one before it when both are episodes of the same
+    // show at most ?5 ms apart. ?1 user, ?2 include episodes, ?3 include
+    // movies, ?4 the title filter; groups ?6 < grp <= ?7 are returned.
+    #[sql = "WITH w AS ("]
+    #[sql = "  SELECT id, timestamp, show_id, NULL AS movie_id, season, episode FROM watched_episodes WHERE user_id = ?1 AND ?2 AND show_id IS NOT NULL"]
+    #[sql = "  UNION ALL"]
+    #[sql = "  SELECT id, timestamp, NULL, movie_id, NULL, NULL FROM watched_movies WHERE user_id = ?1 AND ?3 AND movie_id IS NOT NULL),"]
+    #[sql = "f AS ("]
+    #[sql = "  SELECT * FROM w WHERE ?4 = ''"]
+    #[sql = "    OR EXISTS (SELECT 1 FROM show_strings t WHERE t.show_id = w.show_id AND t.kind = 1 AND instr(lower(t.text), lower(?4)) > 0)"]
+    #[sql = "    OR EXISTS (SELECT 1 FROM movie_strings t WHERE t.movie_id = w.movie_id AND t.kind = 1 AND instr(lower(t.text), lower(?4)) > 0)),"]
+    #[sql = "o AS ("]
+    #[sql = "  SELECT *, LAG(show_id) OVER win AS prev_show, LAG(timestamp) OVER win AS prev_timestamp FROM f"]
+    #[sql = "  WINDOW win AS (ORDER BY timestamp DESC, movie_id IS NULL, id DESC)),"]
+    #[sql = "g AS ("]
+    #[sql = "  SELECT *, SUM(CASE WHEN show_id = prev_show AND prev_timestamp - timestamp <= ?5 THEN 0 ELSE 1 END)"]
+    #[sql = "    OVER (ORDER BY timestamp DESC, movie_id IS NULL, id DESC ROWS UNBOUNDED PRECEDING) AS grp FROM o)"]
+    #[sql = "SELECT grp, id, timestamp, show_id, movie_id, season, episode FROM g"]
+    #[sql = "WHERE grp > ?6 AND grp <= ?7"]
+    #[sql = "ORDER BY timestamp DESC, movie_id IS NULL, id DESC"]
+    list_history: TypedStatement<(UserId, bool, bool, String, i64, i64, i64), HistoryRow>,
+    #[sql = "SELECT id FROM episodes WHERE show_id = ? AND season = ? AND episode = ?"]
+    episode_by_code: TypedStatement<(ShowId, SeasonNumber, u32), EpisodeId>,
     // a person's filmography (shows + movies they are credited on)
     #[sql = "SELECT c.id, c.show_id AS owner_id, s.default_language AS owner_language, c.credit_type, c.sort_order, c.episode_count, s.first_air AS date,"]
     #[sql = "  (SELECT i.source FROM show_images si JOIN show_image_candidates i ON i.id = si.image_id WHERE si.show_id = c.show_id AND si.kind = 1) AS poster_source,"]
@@ -4890,6 +4927,130 @@ impl Database {
             }
 
             Ok(api::ListPersonsResponse { persons, has_more })
+        });
+
+        result.await?
+    }
+
+    /// A page of `limit` groups of the user's watch history after the first
+    /// `offset`, newest first. See `list_history` for how watches group.
+    pub(crate) async fn list_history(
+        &self,
+        user: UserId,
+        req: api::ListHistoryRequest,
+    ) -> Result<api::ListHistoryResponse> {
+        /// The longest pause between two episodes of a show that still counts
+        /// as watching them back to back.
+        const GROUP_GAP_MS: i64 = 6 * 60 * 60 * 1000;
+
+        let mut s = self.inner.clone().shared().await?;
+
+        let result = spawn_blocking(move || {
+            let s = &mut *s;
+            let config = s.user_language(user)?;
+
+            let first = i64::try_from(req.offset).unwrap_or(i64::MAX);
+            // One more than the page tells whether another page follows.
+            let last = first
+                .saturating_add(i64::try_from(req.limit.saturating_add(1)).unwrap_or(i64::MAX));
+
+            let mut rows = Vec::new();
+
+            let mut stmt = s.list_history.bind((
+                user,
+                req.shows,
+                req.movies,
+                req.filter.as_str(),
+                GROUP_GAP_MS,
+                first,
+                last,
+            ))?;
+
+            while let Some(r) = stmt.next()? {
+                rows.push(r);
+            }
+
+            stmt.reset()?;
+
+            let has_more = rows.last().is_some_and(|r| r.grp == last);
+            rows.retain(|r| r.grp < last);
+
+            let mut groups = Vec::<api::HistoryGroup>::new();
+            let mut current = None;
+            // The show's display and original language, for episode titles.
+            let mut locales = (api::Locale::default(), api::Locale::default());
+
+            for r in rows {
+                if current != Some(r.grp) {
+                    current = Some(r.grp);
+
+                    let group = if let Some(show_id) = r.show_id {
+                        locales = s
+                            .translations
+                            .show_locales
+                            .bind((Some(user), show_id))?
+                            .first()?
+                            .map(|l| (l.language.0, l.default_language))
+                            .unwrap_or_default();
+
+                        api::HistoryGroup {
+                            media: api::HistoryMedia::Show(show_id),
+                            title: s
+                                .translations
+                                .show(user, show_id, config)?
+                                .title_or_any()
+                                .map(str::to_owned),
+                            poster: s.image.image_for_show(show_id, ImageKind::Poster)?,
+                            watches: Vec::new(),
+                        }
+                    } else if let Some(movie_id) = r.movie_id {
+                        api::HistoryGroup {
+                            media: api::HistoryMedia::Movie(movie_id),
+                            title: s
+                                .translations
+                                .movie(user, movie_id, config)?
+                                .title_or_any()
+                                .map(str::to_owned),
+                            poster: s.image.image_for_movie(movie_id, ImageKind::Poster)?,
+                            watches: Vec::new(),
+                        }
+                    } else {
+                        continue;
+                    };
+
+                    groups.push(group);
+                }
+
+                let episode = match (r.show_id, r.season, r.episode) {
+                    (Some(show_id), Some(season), Some(number)) => {
+                        let title =
+                            match s.episode_by_code.bind((show_id, season, number))?.first()? {
+                                Some(id) => s
+                                    .translations
+                                    .episode(id, locales.0, locales.1, config)?
+                                    .title()
+                                    .map(str::to_owned),
+                                None => None,
+                            };
+
+                        Some(api::HistoryEpisode {
+                            code: api::Code::new(season, number),
+                            title,
+                        })
+                    }
+                    _ => None,
+                };
+
+                if let Some(group) = groups.last_mut() {
+                    group.watches.push(api::HistoryWatch {
+                        id: r.id,
+                        timestamp: r.timestamp,
+                        episode,
+                    });
+                }
+            }
+
+            Ok(api::ListHistoryResponse { groups, has_more })
         });
 
         result.await?

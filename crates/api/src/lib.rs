@@ -2587,6 +2587,63 @@ pub struct ListPersonsResponse {
     pub has_more: bool,
 }
 
+/// One page of the user's watch history, newest first, counted in groups.
+#[derive(Debug, Encode, Decode)]
+#[musli(crate = musli_core)]
+pub struct ListHistoryRequest {
+    /// Matched case-insensitively as a substring of any of the show's or
+    /// movie's titles.
+    pub filter: String,
+    pub shows: bool,
+    pub movies: bool,
+    pub offset: usize,
+    pub limit: usize,
+}
+
+#[derive(Debug, Encode, Decode)]
+#[musli(crate = musli_core)]
+pub struct ListHistoryResponse {
+    pub groups: Vec<HistoryGroup>,
+    /// Whether more groups match past this page.
+    pub has_more: bool,
+}
+
+/// Watches of one show or movie that follow each other in the history: a run
+/// of episodes of one show watched close together, or a single watch.
+#[derive(Debug, Clone, Encode, Decode)]
+#[musli(crate = musli_core)]
+pub struct HistoryGroup {
+    pub media: HistoryMedia,
+    pub title: Option<String>,
+    pub poster: Option<Image>,
+    /// Newest first; never empty.
+    pub watches: Vec<HistoryWatch>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
+#[musli(crate = musli_core)]
+pub enum HistoryMedia {
+    Show(ShowId),
+    Movie(MovieId),
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+#[musli(crate = musli_core)]
+pub struct HistoryWatch {
+    pub id: WatchedId,
+    pub timestamp: Timestamp,
+    /// The episode watched; `None` for a movie.
+    pub episode: Option<HistoryEpisode>,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+#[musli(crate = musli_core)]
+pub struct HistoryEpisode {
+    pub code: Code,
+    /// The episode's title, when the show still has the episode.
+    pub title: Option<String>,
+}
+
 #[derive(Debug, Encode, Decode)]
 #[musli(crate = musli_core)]
 pub struct GetPersonRequest {
@@ -3682,6 +3739,12 @@ api::define! {
     impl Endpoint for ListPersons {
         impl Request for ListPersonsRequest;
         type Response<'de> = ListPersonsResponse;
+    }
+
+    pub type ListHistory;
+    impl Endpoint for ListHistory {
+        impl Request for ListHistoryRequest;
+        type Response<'de> = ListHistoryResponse;
     }
 
     pub type GetPerson;

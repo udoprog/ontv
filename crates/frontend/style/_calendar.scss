@@ -148,6 +148,48 @@
     }
 }
 
+// The dashboard's History: agenda entries whose run of episodes unfolds below.
+.history-item {
+    grid-template-areas:
+        "poster title"
+        "poster times"
+        ". episodes";
+
+    >.schedule-times {
+        align-items: center;
+    }
+}
+
+.history-toggle {
+    min-height: 0;
+    padding: 2px v.$padding;
+    font-size: v.$font-xs;
+    color: v.$text-muted;
+}
+
+.history-episodes {
+    grid-area: episodes;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    margin-inline-start: -(v.$padding);
+    padding: 0;
+    list-style: none;
+}
+
+.history-watch {
+    max-width: 100%;
+    min-width: 0;
+}
+
+.history-episode-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 // The Schedule on wide screens: weekday names once, then a week per row of
 // soft day tiles holding compact entries. On phones it is the agenda.
 .calendar-weekdays {

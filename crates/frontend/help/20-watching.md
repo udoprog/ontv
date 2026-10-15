@@ -39,3 +39,11 @@ removed.
 ![Upcoming](icon:calendar-days) **Upcoming** lists what airs day by day, and
 ![Schedule](icon:calendar) **Schedule** shows whole weeks. Both only include
 shows and movies you track (see [Finding and adding](finding)).
+
+## History
+
+![History](icon:clock) **History** lists everything you have watched, newest
+first, under the day you watched it, rewatches included. Episodes of one show
+watched one after another are folded into a single entry; its
+![Show episodes](icon:chevron-down) button lists them. The filter matches show
+and movie titles.

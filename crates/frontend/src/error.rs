@@ -79,6 +79,8 @@ pub(crate) enum Message {
     LoadingPersons,
     #[display("Loading person")]
     LoadingPerson,
+    #[display("Loading watch history")]
+    LoadingHistory,
     #[display("Loading person credits")]
     LoadingPersonCredits,
     #[display("Loading episodes")]

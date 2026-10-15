@@ -369,6 +369,153 @@ async fn list_persons_filters_sorts_and_pages() -> Result<()> {
     Ok(())
 }
 
+/// The watch history lists every watch newest first, groups episodes of one
+/// show watched close together, filters by kind and title, and pages by group.
+#[tokio::test]
+async fn list_history_groups_filters_and_pages() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("test.db");
+    let db = Database::open(&path, OpenMode::Bulk, 1)?;
+
+    let root = db.test_root().await?;
+    let alice = db
+        .test_user("alice", None, auth::Role::Regular, None)
+        .await?;
+    let (r, a) = (root.get(), alice.get());
+    let und = api::Locale::UNKNOWN.to_u64() as i64;
+    const H: i64 = 60 * 60 * 1000;
+
+    // Shows 1 "Alpha" and 2 "Beta", movie 1 "Gamma". Alpha S01E01 is titled,
+    // S01E03 is gone from the show.
+    let c = OpenOptions::new().read_write().no_mutex().open(&path)?;
+    c.execute(format!(
+        "INSERT INTO shows (id) VALUES (1), (2);
+         INSERT INTO movies (id) VALUES (1);
+         INSERT INTO show_strings (show_id, language, kind, text) VALUES (1, {und}, 1, 'Alpha'), (2, {und}, 1, 'Beta');
+         INSERT INTO movie_strings (movie_id, language, kind, text) VALUES (1, {und}, 1, 'Gamma');
+         INSERT INTO episodes (id, show_id, season, episode) VALUES (10, 1, 1, 1), (11, 1, 1, 2);
+         INSERT INTO episode_strings (episode_id, language, kind, text) VALUES (10, {und}, 1, 'Pilot');
+         INSERT INTO watched_episodes (id, user_id, timestamp, show_id, season, episode) VALUES
+            (1, {r}, {}, 1, 1, 1),
+            (2, {r}, {}, 1, 1, 2),
+            (3, {r}, {}, 1, 1, 3),
+            (4, {r}, {}, 2, 1, 1),
+            (5, {r}, {}, 1, 1, 1),
+            (6, {r}, {}, 1, 1, 2),
+            (7, {a}, {}, 1, 1, 4);
+         INSERT INTO watched_movies (id, user_id, timestamp, movie_id) VALUES (1, {r}, {}, 1);",
+        H,
+        2 * H,
+        3 * H,
+        5 * H,
+        6 * H,
+        20 * H,
+        7 * H,
+        4 * H,
+    ))?;
+
+    let list = async |filter: &str, shows, movies, offset, limit| {
+        let page = db
+            .list_history(
+                root,
+                api::ListHistoryRequest {
+                    filter: filter.to_owned(),
+                    shows,
+                    movies,
+                    offset,
+                    limit,
+                },
+            )
+            .await?;
+
+        let groups = page
+            .groups
+            .iter()
+            .map(|g| {
+                let ids = g.watches.iter().map(|w| w.id.get()).collect::<Vec<_>>();
+                (g.media, ids)
+            })
+            .collect::<Vec<_>>();
+
+        anyhow::Ok((groups, page.has_more))
+    };
+
+    use api::HistoryMedia::{Movie, Show};
+    let alpha = Show(api::ShowId::new(1));
+    let beta = Show(api::ShowId::new(2));
+    let gamma = Movie(api::MovieId::new(1));
+
+    assert_eq!(
+        list("", true, true, 0, 10).await?,
+        (
+            vec![
+                (alpha, vec![6]),
+                (alpha, vec![5]),
+                (beta, vec![4]),
+                (gamma, vec![1]),
+                (alpha, vec![3, 2, 1]),
+            ],
+            false
+        )
+    );
+
+    assert_eq!(
+        list("", true, true, 1, 2).await?,
+        (vec![(alpha, vec![5]), (beta, vec![4])], true)
+    );
+    assert_eq!(
+        list("", true, true, 3, 2).await?,
+        (vec![(gamma, vec![1]), (alpha, vec![3, 2, 1])], false)
+    );
+
+    assert_eq!(
+        list("", false, true, 0, 10).await?,
+        (vec![(gamma, vec![1])], false)
+    );
+
+    // Without Beta in between, the rewatch joins the earlier run.
+    assert_eq!(
+        list("ALP", true, true, 0, 10).await?,
+        (vec![(alpha, vec![6]), (alpha, vec![5, 3, 2, 1])], false)
+    );
+    assert_eq!(
+        list("gam", true, true, 0, 10).await?,
+        (vec![(gamma, vec![1])], false)
+    );
+
+    let page = db
+        .list_history(
+            root,
+            api::ListHistoryRequest {
+                filter: String::new(),
+                shows: true,
+                movies: true,
+                offset: 4,
+                limit: 1,
+            },
+        )
+        .await?;
+    let group = &page.groups[0];
+    assert_eq!(group.title.as_deref(), Some("Alpha"));
+    let episodes = group
+        .watches
+        .iter()
+        .map(|w| {
+            let e = w.episode.as_ref().expect("an episode");
+            (e.code.to_string(), e.title.clone())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        episodes,
+        [
+            ("S01E03".to_owned(), None),
+            ("S01E02".to_owned(), None),
+            ("S01E01".to_owned(), Some("Pilot".to_owned())),
+        ]
+    );
+    Ok(())
+}
+
 /// A database that never saved release rules uses the default ones, so movie
 /// releases qualify on a fresh install.
 #[tokio::test]

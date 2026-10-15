@@ -109,7 +109,10 @@ pub async fn marks_watched_at_a_chosen_time(driver: &mut TestDriver, _: &mut Tra
 /// The dashboard's filters say what they filter on wide screens too.
 pub async fn labels_its_filters(driver: &mut TestDriver, _: &mut Track) -> Result<()> {
     driver
-        .wait_texts(".tabs .tab", ["What's Next", "Upcoming", "Schedule"])
+        .wait_texts(
+            ".tabs .tab",
+            ["What's Next", "Upcoming", "Schedule", "History"],
+        )
         .await?;
     driver
         .wait_texts(".chips .chip.selected", ["Shows", "Movies"])

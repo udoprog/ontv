@@ -443,4 +443,21 @@ impl WsHandler {
         outgoing.write(api::Empty);
         Ok(())
     }
+
+    pub(super) async fn list_history(
+        &self,
+        incoming: &mut ws::Incoming<'_>,
+        outgoing: &mut ws::Outgoing<'_>,
+    ) -> Result<()> {
+        let mut req = incoming
+            .read::<api::ListHistoryRequest>()
+            .context("Expected a request payload")?;
+        req.limit = req.limit.min(MAX_HISTORY_PAGE);
+        let response = self.db.list_history(self.user.id, req).await?;
+        outgoing.write(response);
+        Ok(())
+    }
 }
+
+/// The most history groups one request returns.
+const MAX_HISTORY_PAGE: usize = 100;

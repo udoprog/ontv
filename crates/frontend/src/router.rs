@@ -14,6 +14,7 @@ pub(super) enum DashboardView {
     WatchNext,
     Upcoming,
     Schedule,
+    History,
 }
 
 impl DashboardView {
@@ -22,6 +23,7 @@ impl DashboardView {
             DashboardView::WatchNext => "next",
             DashboardView::Upcoming => "upcoming",
             DashboardView::Schedule => "schedule",
+            DashboardView::History => "history",
         }
     }
 
@@ -30,6 +32,7 @@ impl DashboardView {
             "next" => Some(DashboardView::WatchNext),
             "upcoming" => Some(DashboardView::Upcoming),
             "schedule" => Some(DashboardView::Schedule),
+            "history" => Some(DashboardView::History),
             _ => None,
         }
     }
@@ -48,6 +51,8 @@ pub(super) struct DashboardQuery {
     pub(super) view: DashboardView,
     /// Which media kinds the tabs show.
     pub(super) selection: MediaSelection,
+    /// The History tab's title filter.
+    pub(super) filter: String,
 }
 
 impl DashboardQuery {
@@ -56,6 +61,10 @@ impl DashboardQuery {
 
         if self.page > 0 {
             s.append_pair("page", &self.page.to_string());
+        }
+
+        if !self.filter.is_empty() {
+            s.append_pair("filter", &self.filter);
         }
 
         if self.week != 0 {
@@ -93,6 +102,9 @@ impl DashboardQuery {
             match key.as_ref() {
                 "page" => {
                     this.page = value.parse::<usize>().unwrap_or(0);
+                }
+                "filter" => {
+                    this.filter = value.into_owned();
                 }
                 "week" => {
                     this.week = value.parse::<i32>().unwrap_or(0);

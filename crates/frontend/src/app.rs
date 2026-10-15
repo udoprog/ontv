@@ -515,7 +515,7 @@ impl App {
     fn view_page(&self) -> Html {
         match self.router_state.route {
             Route::Dashboard(ref q) => {
-                html! { <Dashboard page={q.page} week={q.week} week_start={q.week_start} range={q.range} view={q.view} selection={q.selection} /> }
+                html! { <Dashboard page={q.page} week={q.week} week_start={q.week_start} range={q.range} view={q.view} selection={q.selection} filter={q.filter.clone()} /> }
             }
             Route::Queue(ref q) => html! {
                 <Queue filter={q.filter} page={q.page} task={q.task} />

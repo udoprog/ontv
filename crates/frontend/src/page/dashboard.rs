@@ -6,7 +6,7 @@ use crate::help;
 use crate::router::{DashboardQuery, DashboardView, MediaSelection, Route, Router};
 use crate::ui::{Button, Help, MediaKindToggle};
 
-use super::{Calendar, ScheduleRange, WatchNext};
+use super::{Calendar, History, ScheduleRange, WatchNext};
 
 pub(crate) struct Dashboard {
     background: Background,
@@ -22,6 +22,7 @@ pub(crate) enum Msg {
     ResetSchedule,
     SetRange(i32),
     SetSelection(MediaSelection),
+    SetFilter(String),
 }
 
 #[derive(Properties, PartialEq)]
@@ -37,6 +38,8 @@ pub(crate) struct Props {
     pub(crate) view: DashboardView,
     /// Which media kinds the tabs show.
     pub(crate) selection: MediaSelection,
+    /// The History tab's title filter.
+    pub(crate) filter: String,
 }
 
 impl Component for Dashboard {
@@ -98,6 +101,7 @@ impl Component for Dashboard {
                         { tab(DashboardView::WatchNext, "forward", "What's Next") }
                         { tab(DashboardView::Upcoming, "calendar-days", "Upcoming") }
                         { tab(DashboardView::Schedule, "calendar", "Schedule") }
+                        { tab(DashboardView::History, "clock", "History") }
                     </nav>
 
                     <div class="chips">
@@ -133,6 +137,15 @@ impl Component for Dashboard {
                                 on_reset={link.callback(|()| Msg::ResetSchedule)}
                             />
                         },
+                        DashboardView::History => html! {
+                            <History
+                                page={ctx.props().page}
+                                filter={ctx.props().filter.clone()}
+                                selection={selection}
+                                on_set_page={link.callback(Msg::SetPage)}
+                                on_filter={link.callback(Msg::SetFilter)}
+                            />
+                        },
                     } }
                 </div>
             </>
@@ -151,15 +164,27 @@ impl Dashboard {
             range: ctx.props().range,
             view: ctx.props().view,
             selection: ctx.props().selection,
+            filter: ctx.props().filter.clone(),
         }
     }
 
     fn try_update(&mut self, ctx: &Context<Self>, msg: Msg) -> Result<bool, Error> {
         match msg {
             Msg::SetView(view) => {
+                let query = self.dashboard_query(ctx);
+
+                // History pages through another list than What's Next.
+                let page =
+                    if (view == DashboardView::History) != (query.view == DashboardView::History) {
+                        0
+                    } else {
+                        query.page
+                    };
+
                 self.router.push(Route::Dashboard(DashboardQuery {
                     view,
-                    ..self.dashboard_query(ctx)
+                    page,
+                    ..query
                 }));
                 Ok(false)
             }
@@ -212,6 +237,14 @@ impl Dashboard {
                 // Back to the first page: the filtered list is a different list.
                 self.router.push(Route::Dashboard(DashboardQuery {
                     selection,
+                    page: 0,
+                    ..self.dashboard_query(ctx)
+                }));
+                Ok(false)
+            }
+            Msg::SetFilter(filter) => {
+                self.router.push(Route::Dashboard(DashboardQuery {
+                    filter,
                     page: 0,
                     ..self.dashboard_query(ctx)
                 }));

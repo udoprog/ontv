@@ -348,6 +348,7 @@ impl WsHandler {
             api::Request::ListSeasons => self.list_seasons(incoming, outgoing).await?,
             api::Request::ListCredits => self.list_credits(incoming, outgoing).await?,
             api::Request::ListPersons => self.list_persons(incoming, outgoing).await?,
+            api::Request::ListHistory => self.list_history(incoming, outgoing).await?,
             api::Request::GetPerson => self.get_person(incoming, outgoing).await?,
             api::Request::ListPersonCredits => self.list_person_credits(incoming, outgoing).await?,
             api::Request::AddPersonRemote => self.add_person_remote(incoming, outgoing).await?,
