@@ -1,4 +1,4 @@
-use std::fs::{self, File};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -11,50 +11,24 @@ mod vendor;
 const FLAG_ICONS_DIR: &str = "crates/frontend/flags";
 const HEROICONS_DIR: &str = "crates/frontend/icons";
 
-// Bundled ISO datasets (committed inputs).
-const ISO639_TAB: &str = "crates/iso639/data/iso-639-3.tab";
-const ISO639_TO_3166: &str = "crates/iso639/data/to-3166.csv";
-const ISO3166_CSV: &str = "crates/iso3166/data/all.csv";
-const LOCALES_JSON: &str = "crates/locales/data/locales.json";
-
-// Generated, committed source files (formerly produced by each crate's build.rs).
-const ISO639_GENERATED: &str = "crates/iso639/src/generated.rs";
-const ISO3166_GENERATED: &str = "crates/iso3166/src/generated.rs";
-const LOCALES_GENERATED: &str = "crates/locales/src/generated.rs";
-
-// Generated, committed Sass name lists.
+// Generated, committed name lists.
 const FLAGS_SCSS: &str = "crates/frontend/style/_flags_generated.scss";
 const ICONS_SCSS: &str = "crates/frontend/style/_icons_generated.scss";
+const FLAGS_RS: &str = "crates/frontend/src/flags.rs";
 
-/// Refresh the bundled datasets and the source/style files generated from them. With no
-/// subcommand it regenerates everything from the committed inputs.
+/// Refresh the files generated from the vendored SVGs. With no subcommand it regenerates
+/// them from the committed SVGs.
 #[derive(Parser)]
 #[command(about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
-    #[arg(long)]
-    mapping_path: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    /// Regenerate the flag/icon Sass name lists (the Trunk pre_build entry point).
+    /// Regenerate the flag/icon name lists (the Trunk pre_build entry point).
     Scss,
-    /// Regenerate the `iso639` source modules from the committed datasets.
-    Iso639,
-    /// Regenerate the `iso3166` source module from the committed dataset.
-    Iso3166,
-    /// Regenerate the `locales` source module from the committed dataset.
-    Locales,
-    /// Download the ISO 639-3 dataset into the bundled data file.
-    DownloadLanguages,
-    /// Download the ISO 3166-1 dataset into the bundled data file.
-    DownloadCountries,
-    /// Download the SimpleLocalize locales dataset into the bundled data file.
-    DownloadLocales,
-    /// Download every dataset into its bundled data file.
-    DownloadAll,
     /// Refresh the vendored icon and flag SVGs from their pinned revisions.
     Vendor {
         /// Fetch an upstream's pin from a local repository instead of its URL,
@@ -75,25 +49,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match &cli.command {
-        None => {
-            // Default: bring every generated artifact up to date.
-            generate_iso639(&root, cli.mapping_path.as_deref())?;
-            generate_iso3166(&root)?;
-            generate_locales(&root)?;
-            generate_scss(&root)?;
-        }
-        Some(Command::Scss) => generate_scss(&root)?,
-        Some(Command::Iso639) => generate_iso639(&root, cli.mapping_path.as_deref())?,
-        Some(Command::Iso3166) => generate_iso3166(&root)?,
-        Some(Command::Locales) => generate_locales(&root)?,
-        Some(Command::DownloadLanguages) => download_languages(&root)?,
-        Some(Command::DownloadCountries) => download_countries(&root)?,
-        Some(Command::DownloadLocales) => download_locales(&root)?,
-        Some(Command::DownloadAll) => {
-            download_languages(&root)?;
-            download_countries(&root)?;
-            download_locales(&root)?;
-        }
+        None | Some(Command::Scss) => generate_scss(&root)?,
         Some(Command::Vendor { from }) => vendor::sync(&root, from)?,
     }
 
@@ -139,71 +95,9 @@ fn generate_scss(root: &Path) -> Result<()> {
         &generate::svg_names_scss(&icons_dir, false)?,
     )?;
 
-    Ok(())
-}
-
-fn generate_iso639(root: &Path, mapping_path: Option<&Path>) -> Result<()> {
-    let flags_dir = ensure_vendored(root, FLAG_ICONS_DIR)?;
-
-    let tab = read_input(root, ISO639_TAB)?;
-    let to_3166 = read_input(root, ISO639_TO_3166)?;
-
-    let (iso639_generated, mapping) = generate::iso639_module(&tab, &to_3166, &flags_dir)?;
-
-    write_file(&root.join(ISO639_GENERATED), &iso639_generated)?;
-
-    if let Some(path) = mapping_path {
-        let mut o = csv::Writer::from_writer(File::create(path)?);
-
-        for m in mapping {
-            o.serialize(m)?;
-        }
-    }
+    write_file(&root.join(FLAGS_RS), &generate::flags_module(&flags_dir)?)?;
 
     Ok(())
-}
-
-fn generate_iso3166(root: &Path) -> Result<()> {
-    let flags_dir = ensure_vendored(root, FLAG_ICONS_DIR)?;
-
-    let csv = read_input(root, ISO3166_CSV)?;
-    write_file(
-        &root.join(ISO3166_GENERATED),
-        &generate::iso3166_module(&csv, &flags_dir)?,
-    )?;
-    Ok(())
-}
-
-fn generate_locales(root: &Path) -> Result<()> {
-    let tab = read_input(root, ISO639_TAB)?;
-    let csv = read_input(root, ISO3166_CSV)?;
-    let json = read_input(root, LOCALES_JSON)?;
-
-    let valid_languages = generate::language_ids(&tab)?;
-    let valid_countries = generate::country_codes(&csv)?;
-
-    write_file(
-        &root.join(LOCALES_GENERATED),
-        &generate::locales_module(&json, &valid_languages, &valid_countries)?,
-    )?;
-    Ok(())
-}
-
-fn download_languages(root: &Path) -> Result<()> {
-    write_file(&root.join(ISO639_TAB), &generate::download_table()?)
-}
-
-fn download_countries(root: &Path) -> Result<()> {
-    write_file(&root.join(ISO3166_CSV), &generate::download_countries()?)
-}
-
-fn download_locales(root: &Path) -> Result<()> {
-    write_file(&root.join(LOCALES_JSON), &generate::download_locales()?)
-}
-
-fn read_input(root: &Path, relative: &str) -> Result<String> {
-    let path = root.join(relative);
-    fs::read_to_string(&path).with_context(|| anyhow!("Reading {}", path.display()))
 }
 
 fn write_file(output: &Path, body: &str) -> Result<()> {

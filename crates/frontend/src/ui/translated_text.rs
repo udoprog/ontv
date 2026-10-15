@@ -9,6 +9,8 @@
 
 use yew::prelude::*;
 
+use crate::flags;
+
 use super::{Button, ContextMenu, locale_label};
 
 #[derive(Properties, PartialEq)]
@@ -113,7 +115,7 @@ impl Component for TranslatedText {
         let toggle = html! {
             <Button node_ref={self.anchor.clone()} class="language-toggle" title="Change displayed language" expanded={Some(self.open)} haspopup="dialog" onclick={link.callback(|_| Msg::Open)}>
                 if let Some(locale) = foreign {
-                    if let Some(flag) = locale.flag() {
+                    if let Some(flag) = locale.flag().filter(|flag| flags::has_flag(flag)) {
                         <span class={classes!("flag", flag)} />
                     } else {
                         <span class="text-muted">{locale}</span>

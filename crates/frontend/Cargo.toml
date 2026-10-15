@@ -9,9 +9,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 api = { path = "../api", features = ["js", "yew"] }
 auth = { package = "watchword", version = "0.1", features = ["yew023"] }
-iso639 = { path = "../iso639" }
-iso3166 = { path = "../iso3166" }
-locales = { path = "../locales" }
+koine = "0.1"
 
 derive_more = { version = "2.1.1", features = ["display"] }
 gloo = "0.11.0"

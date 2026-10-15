@@ -1,6 +1,8 @@
 use web_sys::InputEvent;
 use yew::prelude::*;
 
+use crate::flags;
+
 use super::{Button, Modal, PaginationButtons};
 
 const COUNTRY_PAGE_SIZE: usize = 8;
@@ -30,10 +32,10 @@ pub(crate) struct CountryPicker {
     /// Selected countries pinned at the top, filtered by the search term. Held in
     /// the component and rebuilt on open, filter changes and selection changes
     /// rather than reallocated on every render.
-    selected_list: Vec<(&'static iso3166::Country, api::Country)>,
+    selected_list: Vec<(&'static koine::country::Entry, api::Country)>,
     /// The full browse list (filtered, excluding the selection). Rebuilt
     /// alongside `selected_list`.
-    browse: Vec<(&'static iso3166::Country, api::Country)>,
+    browse: Vec<(&'static koine::country::Entry, api::Country)>,
 }
 
 impl CountryPicker {
@@ -43,7 +45,7 @@ impl CountryPicker {
         let current = &ctx.props().current;
         let needle = self.filter.to_lowercase();
 
-        let matches = |country: &iso3166::Country| {
+        let matches = |country: &koine::country::Entry| {
             needle.is_empty()
                 || country.name.to_lowercase().contains(&needle)
                 || country.alpha2.contains(&needle)
@@ -60,7 +62,7 @@ impl CountryPicker {
         // The full, paginated browse list (filtered), excluding what's selected.
         self.browse.clear();
         self.browse.extend(
-            iso3166::iter()
+            koine::country::iter()
                 .filter(|country| matches(country))
                 .flat_map(|country| Some((country, api::Country::from_iso(country.alpha2)?)))
                 .filter(|(_, code)| !current.contains(code)),
@@ -137,7 +139,7 @@ impl Component for CountryPicker {
         let trigger = html! {
             <Button icon="globe-alt" label={if current.is_empty() { String::from("All countries") } else { format!("{} selected", current.len()) }} title="Select countries" onclick={link.callback(|_| Msg::Open)}>
                 {for current.iter().filter_map(|code| {
-                    code.to_iso().filter(|c| c.has_flag).map(|c| html! {
+                    code.to_iso().filter(|c| flags::has_flag(c.alpha2)).map(|c| html! {
                         <span class={classes!("flag", c.alpha2)} />
                     })
                 })}
@@ -159,14 +161,14 @@ impl Component for CountryPicker {
             Msg::Filter(input.value())
         });
 
-        let render_row = |country: &iso3166::Country, code: api::Country| {
+        let render_row = |country: &koine::country::Entry, code: api::Country| {
             let selected = current.contains(&code);
 
             html! {
                 <Button key={code} class={classes!("row", "clickable", selected.then_some("active"))} title={country.name} pressed={Some(selected)} onclick={link.callback(move |_| Msg::Toggle(code))}>
                     <span class="fill">{country.name}</span>
 
-                    if let Some(c) = code.to_iso().filter(|c| c.has_flag) {
+                    if let Some(c) = code.to_iso().filter(|c| flags::has_flag(c.alpha2)) {
                         <span class={classes!("item-inline", "flag", c.alpha2)} />
                     }
 

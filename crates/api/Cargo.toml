@@ -4,16 +4,14 @@ edition = "2024"
 publish = false
 
 [features]
-sqll = ["dep:sqll", "js"]
+sqll = ["dep:sqll", "js", "koine/sqll014"]
 js = ["jiff/js"]
 rand = ["dep:rand"]
-yew = ["dep:yew", "dep:implicit-clone"]
+yew = ["dep:yew", "dep:implicit-clone", "koine/yew023"]
 
 [dependencies]
 auth = { package = "watchword", version = "0.1", features = ["musli01"] }
-iso639 = { version = "0.0.0", path = "../iso639" }
-iso3166 = { version = "0.0.0", path = "../iso3166" }
-locales = { version = "0.0.0", path = "../locales" }
+koine = { version = "0.1", features = ["musli01", "serde"] }
 
 base64 = "0.22.1"
 jiff = "0.2.37"

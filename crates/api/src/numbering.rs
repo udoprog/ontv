@@ -518,9 +518,9 @@ pub fn xem_language(code: &str) -> Option<Language> {
     }
 
     let country = code.to_ascii_uppercase();
-    let candidates = locales::iter()
+    let candidates = koine::locale::iter()
         .filter(|l| l.country == country)
-        .filter_map(|l| iso639::by_id(l.language))
+        .filter_map(|l| koine::language::by_id(l.language))
         .collect::<Vec<_>>();
 
     let found = match candidates.as_slice() {
@@ -532,7 +532,7 @@ pub fn xem_language(code: &str) -> Option<Language> {
             .copied(),
     };
 
-    let found = found.or_else(|| iso639::by_part1(&code))?;
+    let found = found.or_else(|| koine::language::by_part1(&code))?;
     Language::from_iso(found.id)
 }
 

@@ -7,6 +7,7 @@ use yew::prelude::*;
 use crate::SetupChannel;
 use crate::background::Background;
 use crate::error::{CustomContext, Error, Message};
+use crate::flags;
 
 use super::{
     AIR_DATE_KINDS, AIR_DATE_SOURCES, Button, FiltersEditor, FormRow, Modal, RELEASE_KINDS,
@@ -564,7 +565,7 @@ fn view_country(country: api::Country) -> Html {
         return html! { <span class="text-muted">{country}</span> };
     };
 
-    if c.has_flag {
+    if flags::has_flag(c.alpha2) {
         html! {
             <span class="item-inline" title={c.name}>
                 <span class={classes!("flag", c.alpha2)}></span>

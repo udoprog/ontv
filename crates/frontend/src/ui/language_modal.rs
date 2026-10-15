@@ -3,6 +3,8 @@ use std::borrow::Cow;
 use web_sys::InputEvent;
 use yew::prelude::*;
 
+use crate::flags;
+
 use super::{Button, Modal, PaginationButtons};
 
 /// App-wide context: the most-used custom locales, ordered most-used first,
@@ -31,7 +33,7 @@ pub(crate) fn locale_label(
         (None, None) => Cow::Borrowed(default),
     };
 
-    (name, locale.flag())
+    (name, locale.flag().filter(|flag| flags::has_flag(flag)))
 }
 
 /// Every selectable locale: a language-only "any country" row for each language
@@ -42,14 +44,14 @@ fn populate_filtered(filter: &str, out: &mut Vec<api::Locale>) {
     out.clear();
 
     // Language-only rows: one per language that has a 2-letter form.
-    for entry in iso639::iter().filter(|e| e.part1.is_some()) {
+    for entry in koine::language::iter().filter(|e| e.part1.is_some()) {
         if let Some(language) = api::Language::from_iso(entry.id) {
             out.push(api::Locale::new(language, api::Country::DEFAULT));
         }
     }
 
     // Concrete language+country combinations.
-    for locale in locales::iter() {
+    for locale in koine::locale::iter() {
         if let (Some(language), Some(country)) = (
             api::Language::from_iso(locale.language),
             api::Country::from_iso(locale.country),

@@ -1,5 +1,6 @@
 use yew::prelude::*;
 
+use crate::flags;
 use crate::help;
 use crate::ui::{Help, Modal};
 
@@ -78,7 +79,7 @@ fn view_name(n: &api::AltName) -> Html {
     html! {
         <div class="translation-row alt-name">
             <span class={classes!("translation-language", language.is_none().then_some("unknown"))} {title}>
-                if let Some(flag) = language.and_then(|l| l.flag) {
+                if let Some(flag) = language.and_then(|l| l.flag).filter(|flag| flags::has_flag(flag)) {
                     <span class={classes!("item-inline", "flag", flag)} aria-hidden="true" />
                 }
 

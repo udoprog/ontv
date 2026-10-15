@@ -1,6 +1,8 @@
 use web_sys::{Event, MouseEvent};
 use yew::prelude::*;
 
+use crate::flags;
+
 use super::{Button, ConfirmDanger, ContextMenu, CountryPicker, DragHandle, Reorder, Variant};
 
 /// Predicate kinds offered when editing movie release filters.
@@ -287,7 +289,7 @@ impl FiltersEditor {
                 } else {
                     html! {
                         {for v.iter().map(|s| {
-                            if let Some(s) = s.to_iso() && s.has_flag {
+                            if let Some(s) = s.to_iso() && flags::has_flag(s.alpha2) {
                                 html! {
                                     <span class={classes!("item-inline", "flag", s.alpha2)} title={s.name} />
                                 }

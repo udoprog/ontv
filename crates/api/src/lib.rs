@@ -17,15 +17,10 @@ mod tests;
 
 mod macros;
 
-mod language;
-
-pub use self::language::{Language, ParseLanguageErr};
-
-mod country;
-pub use self::country::{Country, ParseCountryErr};
-
-mod locale;
-pub use self::locale::{Locale, ParseLocaleErr};
+pub use koine::country::ParseCountryErr;
+pub use koine::language::ParseLanguageErr;
+pub use koine::locale::ParseLocaleErr;
+pub use koine::{Country, Language, Locale};
 
 mod translations;
 pub use self::translations::Translations;

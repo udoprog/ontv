@@ -4,6 +4,7 @@ mod active_tasks;
 mod app;
 mod background;
 mod error;
+mod flags;
 mod help;
 mod page;
 mod root;
