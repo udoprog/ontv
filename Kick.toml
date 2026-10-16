@@ -3,9 +3,6 @@ binary = "track"
 pre_build = ["trunk build --release"]
 features = ["bundle"]
 
-[deploy.profiles.remote]
-user = "integration"
-
 [deploy.systemd]
 description = "Track Service"
 user = "track"
