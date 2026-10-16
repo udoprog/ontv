@@ -1063,15 +1063,19 @@ pub(crate) struct InnerRead {
     // The next episode in watch order per show and scope (specials or regular
     // seasons): the first aired episode after the most recent watch in that
     // scope, or the first aired one with no watch. ?2 limits it to one show.
-    #[sql = "WITH last AS ("]
+    // Filtering `rn = 1` in its own CTE rather than in the join lets SQLite
+    // index `last` instead of scanning every watch per episode.
+    #[sql = "WITH ranked AS ("]
     #[sql = "    SELECT show_id, season = 0 AS special, season, episode,"]
     #[sql = "        ROW_NUMBER() OVER (PARTITION BY show_id, season = 0 ORDER BY timestamp DESC, id DESC) AS rn"]
     #[sql = "    FROM watched_episodes WHERE user_id = ?1 AND show_id IS NOT NULL AND (?2 IS NULL OR show_id = ?2)"]
+    #[sql = "), last AS ("]
+    #[sql = "    SELECT show_id, special, season, episode FROM ranked WHERE rn = 1"]
     #[sql = "), next AS ("]
     #[sql = "    SELECT e.show_id, e.season = 0 AS special, e.id AS episode_id,"]
     #[sql = "        ROW_NUMBER() OVER (PARTITION BY e.show_id, e.season = 0 ORDER BY e.season, e.episode) AS rn"]
     #[sql = "    FROM episodes e"]
-    #[sql = "    LEFT JOIN last l ON l.rn = 1 AND l.show_id = e.show_id AND l.special = (e.season = 0)"]
+    #[sql = "    LEFT JOIN last l ON l.show_id = e.show_id AND l.special = (e.season = 0)"]
     #[sql = "    WHERE (?2 IS NULL OR e.show_id = ?2) AND e.aired IS NOT NULL AND e.aired <= ?3"]
     #[sql = "        AND (l.show_id IS NULL OR (e.season, e.episode) > (l.season, l.episode))"]
     #[sql = ")"]
